@@ -14,6 +14,81 @@ export type Database = {
   }
   public: {
     Tables: {
+      location_spots: {
+        Row: {
+          created_at: string
+          id: string
+          location_id: string
+          setup_id: string | null
+          spot_number: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          location_id: string
+          setup_id?: string | null
+          spot_number: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          location_id?: string
+          setup_id?: string | null
+          spot_number?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "location_spots_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "location_spots_setup_id_fkey"
+            columns: ["setup_id"]
+            isOneToOne: true
+            referencedRelation: "setups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      locations: {
+        Row: {
+          address: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          id: string
+          name: string
+          spots_count: number
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          spots_count: number
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          spots_count?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       machines: {
         Row: {
           created_at: string
