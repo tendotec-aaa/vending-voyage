@@ -8,7 +8,8 @@ import {
   Users,
   BarChart3,
   Wrench,
-  LogOut
+  LogOut,
+  Layers
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
@@ -27,6 +28,7 @@ import {
 const mainNavItems = [
   { title: "Dashboard", icon: LayoutDashboard, url: "/" },
   { title: "Machines", icon: Truck, url: "/machines" },
+  { title: "Setups", icon: Layers, url: "/setups" },
   { title: "Visit Reports", icon: ClipboardList, url: "/visits" },
   { title: "Inventory", icon: Package, url: "/inventory" },
   { title: "Locations", icon: MapPin, url: "/locations" },
