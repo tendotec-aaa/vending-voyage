@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, MapPin, Search, Layers, Grid3X3 } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Plus, MapPin, Search, Layers } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 type Location = {
@@ -37,8 +38,6 @@ type Setup = {
 export default function Locations() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
-  const [isManageSpotsOpen, setIsManageSpotsOpen] = useState(false);
   
   // Form state
   const [newName, setNewName] = useState("");
@@ -299,6 +298,9 @@ export default function Locations() {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredLocations.map((location) => {
               const occupied = getOccupiedCount(location.id);
+              const locationSpots = getSpotsForLocation(location.id);
+              const assignedSetupIds = getAssignedSetupIds();
+
               return (
                 <Card key={location.id}>
                   <CardHeader className="pb-3">
@@ -326,45 +328,78 @@ export default function Locations() {
                       </div>
                     )}
 
-                    {/* Spots preview */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {getSpotsForLocation(location.id).map((spot) => (
-                        <div
-                          key={spot.id}
-                          className={`w-8 h-8 rounded flex items-center justify-center text-xs font-medium border ${
-                            spot.setup_id
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "bg-muted text-muted-foreground border-border"
-                          }`}
-                          title={spot.setup_id ? getSetupName(spot.setup_id) || "" : "Empty"}
-                        >
-                          {spot.spot_number}
-                        </div>
-                      ))}
-                    </div>
+                    {/* Spots Accordion */}
+                    <Accordion type="single" collapsible className="w-full">
+                      {locationSpots.map((spot) => {
+                        const availableSetups = setups.filter(
+                          (s) => !assignedSetupIds.has(s.id) || s.id === spot.setup_id
+                        );
 
-                    {/* Actions */}
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => {
-                          setSelectedLocation(location);
-                          setIsManageSpotsOpen(true);
-                        }}
-                      >
-                        <Grid3X3 className="mr-2 h-4 w-4" />
-                        Manage Spots
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => deleteLocation.mutate(location.id)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
+                        return (
+                          <AccordionItem key={spot.id} value={spot.id}>
+                            <AccordionTrigger className="py-2">
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={`w-8 h-8 rounded flex items-center justify-center text-xs font-medium border ${
+                                    spot.setup_id
+                                      ? "bg-primary text-primary-foreground border-primary"
+                                      : "bg-muted text-muted-foreground border-border"
+                                  }`}
+                                >
+                                  {spot.spot_number}
+                                </div>
+                                <span className="text-sm">
+                                  {spot.setup_id ? getSetupName(spot.setup_id) : "Empty"}
+                                </span>
+                              </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                              <div className="pt-2 pb-1">
+                                <Label className="text-xs text-muted-foreground mb-2 block">
+                                  Assign Setup
+                                </Label>
+                                <Select
+                                  value={spot.setup_id || "empty"}
+                                  onValueChange={(value) =>
+                                    assignSetupToSpot.mutate({
+                                      spotId: spot.id,
+                                      setupId: value === "empty" ? null : value,
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select a setup" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="empty">
+                                      <span className="text-muted-foreground">Empty</span>
+                                    </SelectItem>
+                                    {availableSetups.map((setup) => (
+                                      <SelectItem key={setup.id} value={setup.id}>
+                                        <span className="flex items-center gap-2">
+                                          <Layers className="h-4 w-4" />
+                                          {setup.name}
+                                        </span>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        );
+                      })}
+                    </Accordion>
+
+                    {/* Delete Action */}
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => deleteLocation.mutate(location.id)}
+                    >
+                      Delete Location
+                    </Button>
                   </CardContent>
                 </Card>
               );
@@ -372,68 +407,6 @@ export default function Locations() {
           </div>
         )}
 
-        {/* Manage Spots Dialog */}
-        <Dialog open={isManageSpotsOpen} onOpenChange={setIsManageSpotsOpen}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Manage Spots - {selectedLocation?.name}</DialogTitle>
-              <DialogDescription>
-                Assign setups to each spot. Each setup can only be assigned to one spot across all locations.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3 py-4 max-h-96 overflow-y-auto">
-              {selectedLocation &&
-                getSpotsForLocation(selectedLocation.id).map((spot) => {
-                  const assignedSetupIds = getAssignedSetupIds();
-                  const availableSetups = setups.filter(
-                    (s) => !assignedSetupIds.has(s.id) || s.id === spot.setup_id
-                  );
-
-                  return (
-                    <div
-                      key={spot.id}
-                      className="flex items-center gap-4 rounded-md border p-3"
-                    >
-                      <div className="flex items-center justify-center w-10 h-10 rounded-md bg-muted text-sm font-semibold">
-                        #{spot.spot_number}
-                      </div>
-                      <div className="flex-1">
-                        <Select
-                          value={spot.setup_id || "empty"}
-                          onValueChange={(value) =>
-                            assignSetupToSpot.mutate({
-                              spotId: spot.id,
-                              setupId: value === "empty" ? null : value,
-                            })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a setup" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="empty">
-                              <span className="text-muted-foreground">Empty</span>
-                            </SelectItem>
-                            {availableSetups.map((setup) => (
-                              <SelectItem key={setup.id} value={setup.id}>
-                                <span className="flex items-center gap-2">
-                                  <Layers className="h-4 w-4" />
-                                  {setup.name}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-            <DialogFooter>
-              <Button onClick={() => setIsManageSpotsOpen(false)}>Done</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </AppLayout>
   );

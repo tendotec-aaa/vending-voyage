@@ -27,11 +27,10 @@ import {
 
 const mainNavItems = [
   { title: "Dashboard", icon: LayoutDashboard, url: "/" },
-  { title: "Machines", icon: Truck, url: "/machines" },
-  { title: "Setups", icon: Layers, url: "/setups" },
-  { title: "Visit Reports", icon: ClipboardList, url: "/visits" },
-  { title: "Inventory", icon: Package, url: "/inventory" },
   { title: "Locations", icon: MapPin, url: "/locations" },
+  { title: "Setups", icon: Layers, url: "/setups" },
+  { title: "Spots", icon: Package, url: "/inventory" },
+  { title: "Visit Reports", icon: ClipboardList, url: "/visits" },
 ];
 
 const analyticsItems = [
