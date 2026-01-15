@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -12,91 +13,239 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { 
   ArrowLeft, 
   Camera, 
-  Plus, 
-  Trash2, 
+  Upload,
   Save, 
-  QrCode,
-  CheckCircle,
-  AlertCircle
+  CalendarIcon,
+  AlertTriangle,
+  ImagePlus
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 
-const machines = [
-  { id: "VM-001", location: "Westfield Mall - Food Court" },
-  { id: "VM-012", location: "University Library" },
-  { id: "VM-023", location: "Central Station - Platform 3" },
-  { id: "VM-045", location: "Tech Park Building A" },
-  { id: "VM-089", location: "Airport Terminal 2" },
+// Visit types
+const visitTypes = [
+  { id: "installation", name: "Installation" },
+  { id: "routine_service", name: "Routine Service" },
+  { id: "inventory_audit", name: "Inventory Audit" },
+  { id: "maintenance", name: "Maintenance" },
+  { id: "emergency", name: "Emergency" },
 ];
 
-const products = [
-  { id: "TOY-001", name: "Plush Bear Collection", price: 3.00 },
-  { id: "TOY-002", name: "Capsule Figures Series A", price: 2.50 },
-  { id: "TOY-003", name: "Keychain Buddies", price: 1.50 },
-  { id: "TOY-004", name: "Mini Vehicles Pack", price: 4.00 },
-  { id: "TOY-005", name: "Bouncy Balls Premium", price: 1.00 },
+// Jam status options
+const jamStatusOptions = [
+  { id: "no_jam", name: "No Jam" },
+  { id: "with_coins", name: "With Coins" },
+  { id: "without_coins", name: "Without Coins" },
+  { id: "by_coin", name: "By Coin" },
+];
+
+// Severity options
+const severityOptions = [
+  { id: "low", name: "Low" },
+  { id: "medium", name: "Medium" },
+  { id: "high", name: "High" },
+];
+
+// Mock toys data (to be replaced with real data)
+const toys = [
+  { id: "TOY-001", name: "Plush Bear Collection" },
+  { id: "TOY-002", name: "Capsule Figures Series A" },
+  { id: "TOY-003", name: "Keychain Buddies" },
+  { id: "TOY-004", name: "Mini Vehicles Pack" },
+  { id: "TOY-005", name: "Bouncy Balls Premium" },
 ];
 
 interface SlotEntry {
   id: string;
-  product: string;
-  previousCount: number;
-  currentCount: number;
-  refilled: number;
+  machineSerialNo: string;
+  slotNumber: number;
+  toyName: string;
+  toyId: string;
+  replaceAllToys: boolean;
+  lastStock: number;
+  unitsSold: number;
+  unitsRefilled: number;
+  unitsRemoved: number;
+  falseCoins: number;
+  auditedCount: number | null;
+  currentStock: number;
+  pricePerUnit: number;
+  jamStatus: string;
+  capacity: number;
+  reportIssue: boolean;
+  issueDescription: string;
+  severity: string;
+  // Installation specific
+  toyCapacity: number;
 }
 
 export default function NewVisitReport() {
   const navigate = useNavigate();
-  const [selectedMachine, setSelectedMachine] = useState("");
-  const [meterReading, setMeterReading] = useState("");
-  const [cashCollected, setCashCollected] = useState("");
-  const [notes, setNotes] = useState("");
-  const [photoUrl, setPhotoUrl] = useState("");
-  const [issueReported, setIssueReported] = useState(false);
-  const [issueDescription, setIssueDescription] = useState("");
-  const [fixedOnSite, setFixedOnSite] = useState<boolean | null>(null);
   
-  const [slots, setSlots] = useState<SlotEntry[]>([
-    { id: "1", product: "", previousCount: 0, currentCount: 0, refilled: 0 },
-  ]);
+  // Location Details state
+  const [selectedLocation, setSelectedLocation] = useState("");
+  const [selectedSpot, setSelectedSpot] = useState("");
+  
+  // Visit Details state
+  const [visitType, setVisitType] = useState("");
+  const [visitDate, setVisitDate] = useState<Date>(new Date());
+  
+  // Slots state
+  const [slots, setSlots] = useState<SlotEntry[]>([]);
+  
+  // Observations state
+  const [hasObservationIssue, setHasObservationIssue] = useState(false);
+  const [observationIssueLog, setObservationIssueLog] = useState("");
+  const [observationSeverity, setObservationSeverity] = useState("");
+  
+  // Photo & Sign Off state
+  const [confirmAccurate, setConfirmAccurate] = useState(false);
 
-  const addSlot = () => {
-    setSlots([
-      ...slots,
-      { id: Date.now().toString(), product: "", previousCount: 0, currentCount: 0, refilled: 0 },
-    ]);
-  };
+  // Fetch locations
+  const { data: locations = [] } = useQuery({
+    queryKey: ['locations'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('locations')
+        .select('*')
+        .order('name');
+      if (error) throw error;
+      return data;
+    },
+  });
 
-  const removeSlot = (id: string) => {
-    if (slots.length > 1) {
-      setSlots(slots.filter((slot) => slot.id !== id));
+  // Fetch spots for selected location
+  const { data: spots = [] } = useQuery({
+    queryKey: ['location-spots', selectedLocation],
+    queryFn: async () => {
+      if (!selectedLocation) return [];
+      const { data, error } = await supabase
+        .from('location_spots')
+        .select('*, setups(*)')
+        .eq('location_id', selectedLocation)
+        .order('spot_number');
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!selectedLocation,
+  });
+
+  // Fetch machines for selected spot's setup
+  const selectedSpotData = spots.find(s => s.id === selectedSpot);
+  const setupId = selectedSpotData?.setup_id;
+
+  const { data: machines = [] } = useQuery({
+    queryKey: ['machines', setupId],
+    queryFn: async () => {
+      if (!setupId) return [];
+      const { data, error } = await supabase
+        .from('machines')
+        .select('*')
+        .eq('setup_id', setupId)
+        .order('serial_number');
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!setupId,
+  });
+
+  // Generate slots based on machines (mock: 2 slots per machine)
+  useMemo(() => {
+    if (machines.length > 0 && selectedSpot && visitType) {
+      const slotsPerMachine = 2; // This would come from machine configuration
+      const generatedSlots: SlotEntry[] = [];
+      
+      machines.forEach((machine, machineIndex) => {
+        for (let slotNum = 1; slotNum <= slotsPerMachine; slotNum++) {
+          generatedSlots.push({
+            id: `${machine.id}-slot-${slotNum}`,
+            machineSerialNo: machine.serial_number,
+            slotNumber: slotNum,
+            toyName: toys[machineIndex % toys.length]?.name || "Unassigned",
+            toyId: toys[machineIndex % toys.length]?.id || "",
+            replaceAllToys: false,
+            lastStock: 45, // Would come from last visit
+            unitsSold: 0,
+            unitsRefilled: 0,
+            unitsRemoved: 0,
+            falseCoins: 0,
+            auditedCount: null,
+            currentStock: 45,
+            pricePerUnit: 1,
+            jamStatus: "no_jam",
+            capacity: 95,
+            reportIssue: false,
+            issueDescription: "",
+            severity: "",
+            toyCapacity: 0,
+          });
+        }
+      });
+      
+      setSlots(generatedSlots);
+    } else if (!selectedSpot || !visitType) {
+      setSlots([]);
     }
-  };
+  }, [machines, selectedSpot, visitType]);
 
-  const updateSlot = (id: string, field: keyof SlotEntry, value: string | number) => {
-    setSlots(
-      slots.map((slot) => (slot.id === id ? { ...slot, [field]: value } : slot))
-    );
-  };
-
-  const calculateTotals = () => {
-    const totalSold = slots.reduce((sum, slot) => {
-      const sold = slot.previousCount - slot.currentCount + slot.refilled;
-      return sum + Math.max(0, sold);
+  // Calculate totals
+  const totals = useMemo(() => {
+    const totalCashCollected = slots.reduce((sum, slot) => {
+      return sum + (slot.unitsSold * slot.pricePerUnit);
     }, 0);
     
-    const totalRefilled = slots.reduce((sum, slot) => sum + slot.refilled, 0);
+    const totalRefilled = slots.reduce((sum, slot) => sum + slot.unitsRefilled, 0);
     
-    return { totalSold, totalRefilled };
+    return { totalCashCollected, totalRefilled };
+  }, [slots]);
+
+  const updateSlot = (id: string, updates: Partial<SlotEntry>) => {
+    setSlots(prev => prev.map(slot => {
+      if (slot.id !== id) return slot;
+      
+      const updated = { ...slot, ...updates };
+      
+      // Recalculate current stock
+      if (visitType === 'installation') {
+        updated.currentStock = updated.unitsRefilled;
+      } else if (visitType === 'inventory_audit' && updated.auditedCount !== null) {
+        updated.currentStock = updated.auditedCount;
+      } else {
+        updated.currentStock = updated.lastStock - updated.unitsSold + updated.unitsRefilled - updated.unitsRemoved;
+      }
+      
+      return updated;
+    }));
   };
 
   const handleSubmit = () => {
-    if (!selectedMachine) {
-      toast.error("Please select a machine");
+    if (!selectedLocation) {
+      toast.error("Please select a location");
+      return;
+    }
+    if (!selectedSpot) {
+      toast.error("Please select a spot");
+      return;
+    }
+    if (!visitType) {
+      toast.error("Please select a visit type");
+      return;
+    }
+    if (!confirmAccurate) {
+      toast.error("Please confirm the report is accurate");
       return;
     }
     
@@ -104,7 +253,434 @@ export default function NewVisitReport() {
     navigate("/visits");
   };
 
-  const { totalSold, totalRefilled } = calculateTotals();
+  const handleSaveDraft = () => {
+    toast.success("Draft saved successfully!");
+  };
+
+  const getCapacityDisplay = (slot: SlotEntry) => {
+    const percentage = Math.round((slot.currentStock / slot.capacity) * 100);
+    return `${slot.capacity} / ${percentage}% full`;
+  };
+
+  const renderSlotCard = (slot: SlotEntry, index: number) => {
+    const isInstallation = visitType === 'installation';
+    const isAudit = visitType === 'inventory_audit';
+    
+    return (
+      <Card key={slot.id} className="p-4 bg-background border-border">
+        <div className="space-y-4">
+          {/* Header Info */}
+          <div className="flex items-center justify-between border-b border-border pb-3">
+            <div>
+              <p className="text-sm text-muted-foreground">Machine Serial No.</p>
+              <p className="font-semibold text-foreground">{slot.machineSerialNo}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground">Slot #{slot.slotNumber}</p>
+              <p className="font-medium text-foreground">
+                {isInstallation ? "Assign Toy:" : "Toy Name:"} {slot.toyName}
+              </p>
+            </div>
+          </div>
+
+          {/* Installation View */}
+          {isInstallation && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Assign Toy</Label>
+                <Select
+                  value={slot.toyId}
+                  onValueChange={(value) => {
+                    const toy = toys.find(t => t.id === value);
+                    updateSlot(slot.id, { toyId: value, toyName: toy?.name || "" });
+                  }}
+                >
+                  <SelectTrigger className="bg-card">
+                    <SelectValue placeholder="Select toy" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {toys.map((toy) => (
+                      <SelectItem key={toy.id} value={toy.id}>
+                        {toy.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Toy Capacity</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={slot.toyCapacity || ""}
+                  onChange={(e) => updateSlot(slot.id, { 
+                    toyCapacity: parseInt(e.target.value) || 0,
+                    capacity: parseInt(e.target.value) || 0
+                  })}
+                  className="bg-card"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Units Refilled</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={slot.unitsRefilled || ""}
+                  onChange={(e) => updateSlot(slot.id, { unitsRefilled: parseInt(e.target.value) || 0 })}
+                  className="bg-card"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Price/Unit ($)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={slot.pricePerUnit || ""}
+                  onChange={(e) => updateSlot(slot.id, { pricePerUnit: parseFloat(e.target.value) || 0 })}
+                  className="bg-card"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Current Stock</Label>
+                <div className="p-2 bg-muted rounded-md text-foreground font-medium">
+                  {slot.currentStock}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Capacity</Label>
+                <div className="p-2 bg-muted rounded-md text-foreground font-medium">
+                  {getCapacityDisplay(slot)}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Routine Service / Maintenance / Emergency View */}
+          {(visitType === 'routine_service' || visitType === 'maintenance' || visitType === 'emergency') && (
+            <>
+              <div className="flex items-center space-x-2 mb-4">
+                <Checkbox
+                  id={`replace-${slot.id}`}
+                  checked={slot.replaceAllToys}
+                  onCheckedChange={(checked) => updateSlot(slot.id, { replaceAllToys: !!checked })}
+                />
+                <Label htmlFor={`replace-${slot.id}`}>Replace all toys in this slot</Label>
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label>Last Stock</Label>
+                  <div className="p-2 bg-muted rounded-md text-foreground font-medium">
+                    {slot.lastStock}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Units Sold</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={slot.unitsSold || ""}
+                    onChange={(e) => updateSlot(slot.id, { unitsSold: parseInt(e.target.value) || 0 })}
+                    className="bg-card"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Units Refilled</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={slot.unitsRefilled || ""}
+                    onChange={(e) => updateSlot(slot.id, { unitsRefilled: parseInt(e.target.value) || 0 })}
+                    className="bg-card"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Units Removed</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={slot.unitsRemoved || ""}
+                    onChange={(e) => updateSlot(slot.id, { unitsRemoved: parseInt(e.target.value) || 0 })}
+                    className="bg-card"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>False Coins</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={slot.falseCoins || ""}
+                    onChange={(e) => updateSlot(slot.id, { falseCoins: parseInt(e.target.value) || 0 })}
+                    className="bg-card"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Current Stock</Label>
+                  <div className="p-2 bg-muted rounded-md text-foreground font-medium">
+                    {slot.currentStock}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Price/Unit</Label>
+                  <div className="p-2 bg-muted rounded-md text-foreground font-medium">
+                    ${slot.pricePerUnit.toFixed(2)}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Jam Status</Label>
+                  <Select
+                    value={slot.jamStatus}
+                    onValueChange={(value) => updateSlot(slot.id, { jamStatus: value })}
+                  >
+                    <SelectTrigger className="bg-card">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {jamStatusOptions.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <div className="mt-2">
+                <Label>Capacity</Label>
+                <div className="p-2 bg-muted rounded-md text-foreground font-medium w-fit">
+                  {getCapacityDisplay(slot)}
+                </div>
+              </div>
+
+              {/* Issue Reporting */}
+              <div className="border-t border-border pt-4 mt-4">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`issue-${slot.id}`}
+                    checked={slot.reportIssue}
+                    onCheckedChange={(checked) => updateSlot(slot.id, { reportIssue: !!checked })}
+                  />
+                  <Label htmlFor={`issue-${slot.id}`}>Report Issue</Label>
+                </div>
+                
+                {slot.reportIssue && (
+                  <div className="mt-3 space-y-3 pl-6">
+                    <div className="space-y-2">
+                      <Label>Describe the issue...</Label>
+                      <Textarea
+                        placeholder="Enter issue description..."
+                        value={slot.issueDescription}
+                        onChange={(e) => updateSlot(slot.id, { issueDescription: e.target.value })}
+                        className="bg-card"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Severity</Label>
+                      <Select
+                        value={slot.severity}
+                        onValueChange={(value) => updateSlot(slot.id, { severity: value })}
+                      >
+                        <SelectTrigger className="bg-card w-48">
+                          <SelectValue placeholder="Select severity" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {severityOptions.map((option) => (
+                            <SelectItem key={option.id} value={option.id}>
+                              {option.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Inventory Audit View */}
+          {isAudit && (
+            <>
+              <div className="flex items-center space-x-2 mb-4">
+                <Checkbox
+                  id={`replace-${slot.id}`}
+                  checked={slot.replaceAllToys}
+                  onCheckedChange={(checked) => updateSlot(slot.id, { replaceAllToys: !!checked })}
+                />
+                <Label htmlFor={`replace-${slot.id}`}>Replace all toys in this slot</Label>
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label>Last Stock</Label>
+                  <div className="p-2 bg-muted rounded-md text-foreground font-medium">
+                    {slot.lastStock}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Units Sold</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={slot.unitsSold || ""}
+                    onChange={(e) => updateSlot(slot.id, { unitsSold: parseInt(e.target.value) || 0 })}
+                    className="bg-card"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Units Refilled</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={slot.unitsRefilled || ""}
+                    onChange={(e) => updateSlot(slot.id, { unitsRefilled: parseInt(e.target.value) || 0 })}
+                    className="bg-card"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Units Removed</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={slot.unitsRemoved || ""}
+                    onChange={(e) => updateSlot(slot.id, { unitsRemoved: parseInt(e.target.value) || 0 })}
+                    className="bg-card"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>False Coins</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={slot.falseCoins || ""}
+                    onChange={(e) => updateSlot(slot.id, { falseCoins: parseInt(e.target.value) || 0 })}
+                    className="bg-card"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Audited Count (Physical)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="Enter count"
+                    value={slot.auditedCount ?? ""}
+                    onChange={(e) => updateSlot(slot.id, { 
+                      auditedCount: e.target.value ? parseInt(e.target.value) : null 
+                    })}
+                    className="bg-card"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Current Stock</Label>
+                  <div className={cn(
+                    "p-2 rounded-md font-medium",
+                    slot.auditedCount !== null && slot.auditedCount !== (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)
+                      ? "bg-warning/20 text-warning-foreground border border-warning"
+                      : "bg-muted text-foreground"
+                  )}>
+                    {slot.auditedCount !== null ? (
+                      <>
+                        {slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved} / AC: {slot.auditedCount}
+                        {slot.auditedCount !== (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved) && (
+                          <span className="text-xs block">
+                            {slot.auditedCount > (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved) 
+                              ? `+${slot.auditedCount - (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)} surplus`
+                              : `${slot.auditedCount - (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)} shortage`
+                            }
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      slot.currentStock
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Price/Unit</Label>
+                  <div className="p-2 bg-muted rounded-md text-foreground font-medium">
+                    ${slot.pricePerUnit.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div className="space-y-2">
+                  <Label>Jam Status</Label>
+                  <Select
+                    value={slot.jamStatus}
+                    onValueChange={(value) => updateSlot(slot.id, { jamStatus: value })}
+                  >
+                    <SelectTrigger className="bg-card">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {jamStatusOptions.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Capacity</Label>
+                  <div className="p-2 bg-muted rounded-md text-foreground font-medium">
+                    {getCapacityDisplay(slot)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Issue Reporting */}
+              <div className="border-t border-border pt-4 mt-4">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`issue-${slot.id}`}
+                    checked={slot.reportIssue}
+                    onCheckedChange={(checked) => updateSlot(slot.id, { reportIssue: !!checked })}
+                  />
+                  <Label htmlFor={`issue-${slot.id}`}>Report Issue</Label>
+                </div>
+                
+                {slot.reportIssue && (
+                  <div className="mt-3 space-y-3 pl-6">
+                    <div className="space-y-2">
+                      <Label>Describe the issue...</Label>
+                      <Textarea
+                        placeholder="Enter issue description..."
+                        value={slot.issueDescription}
+                        onChange={(e) => updateSlot(slot.id, { issueDescription: e.target.value })}
+                        className="bg-card"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Severity</Label>
+                      <Select
+                        value={slot.severity}
+                        onValueChange={(value) => updateSlot(slot.id, { severity: value })}
+                      >
+                        <SelectTrigger className="bg-card w-48">
+                          <SelectValue placeholder="Select severity" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {severityOptions.map((option) => (
+                            <SelectItem key={option.id} value={option.id}>
+                              {option.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </Card>
+    );
+  };
 
   return (
     <AppLayout
@@ -118,252 +694,232 @@ export default function NewVisitReport() {
       }
     >
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Machine Selection */}
+        {/* Location Details */}
         <Card className="p-6 bg-card border-border">
-          <h3 className="text-lg font-semibold text-foreground mb-4">Machine Details</h3>
+          <h3 className="text-lg font-semibold text-foreground mb-4">Location Details</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="machine">Select Machine</Label>
-              <div className="flex gap-2">
-                <Select value={selectedMachine} onValueChange={setSelectedMachine}>
-                  <SelectTrigger className="bg-background">
-                    <SelectValue placeholder="Choose a machine..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {machines.map((machine) => (
-                      <SelectItem key={machine.id} value={machine.id}>
-                        {machine.id} - {machine.location}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button variant="outline" size="icon" className="shrink-0">
-                  <QrCode className="w-4 h-4" />
-                </Button>
+              <Label htmlFor="location">Location</Label>
+              <Select 
+                value={selectedLocation} 
+                onValueChange={(value) => {
+                  setSelectedLocation(value);
+                  setSelectedSpot("");
+                }}
+              >
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder="Select a location..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.map((location) => (
+                    <SelectItem key={location.id} value={location.id}>
+                      {location.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="spot">Spot</Label>
+              <Select 
+                value={selectedSpot} 
+                onValueChange={setSelectedSpot}
+                disabled={!selectedLocation}
+              >
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder={selectedLocation ? "Select a spot..." : "Select location first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {spots.map((spot) => (
+                    <SelectItem key={spot.id} value={spot.id}>
+                      Spot {spot.spot_number} {spot.setups ? `- ${spot.setups.name}` : "(Empty)"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </Card>
+
+        {/* Visit Details */}
+        <Card className="p-6 bg-card border-border">
+          <h3 className="text-lg font-semibold text-foreground mb-4">Visit Details</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="visitType">Visit Type</Label>
+              <Select value={visitType} onValueChange={setVisitType}>
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder="Select visit type..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {visitTypes.map((type) => (
+                    <SelectItem key={type.id} value={type.id}>
+                      {type.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Visit Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal bg-background",
+                      !visitDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {visitDate ? format(visitDate, "PPP") : "Select date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={visitDate}
+                    onSelect={(date) => date && setVisitDate(date)}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="space-y-2">
+              <Label>Total Cash Collected</Label>
+              <div className="p-3 bg-muted rounded-md text-foreground font-semibold text-lg">
+                ${totals.totalCashCollected.toFixed(2)}
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="meter">Meter Reading</Label>
-              <Input
-                id="meter"
-                type="number"
-                placeholder="Enter current meter reading"
-                value={meterReading}
-                onChange={(e) => setMeterReading(e.target.value)}
-                className="bg-background"
-              />
+              <Label>Total Toys Refilled</Label>
+              <div className="p-3 bg-muted rounded-md text-foreground font-semibold text-lg">
+                {totals.totalRefilled} units
+              </div>
             </div>
           </div>
         </Card>
 
         {/* Slot Inventory */}
+        {selectedSpot && visitType && (
+          <Card className="p-6 bg-card border-border">
+            <h3 className="text-lg font-semibold text-foreground mb-4">
+              Slot Inventory
+              {slots.length > 0 && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  ({slots.length} slots)
+                </span>
+              )}
+            </h3>
+            
+            {slots.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No machines found in this setup.</p>
+                <p className="text-sm">Please ensure machines are assigned to this spot's setup.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {slots.map((slot, index) => renderSlotCard(slot, index))}
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Observations */}
         <Card className="p-6 bg-card border-border">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-foreground">Slot Inventory</h3>
-            <Button variant="outline" size="sm" onClick={addSlot} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Add Slot
-            </Button>
+          <h3 className="text-lg font-semibold text-foreground mb-4">Observations</h3>
+          
+          <div className="flex items-center space-x-2 mb-4">
+            <Checkbox
+              id="observation-issue"
+              checked={hasObservationIssue}
+              onCheckedChange={(checked) => setHasObservationIssue(!!checked)}
+            />
+            <Label htmlFor="observation-issue">Log an issue about this visit</Label>
           </div>
           
-          <div className="space-y-4">
-            {slots.map((slot, index) => (
-              <div key={slot.id} className="p-4 rounded-lg bg-background border border-border">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-muted-foreground">Slot {index + 1}</span>
-                  {slots.length > 1 && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                      onClick={() => removeSlot(slot.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="space-y-2">
-                    <Label>Product</Label>
-                    <Select
-                      value={slot.product}
-                      onValueChange={(value) => updateSlot(slot.id, "product", value)}
-                    >
-                      <SelectTrigger className="bg-card">
-                        <SelectValue placeholder="Select product" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {products.map((product) => (
-                          <SelectItem key={product.id} value={product.id}>
-                            {product.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Previous Count</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      value={slot.previousCount || ""}
-                      onChange={(e) =>
-                        updateSlot(slot.id, "previousCount", parseInt(e.target.value) || 0)
-                      }
-                      className="bg-card"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Current Count</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      value={slot.currentCount || ""}
-                      onChange={(e) =>
-                        updateSlot(slot.id, "currentCount", parseInt(e.target.value) || 0)
-                      }
-                      className="bg-card"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Refilled</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      value={slot.refilled || ""}
-                      onChange={(e) =>
-                        updateSlot(slot.id, "refilled", parseInt(e.target.value) || 0)
-                      }
-                      className="bg-card"
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Totals */}
-          <div className="mt-4 p-4 rounded-lg bg-primary/5 border border-primary/20">
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-medium text-foreground">Summary</span>
-              <div className="flex gap-6 text-sm">
-                <span className="text-foreground">
-                  <strong>{totalSold}</strong> units sold
-                </span>
-                <span className="text-foreground">
-                  <strong>{totalRefilled}</strong> units refilled
-                </span>
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* Cash Collection */}
-        <Card className="p-6 bg-card border-border">
-          <h3 className="text-lg font-semibold text-foreground mb-4">Cash Collection</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="cash">Cash Collected ($)</Label>
-              <Input
-                id="cash"
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={cashCollected}
-                onChange={(e) => setCashCollected(e.target.value)}
-                className="bg-background text-lg font-semibold"
-              />
-            </div>
-          </div>
-        </Card>
-
-        {/* Photo Evidence */}
-        <Card className="p-6 bg-card border-border">
-          <h3 className="text-lg font-semibold text-foreground mb-4">Photo Evidence</h3>
-          <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
-            <Camera className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-            <p className="text-muted-foreground mb-2">Click to capture or upload machine photo</p>
-            <p className="text-xs text-muted-foreground">Required for visit verification</p>
-          </div>
-        </Card>
-
-        {/* Issue Reporting */}
-        <Card className="p-6 bg-card border-border">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-foreground">Issue Reporting</h3>
-            <Button
-              variant={issueReported ? "destructive" : "outline"}
-              size="sm"
-              onClick={() => setIssueReported(!issueReported)}
-              className="gap-2"
-            >
-              <AlertCircle className="w-4 h-4" />
-              {issueReported ? "Issue Reported" : "Report Issue"}
-            </Button>
-          </div>
-
-          {issueReported && (
-            <div className="space-y-4">
+          {hasObservationIssue && (
+            <div className="space-y-4 pl-6 border-l-2 border-warning">
               <div className="space-y-2">
-                <Label>Issue Description</Label>
+                <Label>Issue Log</Label>
                 <Textarea
-                  placeholder="Describe the issue..."
-                  value={issueDescription}
-                  onChange={(e) => setIssueDescription(e.target.value)}
+                  placeholder="Describe any issues about the setup or machines..."
+                  value={observationIssueLog}
+                  onChange={(e) => setObservationIssueLog(e.target.value)}
                   className="bg-background"
+                  rows={4}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Fixed on site?</Label>
-                <div className="flex gap-3">
-                  <Button
-                    variant={fixedOnSite === true ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setFixedOnSite(true)}
-                    className="gap-2"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    Yes, Fixed
-                  </Button>
-                  <Button
-                    variant={fixedOnSite === false ? "destructive" : "outline"}
-                    size="sm"
-                    onClick={() => setFixedOnSite(false)}
-                    className="gap-2"
-                  >
-                    <AlertCircle className="w-4 h-4" />
-                    No, Needs Follow-up
-                  </Button>
-                </div>
-                {fixedOnSite === false && (
-                  <p className="text-sm text-destructive mt-2">
-                    ⚠️ A high-priority maintenance ticket will be created
-                  </p>
-                )}
+                <Label>Severity</Label>
+                <Select value={observationSeverity} onValueChange={setObservationSeverity}>
+                  <SelectTrigger className="bg-background w-48">
+                    <SelectValue placeholder="Select severity" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {severityOptions.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Attach Image (Optional)</Label>
+                <Button variant="outline" className="gap-2">
+                  <ImagePlus className="w-4 h-4" />
+                  Upload Image
+                </Button>
               </div>
             </div>
           )}
         </Card>
 
-        {/* Notes */}
+        {/* Photo & Sign Off */}
         <Card className="p-6 bg-card border-border">
-          <h3 className="text-lg font-semibold text-foreground mb-4">Additional Notes</h3>
-          <Textarea
-            placeholder="Any additional observations or comments..."
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            className="bg-background"
-            rows={4}
-          />
+          <h3 className="text-lg font-semibold text-foreground mb-4">Photo & Sign Off</h3>
+          
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Label>Visit Photo</Label>
+              <div className="flex gap-3">
+                <Button variant="outline" className="gap-2">
+                  <Camera className="w-4 h-4" />
+                  Take Photo
+                </Button>
+                <Button variant="outline" className="gap-2">
+                  <Upload className="w-4 h-4" />
+                  Upload
+                </Button>
+              </div>
+            </div>
+            
+            <div className="flex items-start space-x-3 p-4 bg-muted rounded-lg">
+              <Checkbox
+                id="confirm-accurate"
+                checked={confirmAccurate}
+                onCheckedChange={(checked) => setConfirmAccurate(!!checked)}
+              />
+              <div className="space-y-1">
+                <Label htmlFor="confirm-accurate" className="text-base font-medium cursor-pointer">
+                  I confirm that this report is accurate
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  By checking this box, I attest that all information entered in this report is accurate to the best of my knowledge.
+                </p>
+              </div>
+            </div>
+          </div>
         </Card>
 
-        {/* Submit */}
+        {/* Action Buttons */}
         <div className="flex justify-end gap-4 pb-6">
-          <Button variant="outline" onClick={() => navigate("/visits")}>
-            Cancel
+          <Button variant="outline" onClick={handleSaveDraft} className="gap-2">
+            <Save className="w-4 h-4" />
+            Save Draft
           </Button>
           <Button onClick={handleSubmit} className="gap-2">
-            <Save className="w-4 h-4" />
             Submit Report
           </Button>
         </div>
