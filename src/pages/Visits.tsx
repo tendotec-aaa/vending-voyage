@@ -2,7 +2,6 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { 
   Table, 
   TableBody, 
@@ -11,70 +10,109 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { Plus, Search, Filter, Eye, RotateCcw } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Plus, Eye, RotateCcw, CalendarIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import { DateRange } from "react-day-picker";
 
 const visits = [
   {
     id: "VR-2024-001",
     date: "2024-01-10",
-    machine: "VM-001",
     location: "Westfield Mall - Food Court",
+    spot: "Spot 1",
     driver: "John Smith",
-    status: "completed",
     revenue: "$127.50",
-    unitsRefilled: 45,
+    refilled: 45,
+    capacity: 60,
   },
   {
     id: "VR-2024-002",
     date: "2024-01-10",
-    machine: "VM-023",
-    location: "Central Station - Platform 3",
+    location: "Central Station",
+    spot: "Spot 3",
     driver: "Sarah Johnson",
-    status: "completed",
     revenue: "$89.25",
-    unitsRefilled: 32,
+    refilled: 32,
+    capacity: 50,
   },
   {
     id: "VR-2024-003",
     date: "2024-01-10",
-    machine: "VM-045",
     location: "Tech Park Building A",
+    spot: "Spot 2",
     driver: "Mike Davis",
-    status: "in_progress",
     revenue: "$156.00",
-    unitsRefilled: 28,
+    refilled: 28,
+    capacity: 40,
   },
   {
     id: "VR-2024-004",
     date: "2024-01-09",
-    machine: "VM-012",
     location: "University Library",
+    spot: "Spot 1",
     driver: "Emily Chen",
-    status: "completed",
     revenue: "$67.75",
-    unitsRefilled: 22,
+    refilled: 22,
+    capacity: 30,
   },
   {
     id: "VR-2024-005",
     date: "2024-01-09",
-    machine: "VM-089",
     location: "Airport Terminal 2",
+    spot: "Spot 5",
     driver: "John Smith",
-    status: "pending_review",
     revenue: "$234.00",
-    unitsRefilled: 56,
+    refilled: 56,
+    capacity: 80,
   },
 ];
 
-const statusConfig = {
-  completed: { label: "Completed", variant: "default" as const },
-  in_progress: { label: "In Progress", variant: "secondary" as const },
-  pending_review: { label: "Pending Review", variant: "outline" as const },
-};
+const locations = [
+  "Westfield Mall - Food Court",
+  "Central Station",
+  "Tech Park Building A",
+  "University Library",
+  "Airport Terminal 2",
+];
+
+const spots = ["Spot 1", "Spot 2", "Spot 3", "Spot 4", "Spot 5"];
 
 export default function VisitsPage() {
   const navigate = useNavigate();
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [selectedLocation, setSelectedLocation] = useState<string>("all");
+  const [selectedSpot, setSelectedSpot] = useState<string>("all");
+
+  const filteredVisits = visits.filter((visit) => {
+    if (selectedLocation !== "all" && visit.location !== selectedLocation) {
+      return false;
+    }
+    if (selectedSpot !== "all" && visit.spot !== selectedSpot) {
+      return false;
+    }
+    if (dateRange?.from) {
+      const visitDate = new Date(visit.date);
+      if (visitDate < dateRange.from) return false;
+      if (dateRange.to && visitDate > dateRange.to) return false;
+    }
+    return true;
+  });
 
   return (
     <AppLayout
@@ -89,18 +127,87 @@ export default function VisitsPage() {
     >
       {/* Filters */}
       <Card className="p-4 mb-6 bg-card border-border">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input 
-              placeholder="Search visits..." 
-              className="pl-10 bg-background"
-            />
-          </div>
-          <Button variant="outline" className="gap-2">
-            <Filter className="w-4 h-4" />
-            Filters
-          </Button>
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Date Range Picker */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  "justify-start text-left font-normal min-w-[280px]",
+                  !dateRange && "text-muted-foreground"
+                )}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {dateRange?.from ? (
+                  dateRange.to ? (
+                    <>
+                      {format(dateRange.from, "LLL dd, y")} -{" "}
+                      {format(dateRange.to, "LLL dd, y")}
+                    </>
+                  ) : (
+                    format(dateRange.from, "LLL dd, y")
+                  )
+                ) : (
+                  <span>Select date range</span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                initialFocus
+                mode="range"
+                defaultMonth={dateRange?.from}
+                selected={dateRange}
+                onSelect={setDateRange}
+                numberOfMonths={2}
+              />
+            </PopoverContent>
+          </Popover>
+
+          {/* Location Filter */}
+          <Select value={selectedLocation} onValueChange={setSelectedLocation}>
+            <SelectTrigger className="min-w-[200px]">
+              <SelectValue placeholder="All Locations" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((location) => (
+                <SelectItem key={location} value={location}>
+                  {location}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Spot Filter */}
+          <Select value={selectedSpot} onValueChange={setSelectedSpot}>
+            <SelectTrigger className="min-w-[140px]">
+              <SelectValue placeholder="All Spots" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Spots</SelectItem>
+              {spots.map((spot) => (
+                <SelectItem key={spot} value={spot}>
+                  {spot}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Clear Filters */}
+          {(dateRange || selectedLocation !== "all" || selectedSpot !== "all") && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setDateRange(undefined);
+                setSelectedLocation("all");
+                setSelectedSpot("all");
+              }}
+            >
+              Clear filters
+            </Button>
+          )}
         </div>
       </Card>
 
@@ -111,30 +218,26 @@ export default function VisitsPage() {
             <TableRow className="border-border">
               <TableHead className="text-muted-foreground">Report ID</TableHead>
               <TableHead className="text-muted-foreground">Date</TableHead>
-              <TableHead className="text-muted-foreground">Machine</TableHead>
               <TableHead className="text-muted-foreground">Location</TableHead>
+              <TableHead className="text-muted-foreground">Spot</TableHead>
               <TableHead className="text-muted-foreground">Driver</TableHead>
-              <TableHead className="text-muted-foreground">Status</TableHead>
               <TableHead className="text-muted-foreground text-right">Revenue</TableHead>
               <TableHead className="text-muted-foreground text-right">Refilled</TableHead>
+              <TableHead className="text-muted-foreground text-right">Capacity</TableHead>
               <TableHead className="text-muted-foreground w-24">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {visits.map((visit) => (
+            {filteredVisits.map((visit) => (
               <TableRow key={visit.id} className="border-border hover:bg-muted/50">
                 <TableCell className="font-medium text-primary">{visit.id}</TableCell>
                 <TableCell className="text-muted-foreground">{visit.date}</TableCell>
-                <TableCell className="font-medium text-foreground">{visit.machine}</TableCell>
                 <TableCell className="text-foreground truncate max-w-[180px]">{visit.location}</TableCell>
+                <TableCell className="text-foreground">{visit.spot}</TableCell>
                 <TableCell className="text-foreground">{visit.driver}</TableCell>
-                <TableCell>
-                  <Badge variant={statusConfig[visit.status as keyof typeof statusConfig].variant}>
-                    {statusConfig[visit.status as keyof typeof statusConfig].label}
-                  </Badge>
-                </TableCell>
                 <TableCell className="text-right font-medium text-foreground">{visit.revenue}</TableCell>
-                <TableCell className="text-right text-muted-foreground">{visit.unitsRefilled} units</TableCell>
+                <TableCell className="text-right text-muted-foreground">{visit.refilled} units</TableCell>
+                <TableCell className="text-right text-muted-foreground">{visit.capacity} units</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">
                     <Button variant="ghost" size="icon" className="h-8 w-8">
