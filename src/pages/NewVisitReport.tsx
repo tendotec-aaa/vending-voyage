@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -163,7 +163,7 @@ export default function NewVisitReport() {
   });
 
   // Generate slots based on machines (mock: 2 slots per machine)
-  useMemo(() => {
+  useEffect(() => {
     if (machines.length > 0 && selectedSpot && visitType) {
       const slotsPerMachine = 2; // This would come from machine configuration
       const generatedSlots: SlotEntry[] = [];
