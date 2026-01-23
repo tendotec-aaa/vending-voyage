@@ -8,37 +8,34 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Layers, Truck, X, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import type { Database } from "@/integrations/supabase/types";
 
-type Setup = {
-  id: string;
-  name: string;
-  description: string | null;
-  created_at: string;
-  updated_at: string;
-};
+type Setup = Database["public"]["Tables"]["setups"]["Row"];
+type Machine = Database["public"]["Tables"]["machines"]["Row"];
+type SetupType = Database["public"]["Enums"]["setup_type"];
 
-type Machine = {
-  id: string;
-  serial_number: string;
-  model: string | null;
-  status: string | null;
-  setup_id: string | null;
+const setupTypeLabels: Record<SetupType, string> = {
+  single: "Single",
+  double: "Double", 
+  triple: "Triple",
+  quad: "Quad",
+  custom: "Custom",
 };
 
 export default function Setups() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newSetupName, setNewSetupName] = useState("");
-  const [newSetupDescription, setNewSetupDescription] = useState("");
+  const [newSetupType, setNewSetupType] = useState<SetupType>("single");
   const [selectedSetup, setSelectedSetup] = useState<Setup | null>(null);
   const [isManageMachinesOpen, setIsManageMachinesOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch setups
+  // Fetch setups - using correct columns from database
   const { data: setups = [], isLoading: setupsLoading } = useQuery({
     queryKey: ["setups"],
     queryFn: async () => {
@@ -47,11 +44,11 @@ export default function Setups() {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data as Setup[];
+      return data;
     },
   });
 
-  // Fetch all machines
+  // Fetch all machines - using correct columns
   const { data: machines = [] } = useQuery({
     queryKey: ["machines"],
     queryFn: async () => {
@@ -60,24 +57,26 @@ export default function Setups() {
         .select("*")
         .order("serial_number");
       if (error) throw error;
-      return data as Machine[];
+      return data;
     },
   });
 
-  // Create setup mutation
+  // Create setup mutation - uses correct database columns
   const createSetup = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from("setups").insert({
+      const setupData: Database["public"]["Tables"]["setups"]["Insert"] = {
         name: newSetupName.trim(),
-        description: newSetupDescription.trim() || null,
-      });
+        type: newSetupType,
+      };
+      
+      const { error } = await supabase.from("setups").insert(setupData);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["setups"] });
       setIsCreateOpen(false);
       setNewSetupName("");
-      setNewSetupDescription("");
+      setNewSetupType("single");
       toast({ title: "Setup created successfully" });
     },
     onError: (error) => {
@@ -101,12 +100,20 @@ export default function Setups() {
     },
   });
 
-  // Add machine to setup
+  // Add machine to setup - uses setup_id and position_on_setup
   const addMachineToSetup = useMutation({
     mutationFn: async ({ machineId, setupId }: { machineId: string; setupId: string }) => {
+      // Get current max position for this setup
+      const currentMachines = machines.filter(m => m.setup_id === setupId);
+      const maxPosition = currentMachines.reduce((max, m) => Math.max(max, m.position_on_setup || 0), 0);
+      
       const { error } = await supabase
         .from("machines")
-        .update({ setup_id: setupId })
+        .update({ 
+          setup_id: setupId,
+          position_on_setup: maxPosition + 1,
+          status: 'deployed' as const
+        })
         .eq("id", machineId);
       if (error) throw error;
     },
@@ -124,7 +131,11 @@ export default function Setups() {
     mutationFn: async (machineId: string) => {
       const { error } = await supabase
         .from("machines")
-        .update({ setup_id: null })
+        .update({ 
+          setup_id: null,
+          position_on_setup: null,
+          status: 'in_warehouse' as const
+        })
         .eq("id", machineId);
       if (error) throw error;
     },
@@ -139,15 +150,14 @@ export default function Setups() {
 
   const filteredSetups = setups.filter(
     (setup) =>
-      setup.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      setup.description?.toLowerCase().includes(searchQuery.toLowerCase())
+      setup.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const getMachinesForSetup = (setupId: string) =>
-    machines.filter((m) => m.setup_id === setupId);
+    machines.filter((m) => m.setup_id === setupId).sort((a, b) => (a.position_on_setup || 0) - (b.position_on_setup || 0));
 
   const getAvailableMachines = () =>
-    machines.filter((m) => m.setup_id === null);
+    machines.filter((m) => m.setup_id === null && m.status === 'in_warehouse');
 
   return (
     <AppLayout>
@@ -156,7 +166,7 @@ export default function Setups() {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Setups</h1>
-            <p className="text-muted-foreground">Group machines into setups for easier management</p>
+            <p className="text-muted-foreground">Group machines into setups for deployment to spots</p>
           </div>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
@@ -169,7 +179,7 @@ export default function Setups() {
               <DialogHeader>
                 <DialogTitle>Create New Setup</DialogTitle>
                 <DialogDescription>
-                  Create a setup to group multiple machines together.
+                  Create a setup to group multiple machines together for deployment.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -183,13 +193,22 @@ export default function Setups() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="description">Description (optional)</Label>
-                  <Textarea
-                    id="description"
-                    placeholder="Describe this setup..."
-                    value={newSetupDescription}
-                    onChange={(e) => setNewSetupDescription(e.target.value)}
-                  />
+                  <Label htmlFor="type">Setup Type</Label>
+                  <Select value={newSetupType} onValueChange={(v) => setNewSetupType(v as SetupType)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(setupTypeLabels).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Indicates the number of machines typically in this setup
+                  </p>
                 </div>
               </div>
               <DialogFooter>
@@ -240,10 +259,10 @@ export default function Setups() {
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div>
-                        <CardTitle className="text-lg">{setup.name}</CardTitle>
-                        {setup.description && (
-                          <CardDescription className="mt-1">{setup.description}</CardDescription>
-                        )}
+                        <CardTitle className="text-lg">{setup.name || "Unnamed Setup"}</CardTitle>
+                        <CardDescription className="mt-1">
+                          Type: {setupTypeLabels[setup.type || "single"]}
+                        </CardDescription>
                       </div>
                       <Badge variant="secondary">{setupMachines.length} machines</Badge>
                     </div>
@@ -262,6 +281,11 @@ export default function Setups() {
                             <div className="flex items-center gap-2">
                               <Truck className="h-4 w-4 text-muted-foreground" />
                               <span className="text-sm font-medium">{machine.serial_number}</span>
+                              {machine.position_on_setup && (
+                                <Badge variant="outline" className="text-xs">
+                                  Pos {machine.position_on_setup}
+                                </Badge>
+                              )}
                             </div>
                             <Button
                               variant="ghost"
@@ -315,7 +339,7 @@ export default function Setups() {
             <DialogHeader>
               <DialogTitle>Manage Machines - {selectedSetup?.name}</DialogTitle>
               <DialogDescription>
-                Add or remove machines from this setup. Each machine can only belong to one setup.
+                Add or remove machines from this setup. Machines must be in warehouse to be added.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4 max-h-96 overflow-y-auto">
@@ -336,9 +360,9 @@ export default function Setups() {
                             <Truck className="h-4 w-4 text-muted-foreground" />
                             <div>
                               <span className="text-sm font-medium">{machine.serial_number}</span>
-                              {machine.model && (
+                              {machine.position_on_setup && (
                                 <span className="text-xs text-muted-foreground ml-2">
-                                  ({machine.model})
+                                  (Position {machine.position_on_setup})
                                 </span>
                               )}
                             </div>
@@ -358,10 +382,10 @@ export default function Setups() {
 
               {/* Available machines */}
               <div>
-                <h4 className="text-sm font-medium mb-2">Available Machines</h4>
+                <h4 className="text-sm font-medium mb-2">Available Machines (In Warehouse)</h4>
                 {getAvailableMachines().length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    All machines are assigned to setups
+                    No machines available in warehouse
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -374,11 +398,6 @@ export default function Setups() {
                           <Truck className="h-4 w-4 text-muted-foreground" />
                           <div>
                             <span className="text-sm font-medium">{machine.serial_number}</span>
-                            {machine.model && (
-                              <span className="text-xs text-muted-foreground ml-2">
-                                ({machine.model})
-                              </span>
-                            )}
                           </div>
                         </div>
                         <Button
