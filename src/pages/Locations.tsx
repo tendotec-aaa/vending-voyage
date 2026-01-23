@@ -12,44 +12,31 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Plus, MapPin, Search, Layers } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import type { Database } from "@/integrations/supabase/types";
 
-type Location = {
-  id: string;
-  name: string;
-  address: string | null;
-  contact_name: string | null;
-  contact_phone: string | null;
-  spots_count: number;
-  created_at: string;
-};
-
-type LocationSpot = {
-  id: string;
-  location_id: string;
-  spot_number: number;
-  setup_id: string | null;
-};
-
-type Setup = {
-  id: string;
-  name: string;
-};
+type Location = Database["public"]["Tables"]["locations"]["Row"];
+type Spot = Database["public"]["Tables"]["spots"]["Row"];
+type Setup = Database["public"]["Tables"]["setups"]["Row"];
 
 export default function Locations() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   
-  // Form state
+  // Form state - matches database columns
   const [newName, setNewName] = useState("");
   const [newAddress, setNewAddress] = useState("");
-  const [newContactName, setNewContactName] = useState("");
-  const [newContactPhone, setNewContactPhone] = useState("");
-  const [newSpotsCount, setNewSpotsCount] = useState("1");
+  const [newContactPersonName, setNewContactPersonName] = useState("");
+  const [newContactPersonNumber, setNewContactPersonNumber] = useState("");
+  const [newContactPersonEmail, setNewContactPersonEmail] = useState("");
+  const [newTotalSpots, setNewTotalSpots] = useState("1");
+  const [newNegotiationType, setNewNegotiationType] = useState<"fixed_rent" | "commission" | "hybrid">("fixed_rent");
+  const [newRentAmount, setNewRentAmount] = useState("");
+  const [newCommissionPercentage, setNewCommissionPercentage] = useState("");
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch locations
+  // Fetch locations from 'locations' table
   const { data: locations = [], isLoading } = useQuery({
     queryKey: ["locations"],
     queryFn: async () => {
@@ -58,20 +45,20 @@ export default function Locations() {
         .select("*")
         .order("name");
       if (error) throw error;
-      return data as Location[];
+      return data;
     },
   });
 
-  // Fetch all spots
+  // Fetch all spots from 'spots' table (NOT location_spots)
   const { data: spots = [] } = useQuery({
-    queryKey: ["location_spots"],
+    queryKey: ["spots"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("location_spots")
+        .from("spots")
         .select("*")
-        .order("spot_number");
+        .order("name");
       if (error) throw error;
-      return data as LocationSpot[];
+      return data;
     },
   });
 
@@ -81,32 +68,64 @@ export default function Locations() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("setups")
-        .select("id, name")
+        .select("id, name, spot_id")
         .order("name");
       if (error) throw error;
-      return data as Setup[];
+      return data;
     },
   });
 
-  // Create location
+  // Create location mutation - uses correct column names
   const createLocation = useMutation({
     mutationFn: async () => {
-      const spotsNum = parseInt(newSpotsCount, 10);
-      if (isNaN(spotsNum) || spotsNum < 1) {
-        throw new Error("Spots must be at least 1");
+      const totalSpotsNum = parseInt(newTotalSpots, 10);
+      if (isNaN(totalSpotsNum) || totalSpotsNum < 0) {
+        throw new Error("Total spots must be a valid number");
       }
-      const { error } = await supabase.from("locations").insert({
+      
+      const locationData: Database["public"]["Tables"]["locations"]["Insert"] = {
         name: newName.trim(),
         address: newAddress.trim() || null,
-        contact_name: newContactName.trim() || null,
-        contact_phone: newContactPhone.trim() || null,
-        spots_count: spotsNum,
-      });
+        contact_person_name: newContactPersonName.trim() || null,
+        contact_person_number: newContactPersonNumber.trim() || null,
+        contact_person_email: newContactPersonEmail.trim() || null,
+        total_spots: totalSpotsNum,
+        negotiation_type: newNegotiationType,
+        rent_amount: newRentAmount ? parseFloat(newRentAmount) : 0,
+        commission_percentage: newCommissionPercentage ? parseFloat(newCommissionPercentage) : 0,
+      };
+      
+      const { data, error } = await supabase
+        .from("locations")
+        .insert(locationData)
+        .select()
+        .single();
+      
       if (error) throw error;
+      
+      // Auto-create spots for this location based on total_spots
+      if (totalSpotsNum > 0 && data) {
+        const spotsToCreate = Array.from({ length: totalSpotsNum }, (_, i) => ({
+          location_id: data.id,
+          name: `Spot ${i + 1}`,
+          status: 'active' as const,
+        }));
+        
+        const { error: spotsError } = await supabase
+          .from("spots")
+          .insert(spotsToCreate);
+        
+        if (spotsError) {
+          console.error("Error creating spots:", spotsError);
+          // Don't throw - location was created successfully
+        }
+      }
+      
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["locations"] });
-      queryClient.invalidateQueries({ queryKey: ["location_spots"] });
+      queryClient.invalidateQueries({ queryKey: ["spots"] });
       resetForm();
       setIsCreateOpen(false);
       toast({ title: "Location created successfully" });
@@ -124,7 +143,7 @@ export default function Locations() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["locations"] });
-      queryClient.invalidateQueries({ queryKey: ["location_spots"] });
+      queryClient.invalidateQueries({ queryKey: ["spots"] });
       toast({ title: "Location deleted successfully" });
     },
     onError: (error) => {
@@ -132,17 +151,30 @@ export default function Locations() {
     },
   });
 
-  // Assign setup to spot
+  // Assign setup to spot - updates setups.spot_id
   const assignSetupToSpot = useMutation({
     mutationFn: async ({ spotId, setupId }: { spotId: string; setupId: string | null }) => {
-      const { error } = await supabase
-        .from("location_spots")
-        .update({ setup_id: setupId })
-        .eq("id", spotId);
-      if (error) throw error;
+      // First, unassign any setup currently assigned to this spot
+      const { error: unassignError } = await supabase
+        .from("setups")
+        .update({ spot_id: null })
+        .eq("spot_id", spotId);
+      
+      if (unassignError) throw unassignError;
+      
+      // Then assign the new setup if one was selected
+      if (setupId) {
+        const { error: assignError } = await supabase
+          .from("setups")
+          .update({ spot_id: spotId })
+          .eq("id", setupId);
+        
+        if (assignError) throw assignError;
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["location_spots"] });
+      queryClient.invalidateQueries({ queryKey: ["setups"] });
+      queryClient.invalidateQueries({ queryKey: ["spots"] });
       toast({ title: "Spot updated" });
     },
     onError: (error) => {
@@ -153,9 +185,13 @@ export default function Locations() {
   const resetForm = () => {
     setNewName("");
     setNewAddress("");
-    setNewContactName("");
-    setNewContactPhone("");
-    setNewSpotsCount("1");
+    setNewContactPersonName("");
+    setNewContactPersonNumber("");
+    setNewContactPersonEmail("");
+    setNewTotalSpots("1");
+    setNewNegotiationType("fixed_rent");
+    setNewRentAmount("");
+    setNewCommissionPercentage("");
   };
 
   const filteredLocations = locations.filter(
@@ -165,18 +201,19 @@ export default function Locations() {
   );
 
   const getSpotsForLocation = (locationId: string) =>
-    spots.filter((s) => s.location_id === locationId).sort((a, b) => a.spot_number - b.spot_number);
+    spots.filter((s) => s.location_id === locationId).sort((a, b) => a.name.localeCompare(b.name));
 
-  const getOccupiedCount = (locationId: string) =>
-    spots.filter((s) => s.location_id === locationId && s.setup_id !== null).length;
+  const getSetupForSpot = (spotId: string) =>
+    setups.find((s) => s.spot_id === spotId);
 
-  // Get setups that are already assigned to any spot
-  const getAssignedSetupIds = () => new Set(spots.filter((s) => s.setup_id).map((s) => s.setup_id));
-
-  const getSetupName = (setupId: string | null) => {
-    if (!setupId) return null;
-    return setups.find((s) => s.id === setupId)?.name || "Unknown Setup";
+  const getOccupiedCount = (locationId: string) => {
+    const locationSpots = spots.filter((s) => s.location_id === locationId);
+    return locationSpots.filter((spot) => setups.some((setup) => setup.spot_id === spot.id)).length;
   };
+
+  // Get setups that are not assigned to any spot
+  const getAvailableSetups = (currentSpotId?: string) => 
+    setups.filter((s) => !s.spot_id || s.spot_id === currentSpotId);
 
   return (
     <AppLayout>
@@ -194,14 +231,14 @@ export default function Locations() {
                 New Location
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>Create New Location</DialogTitle>
                 <DialogDescription>
                   Add a new venue with available spots for setups.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
+              <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
                 <div className="space-y-2">
                   <Label htmlFor="name">Name *</Label>
                   <Input
@@ -222,33 +259,85 @@ export default function Locations() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="contact_name">Contact Name</Label>
+                    <Label htmlFor="contact_person_name">Contact Name</Label>
                     <Input
-                      id="contact_name"
+                      id="contact_person_name"
                       placeholder="John Doe"
-                      value={newContactName}
-                      onChange={(e) => setNewContactName(e.target.value)}
+                      value={newContactPersonName}
+                      onChange={(e) => setNewContactPersonName(e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="contact_phone">Contact Phone</Label>
+                    <Label htmlFor="contact_person_number">Contact Phone</Label>
                     <Input
-                      id="contact_phone"
+                      id="contact_person_number"
                       placeholder="+1 555-1234"
-                      value={newContactPhone}
-                      onChange={(e) => setNewContactPhone(e.target.value)}
+                      value={newContactPersonNumber}
+                      onChange={(e) => setNewContactPersonNumber(e.target.value)}
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="spots_count">Number of Spots *</Label>
+                  <Label htmlFor="contact_person_email">Contact Email</Label>
                   <Input
-                    id="spots_count"
+                    id="contact_person_email"
+                    type="email"
+                    placeholder="contact@example.com"
+                    value={newContactPersonEmail}
+                    onChange={(e) => setNewContactPersonEmail(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="negotiation_type">Negotiation Type</Label>
+                  <Select value={newNegotiationType} onValueChange={(v) => setNewNegotiationType(v as typeof newNegotiationType)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fixed_rent">Fixed Rent</SelectItem>
+                      <SelectItem value="commission">Commission</SelectItem>
+                      <SelectItem value="hybrid">Hybrid</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(newNegotiationType === "fixed_rent" || newNegotiationType === "hybrid") && (
+                  <div className="space-y-2">
+                    <Label htmlFor="rent_amount">Rent Amount</Label>
+                    <Input
+                      id="rent_amount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={newRentAmount}
+                      onChange={(e) => setNewRentAmount(e.target.value)}
+                    />
+                  </div>
+                )}
+                {(newNegotiationType === "commission" || newNegotiationType === "hybrid") && (
+                  <div className="space-y-2">
+                    <Label htmlFor="commission_percentage">Commission Percentage</Label>
+                    <Input
+                      id="commission_percentage"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={newCommissionPercentage}
+                      onChange={(e) => setNewCommissionPercentage(e.target.value)}
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="total_spots">Number of Spots *</Label>
+                  <Input
+                    id="total_spots"
                     type="number"
-                    min="1"
+                    min="0"
                     placeholder="8"
-                    value={newSpotsCount}
-                    onChange={(e) => setNewSpotsCount(e.target.value)}
+                    value={newTotalSpots}
+                    onChange={(e) => setNewTotalSpots(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
                     This determines how many setups can be placed at this location.
@@ -261,7 +350,7 @@ export default function Locations() {
                 </Button>
                 <Button
                   onClick={() => createLocation.mutate()}
-                  disabled={!newName.trim() || !newSpotsCount || createLocation.isPending}
+                  disabled={!newName.trim() || createLocation.isPending}
                 >
                   Create Location
                 </Button>
@@ -297,9 +386,9 @@ export default function Locations() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredLocations.map((location) => {
-              const occupied = getOccupiedCount(location.id);
               const locationSpots = getSpotsForLocation(location.id);
-              const assignedSetupIds = getAssignedSetupIds();
+              const occupied = getOccupiedCount(location.id);
+              const totalSpots = location.total_spots || locationSpots.length;
 
               return (
                 <Card key={location.id}>
@@ -314,82 +403,83 @@ export default function Locations() {
                           <CardDescription className="mt-1">{location.address}</CardDescription>
                         )}
                       </div>
-                      <Badge variant={occupied === location.spots_count ? "default" : "secondary"}>
-                        {occupied}/{location.spots_count} spots
+                      <Badge variant={occupied === totalSpots ? "default" : "secondary"}>
+                        {occupied}/{totalSpots} spots
                       </Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {/* Contact info */}
-                    {(location.contact_name || location.contact_phone) && (
+                    {(location.contact_person_name || location.contact_person_number) && (
                       <div className="text-sm text-muted-foreground">
-                        {location.contact_name && <p>{location.contact_name}</p>}
-                        {location.contact_phone && <p>{location.contact_phone}</p>}
+                        {location.contact_person_name && <p>{location.contact_person_name}</p>}
+                        {location.contact_person_number && <p>{location.contact_person_number}</p>}
                       </div>
                     )}
 
                     {/* Spots Accordion */}
-                    <Accordion type="single" collapsible className="w-full">
-                      {locationSpots.map((spot) => {
-                        const availableSetups = setups.filter(
-                          (s) => !assignedSetupIds.has(s.id) || s.id === spot.setup_id
-                        );
+                    {locationSpots.length > 0 && (
+                      <Accordion type="single" collapsible className="w-full">
+                        {locationSpots.map((spot) => {
+                          const assignedSetup = getSetupForSpot(spot.id);
+                          const availableSetups = getAvailableSetups(spot.id);
 
-                        return (
-                          <AccordionItem key={spot.id} value={spot.id}>
-                            <AccordionTrigger className="py-2">
-                              <div className="flex items-center gap-3">
-                                <div
-                                  className={`w-8 h-8 rounded flex items-center justify-center text-xs font-medium border ${
-                                    spot.setup_id
-                                      ? "bg-primary text-primary-foreground border-primary"
-                                      : "bg-muted text-muted-foreground border-border"
-                                  }`}
-                                >
-                                  {spot.spot_number}
+                          return (
+                            <AccordionItem key={spot.id} value={spot.id}>
+                              <AccordionTrigger className="py-2">
+                                <div className="flex items-center gap-3">
+                                  <div
+                                    className={`w-8 h-8 rounded flex items-center justify-center text-xs font-medium border ${
+                                      assignedSetup
+                                        ? "bg-primary text-primary-foreground border-primary"
+                                        : "bg-muted text-muted-foreground border-border"
+                                    }`}
+                                  >
+                                    <Layers className="h-4 w-4" />
+                                  </div>
+                                  <span className="text-sm">
+                                    {spot.name}: {assignedSetup ? assignedSetup.name : "Empty"}
+                                  </span>
                                 </div>
-                                <span className="text-sm">
-                                  {spot.setup_id ? getSetupName(spot.setup_id) : "Empty"}
-                                </span>
-                              </div>
-                            </AccordionTrigger>
-                            <AccordionContent>
-                              <div className="pt-2 pb-1">
-                                <Label className="text-xs text-muted-foreground mb-2 block">
-                                  Assign Setup
-                                </Label>
-                                <Select
-                                  value={spot.setup_id || "empty"}
-                                  onValueChange={(value) =>
-                                    assignSetupToSpot.mutate({
-                                      spotId: spot.id,
-                                      setupId: value === "empty" ? null : value,
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select a setup" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="empty">
-                                      <span className="text-muted-foreground">Empty</span>
-                                    </SelectItem>
-                                    {availableSetups.map((setup) => (
-                                      <SelectItem key={setup.id} value={setup.id}>
-                                        <span className="flex items-center gap-2">
-                                          <Layers className="h-4 w-4" />
-                                          {setup.name}
-                                        </span>
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <div className="pt-2 pb-1">
+                                  <Label className="text-xs text-muted-foreground mb-2 block">
+                                    Assign Setup
+                                  </Label>
+                                  <Select
+                                    value={assignedSetup?.id || "empty"}
+                                    onValueChange={(value) =>
+                                      assignSetupToSpot.mutate({
+                                        spotId: spot.id,
+                                        setupId: value === "empty" ? null : value,
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select a setup" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="empty">
+                                        <span className="text-muted-foreground">Empty</span>
                                       </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </AccordionContent>
-                          </AccordionItem>
-                        );
-                      })}
-                    </Accordion>
+                                      {availableSetups.map((setup) => (
+                                        <SelectItem key={setup.id} value={setup.id}>
+                                          <span className="flex items-center gap-2">
+                                            <Layers className="h-4 w-4" />
+                                            {setup.name}
+                                          </span>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </AccordionContent>
+                            </AccordionItem>
+                          );
+                        })}
+                      </Accordion>
+                    )}
 
                     {/* Delete Action */}
                     <Button

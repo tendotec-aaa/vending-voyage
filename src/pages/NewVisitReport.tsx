@@ -33,15 +33,24 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { Database } from "@/integrations/supabase/types";
 
-// Visit types
+type Location = Database["public"]["Tables"]["locations"]["Row"];
+type Spot = Database["public"]["Tables"]["spots"]["Row"];
+type Setup = Database["public"]["Tables"]["setups"]["Row"];
+type Machine = Database["public"]["Tables"]["machines"]["Row"];
+type MachineSlot = Database["public"]["Tables"]["machine_slots"]["Row"];
+type ItemDefinition = Database["public"]["Tables"]["item_definitions"]["Row"];
+type VisitActionType = Database["public"]["Enums"]["visit_action_type"];
+
+// Visit types - maps to visit_action_type enum where applicable
 const visitTypes = [
-  { id: "installation", name: "Installation" },
-  { id: "routine_service", name: "Routine Service" },
-  { id: "inventory_audit", name: "Inventory Audit" },
-  { id: "maintenance", name: "Maintenance" },
-  { id: "emergency", name: "Emergency" },
+  { id: "installation", name: "Installation", actionType: "restock" as VisitActionType },
+  { id: "routine_service", name: "Routine Service", actionType: "collection" as VisitActionType },
+  { id: "inventory_audit", name: "Inventory Audit", actionType: "collection" as VisitActionType },
+  { id: "maintenance", name: "Maintenance", actionType: "service" as VisitActionType },
+  { id: "emergency", name: "Emergency", actionType: "service" as VisitActionType },
 ];
 
 // Jam status options
@@ -59,18 +68,11 @@ const severityOptions = [
   { id: "high", name: "High" },
 ];
 
-// Mock toys data (to be replaced with real data)
-const toys = [
-  { id: "TOY-001", name: "Plush Bear Collection" },
-  { id: "TOY-002", name: "Capsule Figures Series A" },
-  { id: "TOY-003", name: "Keychain Buddies" },
-  { id: "TOY-004", name: "Mini Vehicles Pack" },
-  { id: "TOY-005", name: "Bouncy Balls Premium" },
-];
-
 interface SlotEntry {
   id: string;
+  machineId: string;
   machineSerialNo: string;
+  slotId: string;
   slotNumber: number;
   toyName: string;
   toyId: string;
@@ -90,10 +92,12 @@ interface SlotEntry {
   severity: string;
   // Installation specific
   toyCapacity: number;
+  cashCollected: number;
 }
 
 export default function NewVisitReport() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   
   // Location Details state
   const [selectedLocation, setSelectedLocation] = useState("");
@@ -127,79 +131,124 @@ export default function NewVisitReport() {
     },
   });
 
-  // Fetch spots for selected location
+  // Fetch spots for selected location (from 'spots' table, NOT 'location_spots')
   const { data: spots = [] } = useQuery({
-    queryKey: ['location-spots', selectedLocation],
+    queryKey: ['spots', selectedLocation],
     queryFn: async () => {
       if (!selectedLocation) return [];
       const { data, error } = await supabase
-        .from('location_spots')
-        .select('*, setups(*)')
+        .from('spots')
+        .select('*')
         .eq('location_id', selectedLocation)
-        .order('spot_number');
+        .eq('status', 'active')
+        .order('name');
       if (error) throw error;
       return data;
     },
     enabled: !!selectedLocation,
   });
 
-  // Fetch machines for selected spot's setup
-  const selectedSpotData = spots.find(s => s.id === selectedSpot);
-  const setupId = selectedSpotData?.setup_id;
-
-  const { data: machines = [] } = useQuery({
-    queryKey: ['machines', setupId],
+  // Fetch setup for selected spot
+  const { data: spotSetup } = useQuery({
+    queryKey: ['setup-for-spot', selectedSpot],
     queryFn: async () => {
-      if (!setupId) return [];
+      if (!selectedSpot) return null;
+      const { data, error } = await supabase
+        .from('setups')
+        .select('*')
+        .eq('spot_id', selectedSpot)
+        .single();
+      if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows
+      return data;
+    },
+    enabled: !!selectedSpot,
+  });
+
+  // Fetch machines for the setup
+  const { data: machines = [] } = useQuery({
+    queryKey: ['machines-for-setup', spotSetup?.id],
+    queryFn: async () => {
+      if (!spotSetup?.id) return [];
       const { data, error } = await supabase
         .from('machines')
         .select('*')
-        .eq('setup_id', setupId)
-        .order('serial_number');
+        .eq('setup_id', spotSetup.id)
+        .order('position_on_setup');
       if (error) throw error;
       return data;
     },
-    enabled: !!setupId,
+    enabled: !!spotSetup?.id,
   });
 
-  // Generate slots based on machines (mock: 2 slots per machine)
+  // Fetch machine slots for all machines
+  const { data: machineSlots = [] } = useQuery({
+    queryKey: ['machine-slots', machines.map(m => m.id)],
+    queryFn: async () => {
+      if (machines.length === 0) return [];
+      const { data, error } = await supabase
+        .from('machine_slots')
+        .select('*')
+        .in('machine_id', machines.map(m => m.id))
+        .order('slot_number');
+      if (error) throw error;
+      return data;
+    },
+    enabled: machines.length > 0,
+  });
+
+  // Fetch products (merchandise type items)
+  const { data: products = [] } = useQuery({
+    queryKey: ['products'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('item_definitions')
+        .select('*')
+        .eq('type', 'merchandise')
+        .order('name');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Generate slots based on actual machine_slots from database
   useEffect(() => {
-    if (machines.length > 0 && selectedSpot && visitType) {
-      const slotsPerMachine = 2; // This would come from machine configuration
-      const generatedSlots: SlotEntry[] = [];
-      
-      machines.forEach((machine, machineIndex) => {
-        for (let slotNum = 1; slotNum <= slotsPerMachine; slotNum++) {
-          generatedSlots.push({
-            id: `${machine.id}-slot-${slotNum}`,
-            machineSerialNo: machine.serial_number,
-            slotNumber: slotNum,
-            toyName: toys[machineIndex % toys.length]?.name || "Unassigned",
-            toyId: toys[machineIndex % toys.length]?.id || "",
-            replaceAllToys: false,
-            lastStock: 45, // Would come from last visit
-            unitsSold: 0,
-            unitsRefilled: 0,
-            unitsRemoved: 0,
-            falseCoins: 0,
-            auditedCount: null,
-            currentStock: 45,
-            pricePerUnit: 1,
-            jamStatus: "no_jam",
-            capacity: 95,
-            reportIssue: false,
-            issueDescription: "",
-            severity: "",
-            toyCapacity: 0,
-          });
-        }
+    if (machineSlots.length > 0 && selectedSpot && visitType) {
+      const generatedSlots: SlotEntry[] = machineSlots.map((slot) => {
+        const machine = machines.find(m => m.id === slot.machine_id);
+        const product = products.find(p => p.id === slot.current_product_id);
+        
+        return {
+          id: slot.id,
+          machineId: slot.machine_id || '',
+          machineSerialNo: machine?.serial_number || 'Unknown',
+          slotId: slot.id,
+          slotNumber: slot.slot_number,
+          toyName: product?.name || "Unassigned",
+          toyId: slot.current_product_id || "",
+          replaceAllToys: false,
+          lastStock: slot.current_stock || 0, // From database
+          unitsSold: 0,
+          unitsRefilled: 0,
+          unitsRemoved: 0,
+          falseCoins: 0,
+          auditedCount: null,
+          currentStock: slot.current_stock || 0,
+          pricePerUnit: Number(slot.coin_acceptor) || 1,
+          jamStatus: "no_jam",
+          capacity: slot.capacity || 150,
+          reportIssue: false,
+          issueDescription: "",
+          severity: "",
+          toyCapacity: slot.capacity || 0,
+          cashCollected: 0,
+        };
       });
       
       setSlots(generatedSlots);
     } else if (!selectedSpot || !visitType) {
       setSlots([]);
     }
-  }, [machines, selectedSpot, visitType]);
+  }, [machineSlots, machines, products, selectedSpot, visitType]);
 
   // Calculate totals
   const totals = useMemo(() => {
@@ -227,9 +276,72 @@ export default function NewVisitReport() {
         updated.currentStock = updated.lastStock - updated.unitsSold + updated.unitsRefilled - updated.unitsRemoved;
       }
       
+      // Calculate cash collected
+      updated.cashCollected = updated.unitsSold * updated.pricePerUnit;
+      
       return updated;
     }));
   };
+
+  // Submit visit report mutation
+  const submitVisitReport = useMutation({
+    mutationFn: async () => {
+      const visitTypeData = visitTypes.find(t => t.id === visitType);
+      
+      // Create spot_visit record
+      const { data: visitData, error: visitError } = await supabase
+        .from('spot_visits')
+        .insert({
+          spot_id: selectedSpot,
+          visit_date: visitDate.toISOString(),
+          total_cash_collected: totals.totalCashCollected,
+          notes: hasObservationIssue ? `${observationSeverity}: ${observationIssueLog}` : null,
+          status: hasObservationIssue ? 'flagged' : 'completed',
+        })
+        .select()
+        .single();
+      
+      if (visitError) throw visitError;
+      
+      // Create visit_line_items for each slot
+      const lineItems = slots.map(slot => ({
+        spot_visit_id: visitData.id,
+        machine_id: slot.machineId,
+        slot_id: slot.slotId,
+        product_id: slot.toyId || null,
+        action_type: visitTypeData?.actionType || 'collection',
+        quantity_added: slot.unitsRefilled,
+        quantity_removed: slot.unitsRemoved,
+        cash_collected: slot.cashCollected,
+        meter_reading: slot.auditedCount,
+      }));
+      
+      const { error: lineItemsError } = await supabase
+        .from('visit_line_items')
+        .insert(lineItems);
+      
+      if (lineItemsError) throw lineItemsError;
+      
+      // Update machine_slots with new current_stock values
+      for (const slot of slots) {
+        await supabase
+          .from('machine_slots')
+          .update({ current_stock: slot.currentStock })
+          .eq('id', slot.slotId);
+      }
+      
+      return visitData;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spot_visits'] });
+      queryClient.invalidateQueries({ queryKey: ['machine-slots'] });
+      toast.success("Visit report submitted successfully!");
+      navigate("/visits");
+    },
+    onError: (error) => {
+      toast.error(`Error submitting report: ${error.message}`);
+    },
+  });
 
   const handleSubmit = () => {
     if (!selectedLocation) {
@@ -249,8 +361,7 @@ export default function NewVisitReport() {
       return;
     }
     
-    toast.success("Visit report submitted successfully!");
-    navigate("/visits");
+    submitVisitReport.mutate();
   };
 
   const handleSaveDraft = () => {
@@ -258,7 +369,7 @@ export default function NewVisitReport() {
   };
 
   const getCapacityDisplay = (slot: SlotEntry) => {
-    const percentage = Math.round((slot.currentStock / slot.capacity) * 100);
+    const percentage = slot.capacity > 0 ? Math.round((slot.currentStock / slot.capacity) * 100) : 0;
     return `${slot.capacity} / ${percentage}% full`;
   };
 
@@ -291,17 +402,17 @@ export default function NewVisitReport() {
                 <Select
                   value={slot.toyId}
                   onValueChange={(value) => {
-                    const toy = toys.find(t => t.id === value);
-                    updateSlot(slot.id, { toyId: value, toyName: toy?.name || "" });
+                    const product = products.find(p => p.id === value);
+                    updateSlot(slot.id, { toyId: value, toyName: product?.name || "" });
                   }}
                 >
                   <SelectTrigger className="bg-card">
                     <SelectValue placeholder="Select toy" />
                   </SelectTrigger>
                   <SelectContent>
-                    {toys.map((toy) => (
-                      <SelectItem key={toy.id} value={toy.id}>
-                        {toy.name}
+                    {products.map((product) => (
+                      <SelectItem key={product.id} value={product.id}>
+                        {product.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -732,7 +843,7 @@ export default function NewVisitReport() {
                 <SelectContent>
                   {spots.map((spot) => (
                     <SelectItem key={spot.id} value={spot.id}>
-                      Spot {spot.spot_number} {spot.setups ? `- ${spot.setups.name}` : "(Empty)"}
+                      {spot.name} {spot.description ? `- ${spot.description}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -814,8 +925,8 @@ export default function NewVisitReport() {
             
             {slots.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                <p>No machines found in this setup.</p>
-                <p className="text-sm">Please ensure machines are assigned to this spot's setup.</p>
+                <p>No machine slots found for this spot.</p>
+                <p className="text-sm">Please ensure machines with slots are assigned to this spot's setup.</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -914,13 +1025,17 @@ export default function NewVisitReport() {
         </Card>
 
         {/* Action Buttons */}
-        <div className="flex justify-end gap-4 pb-6">
+        <div className="flex justify-end gap-4">
           <Button variant="outline" onClick={handleSaveDraft} className="gap-2">
             <Save className="w-4 h-4" />
             Save Draft
           </Button>
-          <Button onClick={handleSubmit} className="gap-2">
-            Submit Report
+          <Button 
+            onClick={handleSubmit} 
+            disabled={submitVisitReport.isPending}
+            className="gap-2"
+          >
+            {submitVisitReport.isPending ? "Submitting..." : "Submit Report"}
           </Button>
         </div>
       </div>
