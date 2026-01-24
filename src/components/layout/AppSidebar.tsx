@@ -11,7 +11,7 @@ import {
   LogOut,
   Layers
 } from "lucide-react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -24,6 +24,7 @@ import {
   SidebarMenuItem,
   SidebarFooter,
 } from "@/components/ui/sidebar";
+import { useAuth } from "@/hooks/useAuth";
 
 const mainNavItems = [
   { title: "Dashboard", icon: LayoutDashboard, url: "/" },
@@ -45,10 +46,17 @@ const managementItems = [
 
 export function AppSidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
 
   const isActive = (url: string) => {
     if (url === "/") return location.pathname === "/";
     return location.pathname.startsWith(url);
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/login');
   };
 
   return (
@@ -145,10 +153,18 @@ export function AppSidebar() {
             <Users className="w-4 h-4 text-primary" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-sidebar-foreground truncate">Admin User</p>
-            <p className="text-xs text-muted-foreground truncate">admin@vending.io</p>
+            <p className="text-sm font-medium text-sidebar-foreground truncate">
+              {user?.user_metadata?.full_name || 'User'}
+            </p>
+            <p className="text-xs text-muted-foreground truncate">
+              {user?.email || ''}
+            </p>
           </div>
-          <button className="p-2 rounded-lg hover:bg-sidebar-accent/10 transition-colors">
+          <button 
+            onClick={handleSignOut}
+            className="p-2 rounded-lg hover:bg-sidebar-accent/10 transition-colors"
+            title="Sign out"
+          >
             <LogOut className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
