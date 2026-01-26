@@ -209,6 +209,123 @@ export type Database = {
           },
         ]
       }
+      maintenance_tickets: {
+        Row: {
+          cost: number | null
+          created_at: string
+          description: string | null
+          due_date: string | null
+          id: string
+          issue_type: string
+          location_id: string
+          machine_id: string | null
+          priority: Database["public"]["Enums"]["ticket_priority"]
+          product_id: string | null
+          reporter_id: string | null
+          resolved_at: string | null
+          setup_id: string | null
+          slot_id: string | null
+          spot_id: string | null
+          status: Database["public"]["Enums"]["ticket_status"]
+          visit_id: string | null
+        }
+        Insert: {
+          cost?: number | null
+          created_at?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          issue_type: string
+          location_id: string
+          machine_id?: string | null
+          priority?: Database["public"]["Enums"]["ticket_priority"]
+          product_id?: string | null
+          reporter_id?: string | null
+          resolved_at?: string | null
+          setup_id?: string | null
+          slot_id?: string | null
+          spot_id?: string | null
+          status?: Database["public"]["Enums"]["ticket_status"]
+          visit_id?: string | null
+        }
+        Update: {
+          cost?: number | null
+          created_at?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          issue_type?: string
+          location_id?: string
+          machine_id?: string | null
+          priority?: Database["public"]["Enums"]["ticket_priority"]
+          product_id?: string | null
+          reporter_id?: string | null
+          resolved_at?: string | null
+          setup_id?: string | null
+          slot_id?: string | null
+          spot_id?: string | null
+          status?: Database["public"]["Enums"]["ticket_status"]
+          visit_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_tickets_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_tickets_machine_id_fkey"
+            columns: ["machine_id"]
+            isOneToOne: false
+            referencedRelation: "machines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_tickets_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "item_definitions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_tickets_reporter_id_fkey"
+            columns: ["reporter_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_tickets_setup_id_fkey"
+            columns: ["setup_id"]
+            isOneToOne: false
+            referencedRelation: "setups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_tickets_slot_id_fkey"
+            columns: ["slot_id"]
+            isOneToOne: false
+            referencedRelation: "machine_slots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_tickets_spot_id_fkey"
+            columns: ["spot_id"]
+            isOneToOne: false
+            referencedRelation: "spots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_tickets_visit_id_fkey"
+            columns: ["visit_id"]
+            isOneToOne: false
+            referencedRelation: "spot_visits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           active: boolean | null
@@ -657,6 +774,8 @@ export type Database = {
       purchase_type: "local" | "import"
       setup_type: "single" | "double" | "triple" | "quad" | "custom"
       spot_status: "active" | "inactive"
+      ticket_priority: "low" | "medium" | "high" | "urgent"
+      ticket_status: "pending" | "in_progress" | "completed"
       user_role: "admin" | "route_operator" | "warehouse_manager"
       visit_action_type: "restock" | "collection" | "service" | "swap"
       visit_status: "completed" | "flagged"
@@ -801,6 +920,8 @@ export const Constants = {
       purchase_type: ["local", "import"],
       setup_type: ["single", "double", "triple", "quad", "custom"],
       spot_status: ["active", "inactive"],
+      ticket_priority: ["low", "medium", "high", "urgent"],
+      ticket_status: ["pending", "in_progress", "completed"],
       user_role: ["admin", "route_operator", "warehouse_manager"],
       visit_action_type: ["restock", "collection", "service", "swap"],
       visit_status: ["completed", "flagged"],
