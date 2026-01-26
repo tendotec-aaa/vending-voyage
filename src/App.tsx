@@ -14,6 +14,7 @@ import Inventory from "./pages/Inventory";
 import Locations from "./pages/Locations";
 import Analytics from "./pages/Analytics";
 import Maintenance from "./pages/Maintenance";
+import Suppliers from "./pages/Suppliers";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
@@ -44,6 +45,7 @@ const App = () => (
             <Route path="/locations" element={<ProtectedRoute><Locations /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/maintenance" element={<ProtectedRoute><Maintenance /></ProtectedRoute>} />
+            <Route path="/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             
