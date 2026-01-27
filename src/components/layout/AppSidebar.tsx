@@ -10,7 +10,8 @@ import {
   Wrench,
   LogOut,
   Layers,
-  Building2
+  Building2,
+  ShoppingCart
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -41,6 +42,7 @@ const analyticsItems = [
 
 const managementItems = [
   { title: "Maintenance", icon: Wrench, url: "/maintenance" },
+  { title: "Purchases", icon: ShoppingCart, url: "/purchases" },
   { title: "Suppliers", icon: Building2, url: "/suppliers" },
   { title: "Users", icon: Users, url: "/users" },
   { title: "Settings", icon: Settings, url: "/settings" },

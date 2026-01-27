@@ -356,8 +356,76 @@ export type Database = {
         }
         Relationships: []
       }
+      purchase_global_fees: {
+        Row: {
+          amount: number
+          created_at: string | null
+          distribution_method: string
+          fee_name: string
+          id: string
+          purchase_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string | null
+          distribution_method?: string
+          fee_name: string
+          id?: string
+          purchase_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          distribution_method?: string
+          fee_name?: string
+          id?: string
+          purchase_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_global_fees_purchase_id_fkey"
+            columns: ["purchase_id"]
+            isOneToOne: false
+            referencedRelation: "purchases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchase_line_fees: {
+        Row: {
+          amount: number
+          created_at: string | null
+          fee_name: string
+          id: string
+          purchase_line_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string | null
+          fee_name: string
+          id?: string
+          purchase_line_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          fee_name?: string
+          id?: string
+          purchase_line_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_line_fees_purchase_line_id_fkey"
+            columns: ["purchase_line_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_lines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       purchase_lines: {
         Row: {
+          cbm: number | null
           id: string
           item_definition_id: string | null
           purchase_id: string | null
@@ -366,6 +434,7 @@ export type Database = {
           unit_cost: number
         }
         Insert: {
+          cbm?: number | null
           id?: string
           item_definition_id?: string | null
           purchase_id?: string | null
@@ -374,6 +443,7 @@ export type Database = {
           unit_cost: number
         }
         Update: {
+          cbm?: number | null
           id?: string
           item_definition_id?: string | null
           purchase_id?: string | null
@@ -404,33 +474,42 @@ export type Database = {
           currency: string | null
           expected_arrival_date: string | null
           id: string
+          local_tax_rate: number | null
           purchase_order_number: string
           status: Database["public"]["Enums"]["purchase_status"] | null
           supplier_id: string | null
           total_amount: number | null
           type: Database["public"]["Enums"]["purchase_type"] | null
+          warehouse_destination: string | null
+          warehouse_id: string | null
         }
         Insert: {
           created_at?: string | null
           currency?: string | null
           expected_arrival_date?: string | null
           id?: string
+          local_tax_rate?: number | null
           purchase_order_number: string
           status?: Database["public"]["Enums"]["purchase_status"] | null
           supplier_id?: string | null
           total_amount?: number | null
           type?: Database["public"]["Enums"]["purchase_type"] | null
+          warehouse_destination?: string | null
+          warehouse_id?: string | null
         }
         Update: {
           created_at?: string | null
           currency?: string | null
           expected_arrival_date?: string | null
           id?: string
+          local_tax_rate?: number | null
           purchase_order_number?: string
           status?: Database["public"]["Enums"]["purchase_status"] | null
           supplier_id?: string | null
           total_amount?: number | null
           type?: Database["public"]["Enums"]["purchase_type"] | null
+          warehouse_destination?: string | null
+          warehouse_id?: string | null
         }
         Relationships: [
           {
@@ -438,6 +517,13 @@ export type Database = {
             columns: ["supplier_id"]
             isOneToOne: false
             referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchases_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
             referencedColumns: ["id"]
           },
         ]
@@ -719,6 +805,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      warehouses: {
+        Row: {
+          address: string | null
+          created_at: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          address?: string | null
+          created_at?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
       }
     }
     Views: {
