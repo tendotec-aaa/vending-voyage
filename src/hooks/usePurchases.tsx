@@ -1,0 +1,292 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+export type PurchaseStatus = "draft" | "pending" | "in_transit" | "received" | "cancelled";
+export type PurchaseType = "local" | "import";
+export type DistributionMethod = "by_value" | "by_quantity" | "by_cbm";
+
+export interface PurchaseLineItem {
+  id?: string;
+  item_definition_id?: string;
+  quantity_ordered: number;
+  unit_cost: number;
+  cbm?: number;
+  item_name?: string;
+  sku?: string;
+  fees?: { fee_name: string; amount: number }[];
+}
+
+export interface GlobalFee {
+  id?: string;
+  fee_name: string;
+  amount: number;
+  distribution_method: DistributionMethod;
+}
+
+export interface Purchase {
+  id: string;
+  purchase_order_number: string;
+  supplier_id: string | null;
+  status: PurchaseStatus;
+  type: PurchaseType;
+  currency: string;
+  total_amount: number;
+  expected_arrival_date: string | null;
+  created_at: string;
+  warehouse_id: string | null;
+  local_tax_rate: number;
+  supplier?: {
+    id: string;
+    name: string;
+  };
+  warehouse?: {
+    id: string;
+    name: string;
+  };
+  purchase_lines?: {
+    id: string;
+    quantity_ordered: number;
+    unit_cost: number;
+    cbm: number;
+    item_definition?: {
+      id: string;
+      name: string;
+      sku: string;
+    };
+  }[];
+}
+
+export interface CreatePurchaseData {
+  type: PurchaseType;
+  supplier_id: string;
+  warehouse_id?: string;
+  expected_arrival_date?: string;
+  local_tax_rate?: number;
+  currency?: string;
+  line_items: PurchaseLineItem[];
+  global_fees: GlobalFee[];
+  total_amount: number;
+}
+
+export interface Warehouse {
+  id: string;
+  name: string;
+  address?: string;
+}
+
+export function usePurchases() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const purchasesQuery = useQuery({
+    queryKey: ["purchases"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("purchases")
+        .select(`
+          *,
+          supplier:suppliers(id, name),
+          warehouse:warehouses(id, name),
+          purchase_lines(
+            id,
+            quantity_ordered,
+            unit_cost,
+            cbm,
+            item_definition:item_definitions(id, name, sku)
+          )
+        `)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      return data as Purchase[];
+    },
+  });
+
+  const warehousesQuery = useQuery({
+    queryKey: ["warehouses"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("warehouses")
+        .select("*")
+        .order("name");
+
+      if (error) throw error;
+      return data as Warehouse[];
+    },
+  });
+
+  const createWarehouseMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const { data, error } = await supabase
+        .from("warehouses")
+        .insert({ name })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["warehouses"] });
+    },
+  });
+
+  const createPurchaseMutation = useMutation({
+    mutationFn: async (purchaseData: CreatePurchaseData) => {
+      // Generate PO number
+      const poNumber = `PO-${Date.now()}`;
+
+      // Create purchase
+      const { data: purchase, error: purchaseError } = await supabase
+        .from("purchases")
+        .insert({
+          purchase_order_number: poNumber,
+          type: purchaseData.type,
+          supplier_id: purchaseData.supplier_id,
+          warehouse_id: purchaseData.warehouse_id,
+          expected_arrival_date: purchaseData.expected_arrival_date,
+          local_tax_rate: purchaseData.local_tax_rate || 0,
+          currency: purchaseData.currency || "USD",
+          total_amount: purchaseData.total_amount,
+          status: "pending" as PurchaseStatus,
+        })
+        .select()
+        .single();
+
+      if (purchaseError) throw purchaseError;
+
+      // Create line items
+      if (purchaseData.line_items.length > 0) {
+        const lineItems = purchaseData.line_items.map((item) => ({
+          purchase_id: purchase.id,
+          item_definition_id: item.item_definition_id || null,
+          quantity_ordered: item.quantity_ordered,
+          unit_cost: item.unit_cost,
+          cbm: item.cbm || 0,
+        }));
+
+        const { data: createdLines, error: linesError } = await supabase
+          .from("purchase_lines")
+          .insert(lineItems)
+          .select();
+
+        if (linesError) throw linesError;
+
+        // Create line item fees
+        for (let i = 0; i < purchaseData.line_items.length; i++) {
+          const item = purchaseData.line_items[i];
+          if (item.fees && item.fees.length > 0 && createdLines[i]) {
+            const lineFees = item.fees.map((fee) => ({
+              purchase_line_id: createdLines[i].id,
+              fee_name: fee.fee_name,
+              amount: fee.amount,
+            }));
+
+            const { error: feesError } = await supabase
+              .from("purchase_line_fees")
+              .insert(lineFees);
+
+            if (feesError) throw feesError;
+          }
+        }
+      }
+
+      // Create global fees
+      if (purchaseData.global_fees.length > 0) {
+        const globalFees = purchaseData.global_fees.map((fee) => ({
+          purchase_id: purchase.id,
+          fee_name: fee.fee_name,
+          amount: fee.amount,
+          distribution_method: fee.distribution_method,
+        }));
+
+        const { error: globalFeesError } = await supabase
+          .from("purchase_global_fees")
+          .insert(globalFees);
+
+        if (globalFeesError) throw globalFeesError;
+      }
+
+      return purchase;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchases"] });
+      toast({
+        title: "Purchase created",
+        description: "The purchase order has been created successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: `Failed to create purchase: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({
+      id,
+      status,
+    }: {
+      id: string;
+      status: PurchaseStatus;
+    }) => {
+      const { error } = await supabase
+        .from("purchases")
+        .update({ status })
+        .eq("id", id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchases"] });
+      toast({
+        title: "Status updated",
+        description: "The purchase status has been updated.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: `Failed to update status: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deletePurchaseMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("purchases").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchases"] });
+      toast({
+        title: "Purchase deleted",
+        description: "The purchase order has been deleted.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: `Failed to delete purchase: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
+
+  return {
+    purchases: purchasesQuery.data || [],
+    warehouses: warehousesQuery.data || [],
+    isLoading: purchasesQuery.isLoading,
+    isWarehousesLoading: warehousesQuery.isLoading,
+    createPurchase: createPurchaseMutation.mutate,
+    createWarehouse: createWarehouseMutation.mutateAsync,
+    updateStatus: updateStatusMutation.mutate,
+    deletePurchase: deletePurchaseMutation.mutate,
+    isCreating: createPurchaseMutation.isPending,
+  };
+}
