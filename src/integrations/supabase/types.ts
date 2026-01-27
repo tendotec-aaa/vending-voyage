@@ -14,8 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      categories: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       item_definitions: {
         Row: {
+          category_id: string | null
           cost_price: number | null
           created_at: string | null
           description: string | null
@@ -23,9 +42,11 @@ export type Database = {
           name: string
           photo_url: string | null
           sku: string
+          subcategory_id: string | null
           type: Database["public"]["Enums"]["item_type"]
         }
         Insert: {
+          category_id?: string | null
           cost_price?: number | null
           created_at?: string | null
           description?: string | null
@@ -33,9 +54,11 @@ export type Database = {
           name: string
           photo_url?: string | null
           sku: string
+          subcategory_id?: string | null
           type: Database["public"]["Enums"]["item_type"]
         }
         Update: {
+          category_id?: string | null
           cost_price?: number | null
           created_at?: string | null
           description?: string | null
@@ -43,9 +66,25 @@ export type Database = {
           name?: string
           photo_url?: string | null
           sku?: string
+          subcategory_id?: string | null
           type?: Database["public"]["Enums"]["item_type"]
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "item_definitions_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "item_definitions_subcategory_id_fkey"
+            columns: ["subcategory_id"]
+            isOneToOne: false
+            referencedRelation: "subcategories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       locations: {
         Row: {
@@ -645,6 +684,35 @@ export type Database = {
             columns: ["location_id"]
             isOneToOne: false
             referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subcategories: {
+        Row: {
+          category_id: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          category_id: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          category_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subcategories_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
             referencedColumns: ["id"]
           },
         ]
