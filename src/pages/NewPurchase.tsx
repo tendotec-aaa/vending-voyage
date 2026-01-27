@@ -32,8 +32,10 @@ import {
 import { cn } from "@/lib/utils";
 import { usePurchases, type PurchaseLineItem, type GlobalFee, type DistributionMethod } from "@/hooks/usePurchases";
 import { useSuppliers } from "@/hooks/useSuppliers";
+import { useCategories } from "@/hooks/useCategories";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { CreatableCombobox } from "@/components/purchases/CreatableCombobox";
 
 interface LineItemFee {
   fee_name: string;
@@ -44,11 +46,19 @@ interface LineItem extends PurchaseLineItem {
   item_name: string;
   sku: string;
   fees: LineItemFee[];
+  category_id?: string;
+  subcategory_id?: string;
 }
 
 export default function NewPurchase() {
   const navigate = useNavigate();
   const { createPurchase, warehouses, createWarehouse, isCreating } = usePurchases();
+  const {
+    categories,
+    createCategory,
+    createSubcategory,
+    getSubcategoriesByCategory,
+  } = useCategories();
   const { suppliers } = useSuppliers();
 
   // Order details state
@@ -71,13 +81,13 @@ export default function NewPurchase() {
   // Global fees state
   const [globalFees, setGlobalFees] = useState<GlobalFee[]>([]);
 
-  // Fetch products for linking
+  // Fetch products for linking (with category/subcategory)
   const { data: products = [] } = useQuery({
-    queryKey: ["item_definitions"],
+    queryKey: ["item_definitions_with_categories"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("item_definitions")
-        .select("id, name, sku")
+        .select("id, name, sku, category_id, subcategory_id")
         .order("name");
       if (error) throw error;
       return data;
@@ -106,6 +116,21 @@ export default function NewPurchase() {
   const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
     const updated = [...lineItems];
     updated[index] = { ...updated[index], [field]: value };
+    
+    // If linking to an existing product, autopopulate category/subcategory
+    if (field === "item_definition_id" && value) {
+      const product = products.find((p) => p.id === value);
+      if (product) {
+        updated[index].category_id = product.category_id || undefined;
+        updated[index].subcategory_id = product.subcategory_id || undefined;
+      }
+    }
+    
+    // Clear subcategory when category changes
+    if (field === "category_id") {
+      updated[index].subcategory_id = undefined;
+    }
+    
     setLineItems(updated);
   };
 
@@ -445,6 +470,49 @@ export default function NewPurchase() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Category</Label>
+                    <CreatableCombobox
+                      options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                      value={item.category_id}
+                      onChange={(value) => updateLineItem(index, "category_id", value)}
+                      onCreateNew={async (name) => {
+                        const created = await createCategory(name);
+                        return created ? { id: created.id, name: created.name } : undefined;
+                      }}
+                      placeholder="Select category"
+                      searchPlaceholder="Search or create..."
+                      emptyText="No categories found"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Subcategory</Label>
+                    <CreatableCombobox
+                      options={getSubcategoriesByCategory(item.category_id).map((s) => ({
+                        value: s.id,
+                        label: s.name,
+                      }))}
+                      value={item.subcategory_id}
+                      onChange={(value) => updateLineItem(index, "subcategory_id", value)}
+                      onCreateNew={
+                        item.category_id
+                          ? async (name) => {
+                              const created = await createSubcategory({
+                                name,
+                                categoryId: item.category_id!,
+                              });
+                              return created ? { id: created.id, name: created.name } : undefined;
+                            }
+                          : undefined
+                      }
+                      placeholder={item.category_id ? "Select subcategory" : "Select category first"}
+                      searchPlaceholder="Search or create..."
+                      emptyText="No subcategories"
+                      disabled={!item.category_id}
+                    />
                   </div>
 
                   <div className="space-y-2">
