@@ -332,7 +332,7 @@ export type Database = {
             foreignKeyName: "maintenance_tickets_reporter_id_fkey"
             columns: ["reporter_id"]
             isOneToOne: false
-            referencedRelation: "profiles"
+            referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -364,36 +364,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      profiles: {
-        Row: {
-          active: boolean | null
-          created_at: string | null
-          email: string | null
-          full_name: string | null
-          id: string
-          role: Database["public"]["Enums"]["user_role"] | null
-          updated_at: string | null
-        }
-        Insert: {
-          active?: boolean | null
-          created_at?: string | null
-          email?: string | null
-          full_name?: string | null
-          id: string
-          role?: Database["public"]["Enums"]["user_role"] | null
-          updated_at?: string | null
-        }
-        Update: {
-          active?: boolean | null
-          created_at?: string | null
-          email?: string | null
-          full_name?: string | null
-          id?: string
-          role?: Database["public"]["Enums"]["user_role"] | null
-          updated_at?: string | null
-        }
-        Relationships: []
       }
       purchase_global_fees: {
         Row: {
@@ -641,7 +611,7 @@ export type Database = {
             foreignKeyName: "spot_visits_operator_id_fkey"
             columns: ["operator_id"]
             isOneToOne: false
-            referencedRelation: "profiles"
+            referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -747,6 +717,69 @@ export type Database = {
           lead_time_days?: number | null
           name?: string
           tax_id?: string | null
+        }
+        Relationships: []
+      }
+      user_profiles: {
+        Row: {
+          active: boolean | null
+          address: string | null
+          created_at: string | null
+          driver_license_expiry_date: string | null
+          driver_license_type: string | null
+          email: string | null
+          emergency_contact_name: string | null
+          emergency_contact_number: string | null
+          employed_since: string | null
+          first_names: string | null
+          has_driver_license: boolean | null
+          id: string
+          last_names: string | null
+          personal_id_number: string | null
+          phone_number: string | null
+          profile_completed: boolean | null
+          role: Database["public"]["Enums"]["user_role"] | null
+          updated_at: string | null
+        }
+        Insert: {
+          active?: boolean | null
+          address?: string | null
+          created_at?: string | null
+          driver_license_expiry_date?: string | null
+          driver_license_type?: string | null
+          email?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_number?: string | null
+          employed_since?: string | null
+          first_names?: string | null
+          has_driver_license?: boolean | null
+          id: string
+          last_names?: string | null
+          personal_id_number?: string | null
+          phone_number?: string | null
+          profile_completed?: boolean | null
+          role?: Database["public"]["Enums"]["user_role"] | null
+          updated_at?: string | null
+        }
+        Update: {
+          active?: boolean | null
+          address?: string | null
+          created_at?: string | null
+          driver_license_expiry_date?: string | null
+          driver_license_type?: string | null
+          email?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_number?: string | null
+          employed_since?: string | null
+          first_names?: string | null
+          has_driver_license?: boolean | null
+          id?: string
+          last_names?: string | null
+          personal_id_number?: string | null
+          phone_number?: string | null
+          profile_completed?: boolean | null
+          role?: Database["public"]["Enums"]["user_role"] | null
+          updated_at?: string | null
         }
         Relationships: []
       }
