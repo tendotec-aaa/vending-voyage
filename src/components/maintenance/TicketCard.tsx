@@ -109,7 +109,7 @@ export function TicketCard({ ticket, onUpdateStatus, onDelete }: TicketCardProps
             {ticket.reporter && (
               <div className="flex items-center gap-1">
                 <User className="w-3 h-3" />
-                <span>{ticket.reporter.full_name || ticket.reporter.email}</span>
+                <span>{ticket.reporter.first_names && ticket.reporter.last_names ? `${ticket.reporter.first_names} ${ticket.reporter.last_names}` : ticket.reporter.email}</span>
               </div>
             )}
             <div className="flex items-center gap-1">

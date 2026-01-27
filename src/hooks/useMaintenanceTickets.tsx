@@ -29,7 +29,7 @@ export interface MaintenanceTicket {
   machine?: { id: string; serial_number: string } | null;
   setup?: { id: string; name: string } | null;
   product?: { id: string; name: string } | null;
-  reporter?: { id: string; full_name: string; email: string } | null;
+  reporter?: { id: string; first_names: string | null; last_names: string | null; email: string | null } | null;
 }
 
 export interface CreateTicketData {
@@ -58,7 +58,7 @@ export function useMaintenanceTickets() {
           machine:machines(id, serial_number),
           setup:setups(id, name),
           product:item_definitions(id, name),
-          reporter:profiles(id, full_name, email)
+          reporter:user_profiles(id, first_names, last_names, email)
         `)
         .order("created_at", { ascending: false });
 
