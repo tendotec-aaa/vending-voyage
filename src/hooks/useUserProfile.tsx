@@ -93,10 +93,32 @@ export function useUserProfile() {
     mutationFn: async (profileData: UpdateProfileData) => {
       if (!user?.id) throw new Error("Not authenticated");
 
+      // Sanitize data: convert empty strings to null for date fields
+      const sanitizedData: Record<string, unknown> = { ...profileData };
+      
+      // Date fields that should be null instead of empty string
+      const dateFields = ['employed_since', 'driver_license_expiry_date'];
+      dateFields.forEach((field) => {
+        if (sanitizedData[field] === '') {
+          sanitizedData[field] = null;
+        }
+      });
+
+      // Optional string fields that should be null instead of empty string
+      const optionalStringFields = [
+        'personal_id_number', 'phone_number', 'address', 
+        'driver_license_type', 'emergency_contact_name', 'emergency_contact_number'
+      ];
+      optionalStringFields.forEach((field) => {
+        if (sanitizedData[field] === '') {
+          sanitizedData[field] = null;
+        }
+      });
+
       const { data, error } = await supabase
         .from("user_profiles")
         .update({
-          ...profileData,
+          ...sanitizedData,
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id)
