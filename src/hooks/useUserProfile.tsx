@@ -56,6 +56,34 @@ export function useUserProfile() {
         .maybeSingle();
 
       if (error) throw error;
+
+      // If no profile exists yet, create it (this avoids relying on triggers on auth.users)
+      if (!data) {
+        const { error: insertError } = await supabase
+          .from("user_profiles")
+          .insert({
+            id: user.id,
+            email: user.email,
+            active: false,
+            profile_completed: false,
+          });
+
+        // If a profile was created concurrently, ignore duplicate-key errors.
+        // Otherwise, surface the error.
+        if (insertError && insertError.code !== "23505") {
+          throw insertError;
+        }
+
+        const { data: created, error: createdError } = await supabase
+          .from("user_profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (createdError) throw createdError;
+        return created as UserProfile | null;
+      }
+
       return data as UserProfile | null;
     },
     enabled: !!user?.id,
