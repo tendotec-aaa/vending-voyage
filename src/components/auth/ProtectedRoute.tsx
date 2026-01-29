@@ -27,6 +27,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  // If the user doesn't even have a profile row yet (or it's incomplete), force them to /profile
+  if (!profile && location.pathname !== "/profile") {
+    return <Navigate to="/profile" replace />;
+  }
+
   // Redirect to profile if profile not completed (and not already on profile)
   if (profile && !isProfileComplete && location.pathname !== "/profile") {
     return <Navigate to="/profile" replace />;
