@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useAuth } from "@/hooks/useAuth";
-import { Loader2, UserCircle, Car, AlertCircle, Edit2, Save, X } from "lucide-react";
+import { Loader2, UserCircle, Car, AlertCircle, Edit2, Save, X, Clock } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -35,7 +35,7 @@ type ProfileFormData = z.infer<typeof profileSchema>;
 
 export default function UserProfile() {
   const { user } = useAuth();
-  const { profile, isLoading, updateProfile, isProfileComplete } = useUserProfile();
+  const { profile, isLoading, updateProfile, isProfileComplete, isActive } = useUserProfile();
   const [isEditing, setIsEditing] = useState(false);
   
   const [formData, setFormData] = useState<ProfileFormData>({
@@ -151,6 +151,23 @@ export default function UserProfile() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
+      {/* Pending Activation Banner */}
+      {isProfileComplete && !isActive && (
+        <div className="mb-6 p-4 rounded-lg border border-amber-500/30 bg-amber-500/10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-amber-700 dark:text-amber-400">Account Pending Activation</h3>
+              <p className="text-sm text-muted-foreground">
+                Your profile is complete. An administrator will review and activate your account shortly.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
