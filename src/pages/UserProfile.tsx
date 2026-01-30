@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,13 +10,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useAuth } from "@/hooks/useAuth";
-import { Loader2, UserCircle, Car, AlertCircle, Edit2, Save, X, Clock } from "lucide-react";
+import { Loader2, UserCircle, Car, AlertCircle, Edit2, Save, X, Clock, Home } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { CalendarIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { toast } from "sonner";
 
 const profileSchema = z.object({
   first_names: z.string().trim().min(1, "First name is required").max(100),
@@ -35,8 +38,10 @@ type ProfileFormData = z.infer<typeof profileSchema>;
 
 export default function UserProfile() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { profile, isLoading, updateProfile, isProfileComplete, isActive } = useUserProfile();
   const [isEditing, setIsEditing] = useState(false);
+  const prevActiveRef = useRef(isActive);
   
   const [formData, setFormData] = useState<ProfileFormData>({
     first_names: "",
@@ -88,6 +93,15 @@ export default function UserProfile() {
       setIsEditing(true);
     }
   }, [isLoading, isProfileComplete]);
+
+  // Redirect to dashboard when user becomes active
+  useEffect(() => {
+    if (!isLoading && isActive && prevActiveRef.current === false) {
+      toast.success("Your account has been activated! Welcome to the dashboard.");
+      navigate("/");
+    }
+    prevActiveRef.current = isActive;
+  }, [isActive, isLoading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,7 +163,7 @@ export default function UserProfile() {
     );
   }
 
-  return (
+  const profileContent = (
     <div className="p-6 max-w-4xl mx-auto">
       {/* Pending Activation Banner */}
       {isProfileComplete && !isActive && (
@@ -197,12 +211,20 @@ export default function UserProfile() {
                 )}
               </div>
             </div>
-            {isProfileComplete && !isEditing && (
-              <Button variant="outline" onClick={() => setIsEditing(true)}>
-                <Edit2 className="w-4 h-4 mr-2" />
-                Edit Profile
-              </Button>
-            )}
+            <div className="flex items-center gap-3">
+              {isActive && (
+                <Button onClick={() => navigate("/")}>
+                  <Home className="w-4 h-4 mr-2" />
+                  Go to Dashboard
+                </Button>
+              )}
+              {isProfileComplete && !isEditing && (
+                <Button variant="outline" onClick={() => setIsEditing(true)}>
+                  <Edit2 className="w-4 h-4 mr-2" />
+                  Edit Profile
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         
@@ -479,4 +501,11 @@ export default function UserProfile() {
       </Card>
     </div>
   );
+
+  // Wrap in AppLayout for active users to show sidebar navigation
+  if (isActive) {
+    return <AppLayout>{profileContent}</AppLayout>;
+  }
+
+  return profileContent;
 }
