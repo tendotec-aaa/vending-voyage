@@ -11,7 +11,8 @@ import {
   LogOut,
   Layers,
   Building2,
-  ShoppingCart
+  ShoppingCart,
+  Warehouse
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -42,6 +43,7 @@ const analyticsItems = [
 
 const managementItems = [
   { title: "Maintenance", icon: Wrench, url: "/maintenance" },
+  { title: "Warehouse", icon: Warehouse, url: "/warehouse" },
   { title: "Purchases", icon: ShoppingCart, url: "/purchases" },
   { title: "Suppliers", icon: Building2, url: "/suppliers" },
   { title: "Users", icon: Users, url: "/users" },

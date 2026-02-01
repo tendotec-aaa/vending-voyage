@@ -17,6 +17,7 @@ import Maintenance from "./pages/Maintenance";
 import Suppliers from "./pages/Suppliers";
 import Purchases from "./pages/Purchases";
 import NewPurchase from "./pages/NewPurchase";
+import Warehouse from "./pages/Warehouse";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
@@ -53,6 +54,7 @@ const App = () => (
             <Route path="/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
             <Route path="/purchases" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />
             <Route path="/purchases/new" element={<ProtectedRoute><NewPurchase /></ProtectedRoute>} />
+            <Route path="/warehouse" element={<ProtectedRoute><Warehouse /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
