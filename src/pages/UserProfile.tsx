@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useAuth } from "@/hooks/useAuth";
-import { Loader2, UserCircle, Car, AlertCircle, Edit2, Save, X, Clock, Home } from "lucide-react";
+import { Loader2, UserCircle, Car, AlertCircle, Edit2, Save, X, Clock, Home, LogOut } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -37,7 +37,7 @@ const profileSchema = z.object({
 type ProfileFormData = z.infer<typeof profileSchema>;
 
 export default function UserProfile() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const { profile, isLoading, updateProfile, isProfileComplete, isActive } = useUserProfile();
   const [isEditing, setIsEditing] = useState(false);
@@ -222,6 +222,12 @@ export default function UserProfile() {
                 <Button variant="outline" onClick={() => setIsEditing(true)}>
                   <Edit2 className="w-4 h-4 mr-2" />
                   Edit Profile
+                </Button>
+              )}
+              {!isActive && (
+                <Button variant="ghost" onClick={signOut}>
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sign Out
                 </Button>
               )}
             </div>
