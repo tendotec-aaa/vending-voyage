@@ -200,8 +200,10 @@ export type Database = {
           created_at: string | null
           id: string
           model_id: string | null
+          model_type: string | null
           number_of_slots: number | null
           position_on_setup: number | null
+          serial_generation: string | null
           serial_number: string
           setup_id: string | null
           status: Database["public"]["Enums"]["machine_status"] | null
@@ -212,8 +214,10 @@ export type Database = {
           created_at?: string | null
           id?: string
           model_id?: string | null
+          model_type?: string | null
           number_of_slots?: number | null
           position_on_setup?: number | null
+          serial_generation?: string | null
           serial_number: string
           setup_id?: string | null
           status?: Database["public"]["Enums"]["machine_status"] | null
@@ -224,8 +228,10 @@ export type Database = {
           created_at?: string | null
           id?: string
           model_id?: string | null
+          model_type?: string | null
           number_of_slots?: number | null
           position_on_setup?: number | null
+          serial_generation?: string | null
           serial_number?: string
           setup_id?: string | null
           status?: Database["public"]["Enums"]["machine_status"] | null
