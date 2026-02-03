@@ -29,24 +29,39 @@ import {
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
 
-const mainNavItems = [
-  { title: "Dashboard", icon: LayoutDashboard, url: "/" },
-  { title: "Locations", icon: MapPin, url: "/locations" },
-  { title: "Setups", icon: Layers, url: "/setups" },
-  { title: "Spots", icon: Package, url: "/inventory" },
+const dashboardItem = { title: "Dashboard", icon: LayoutDashboard, url: "/" };
+
+const operationsItems = [
   { title: "Visit Reports", icon: ClipboardList, url: "/visits" },
+  { title: "Maintenance", icon: Wrench, url: "/maintenance" },
 ];
 
-const analyticsItems = [
+const assetsItems = [
+  { title: "Warehouse", icon: Warehouse, url: "/warehouse" },
+  { title: "Machines", icon: Truck, url: "/machines" },
+  { title: "Setups", icon: Layers, url: "/setups" },
+];
+
+const supplyChainItems = [
+  { title: "Suppliers", icon: Building2, url: "/suppliers" },
+  { title: "Purchases", icon: ShoppingCart, url: "/purchases" },
+];
+
+const locationsItems = [
+  { title: "Locations", icon: MapPin, url: "/locations" },
+  { title: "Spots", icon: Package, url: "/inventory" },
+];
+
+const insightsItems = [
   { title: "Analytics", icon: BarChart3, url: "/analytics" },
 ];
 
-const managementItems = [
-  { title: "Maintenance", icon: Wrench, url: "/maintenance" },
-  { title: "Warehouse", icon: Warehouse, url: "/warehouse" },
-  { title: "Purchases", icon: ShoppingCart, url: "/purchases" },
-  { title: "Suppliers", icon: Building2, url: "/suppliers" },
+const businessItems = [
   { title: "Users", icon: Users, url: "/users" },
+];
+
+const personalItems = [
+  { title: "Profile", icon: Users, url: "/profile" },
   { title: "Settings", icon: Settings, url: "/settings" },
 ];
 
@@ -80,19 +95,32 @@ export function AppSidebar() {
       </SidebarHeader>
       
       <SidebarContent className="px-3 py-4">
+        {/* Dashboard */}
         <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive(dashboardItem.url)} className="w-full">
+                  <NavLink to={dashboardItem.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                    <dashboardItem.icon className="w-5 h-5" />
+                    <span>{dashboardItem.title}</span>
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Operations */}
+        <SidebarGroup className="mt-4">
           <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
             Operations
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainNavItems.map((item) => (
+              {operationsItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive(item.url)}
-                    className="w-full"
-                  >
+                  <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
                     <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
                       <item.icon className="w-5 h-5" />
                       <span>{item.title}</span>
@@ -104,19 +132,79 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup className="mt-6">
+        {/* Assets & Inventory */}
+        <SidebarGroup className="mt-4">
+          <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+            Assets & Inventory
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {assetsItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
+                    <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                      <item.icon className="w-5 h-5" />
+                      <span>{item.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Supply Chain */}
+        <SidebarGroup className="mt-4">
+          <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+            Supply Chain
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {supplyChainItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
+                    <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                      <item.icon className="w-5 h-5" />
+                      <span>{item.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Locations */}
+        <SidebarGroup className="mt-4">
+          <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+            Locations
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {locationsItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
+                    <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                      <item.icon className="w-5 h-5" />
+                      <span>{item.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Insights */}
+        <SidebarGroup className="mt-4">
           <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
             Insights
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {analyticsItems.map((item) => (
+              {insightsItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive(item.url)}
-                    className="w-full"
-                  >
+                  <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
                     <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
                       <item.icon className="w-5 h-5" />
                       <span>{item.title}</span>
@@ -128,19 +216,37 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup className="mt-6">
+        {/* Business */}
+        <SidebarGroup className="mt-4">
           <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            Management
+            Business
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {managementItems.map((item) => (
+              {businessItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive(item.url)}
-                    className="w-full"
-                  >
+                  <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
+                    <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                      <item.icon className="w-5 h-5" />
+                      <span>{item.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Personal */}
+        <SidebarGroup className="mt-4">
+          <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+            Personal
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {personalItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
                     <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
                       <item.icon className="w-5 h-5" />
                       <span>{item.title}</span>
