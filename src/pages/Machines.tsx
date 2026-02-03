@@ -39,11 +39,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { useCategories } from "@/hooks/useCategories";
 import type { Database } from "@/integrations/supabase/types";
 
 type Machine = Database["public"]["Tables"]["machines"]["Row"];
 type MachineStatus = Database["public"]["Enums"]["machine_status"];
-type ItemDefinition = Database["public"]["Tables"]["item_definitions"]["Row"];
 
 const statusConfig: Record<MachineStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   in_warehouse: { label: "In Warehouse", variant: "secondary" },
@@ -55,14 +55,22 @@ const statusConfig: Record<MachineStatus, { label: string; variant: "default" | 
 export default function MachinesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [newSerialNumber, setNewSerialNumber] = useState("");
-  const [newModelId, setNewModelId] = useState("");
-  const [newNumberOfSlots, setNewNumberOfSlots] = useState("1");
-  const [newCashKey, setNewCashKey] = useState("");
-  const [newToyKey, setNewToyKey] = useState("");
+  
+  // Form state for bulk registration
+  const [serialGeneration, setSerialGeneration] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+  const [selectedModelId, setSelectedModelId] = useState("");
+  const [numberOfUnits, setNumberOfUnits] = useState("1");
+  const [numberOfSlots, setNumberOfSlots] = useState("1");
+  const [cashKey, setCashKey] = useState("");
+  const [toyKey, setToyKey] = useState("");
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { categories } = useCategories();
+
+  // Find "Machines" category for preselection
+  const machinesCategory = categories.find(c => c.name.toLowerCase() === "machines");
 
   // Fetch machines from database
   const { data: machines = [], isLoading } = useQuery({
@@ -77,14 +85,29 @@ export default function MachinesPage() {
     },
   });
 
-  // Fetch machine models (item_definitions with type 'machine_model')
-  const { data: machineModels = [] } = useQuery({
-    queryKey: ["machine-models"],
+  // Fetch item_definitions filtered by category (for models)
+  const { data: models = [] } = useQuery({
+    queryKey: ["item-definitions-by-category", selectedCategoryId],
+    queryFn: async () => {
+      if (!selectedCategoryId) return [];
+      const { data, error } = await supabase
+        .from("item_definitions")
+        .select("*")
+        .eq("category_id", selectedCategoryId)
+        .order("name");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!selectedCategoryId,
+  });
+
+  // Fetch all machine models for display purposes
+  const { data: allModels = [] } = useQuery({
+    queryKey: ["all-item-definitions"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("item_definitions")
         .select("*")
-        .eq("type", "machine_model")
         .order("name");
       if (error) throw error;
       return data;
@@ -103,53 +126,70 @@ export default function MachinesPage() {
     },
   });
 
-  // Create machine mutation
-  const createMachine = useMutation({
+  // Bulk create machines mutation
+  const createMachines = useMutation({
     mutationFn: async () => {
-      const machineData: Database["public"]["Tables"]["machines"]["Insert"] = {
-        serial_number: newSerialNumber.trim(),
-        model_id: newModelId || null,
-        number_of_slots: parseInt(newNumberOfSlots) || 1,
-        cash_key: newCashKey.trim() || null,
-        toy_key: newToyKey.trim() || null,
-        status: 'in_warehouse',
-      };
-      
-      const { data, error } = await supabase
-        .from("machines")
-        .insert(machineData)
-        .select()
-        .single();
-      
-      if (error) throw error;
-      
-      // Auto-create machine slots
-      const slotsNum = parseInt(newNumberOfSlots) || 1;
-      if (slotsNum > 0 && data) {
-        const slotsToCreate = Array.from({ length: slotsNum }, (_, i) => ({
-          machine_id: data.id,
-          slot_number: i + 1,
-        }));
+      const units = parseInt(numberOfUnits) || 1;
+      const slots = parseInt(numberOfSlots) || 1;
+      const createdMachines: Machine[] = [];
+
+      for (let i = 1; i <= units; i++) {
+        // Generate serial number with padded number
+        const paddedNumber = i.toString().padStart(2, '0');
+        const generatedSerial = `${serialGeneration.trim()}-${paddedNumber}`;
+
+        const machineData: Database["public"]["Tables"]["machines"]["Insert"] = {
+          serial_number: generatedSerial,
+          serial_generation: serialGeneration.trim(),
+          model_id: selectedModelId || null,
+          number_of_slots: slots,
+          cash_key: cashKey.trim() || null,
+          toy_key: toyKey.trim() || null,
+          status: 'in_warehouse',
+        };
         
-        const { error: slotsError } = await supabase
-          .from("machine_slots")
-          .insert(slotsToCreate);
+        const { data: machine, error } = await supabase
+          .from("machines")
+          .insert(machineData)
+          .select()
+          .single();
         
-        if (slotsError) {
-          console.error("Error creating machine slots:", slotsError);
+        if (error) throw error;
+        
+        if (machine) {
+          createdMachines.push(machine);
+          
+          // Create machine slots for this machine
+          if (slots > 0) {
+            const slotsToCreate = Array.from({ length: slots }, (_, j) => ({
+              machine_id: machine.id,
+              slot_number: j + 1,
+            }));
+            
+            const { error: slotsError } = await supabase
+              .from("machine_slots")
+              .insert(slotsToCreate);
+            
+            if (slotsError) {
+              console.error("Error creating machine slots:", slotsError);
+            }
+          }
         }
       }
       
-      return data;
+      return createdMachines;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["machines"] });
       setIsCreateOpen(false);
       resetForm();
-      toast({ title: "Machine created successfully" });
+      toast({ 
+        title: "Machines registered successfully",
+        description: `Created ${data.length} machine(s) with serial numbers starting from ${serialGeneration}-01`
+      });
     },
     onError: (error) => {
-      toast({ title: "Error creating machine", description: error.message, variant: "destructive" });
+      toast({ title: "Error registering machines", description: error.message, variant: "destructive" });
     },
   });
 
@@ -172,11 +212,21 @@ export default function MachinesPage() {
   });
 
   const resetForm = () => {
-    setNewSerialNumber("");
-    setNewModelId("");
-    setNewNumberOfSlots("1");
-    setNewCashKey("");
-    setNewToyKey("");
+    setSerialGeneration("");
+    setSelectedCategoryId(machinesCategory?.id || "");
+    setSelectedModelId("");
+    setNumberOfUnits("1");
+    setNumberOfSlots("1");
+    setCashKey("");
+    setToyKey("");
+  };
+
+  // Handle dialog open - preselect "Machines" category
+  const handleDialogOpen = (open: boolean) => {
+    setIsCreateOpen(open);
+    if (open && machinesCategory) {
+      setSelectedCategoryId(machinesCategory.id);
+    }
   };
 
   const filteredMachines = machines.filter(
@@ -186,7 +236,7 @@ export default function MachinesPage() {
 
   const getModelName = (modelId: string | null) => {
     if (!modelId) return "N/A";
-    return machineModels.find((m) => m.id === modelId)?.name || "Unknown";
+    return allModels.find((m) => m.id === modelId)?.name || "Unknown";
   };
 
   const getSetupName = (setupId: string | null) => {
@@ -194,43 +244,89 @@ export default function MachinesPage() {
     return setups.find((s) => s.id === setupId)?.name || "Unknown Setup";
   };
 
+  // Preview generated serial numbers
+  const previewSerials = () => {
+    const units = parseInt(numberOfUnits) || 0;
+    if (!serialGeneration.trim() || units === 0) return [];
+    return Array.from({ length: Math.min(units, 5) }, (_, i) => 
+      `${serialGeneration.trim()}-${(i + 1).toString().padStart(2, '0')}`
+    );
+  };
+
   return (
     <AppLayout
       title="Machines"
       subtitle="Manage your vending machine fleet"
       actions={
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <Dialog open={isCreateOpen} onOpenChange={handleDialogOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2">
               <Plus className="w-4 h-4" />
-              Add Machine
+              Register Machines
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>Add New Machine</DialogTitle>
+              <DialogTitle>Register Machines</DialogTitle>
               <DialogDescription>
-                Register a new machine to your fleet.
+                Bulk register machines from a purchase order. Serial numbers will be auto-generated.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="serial_number">Serial Number *</Label>
-                <Input
-                  id="serial_number"
-                  placeholder="e.g., VM-001"
-                  value={newSerialNumber}
-                  onChange={(e) => setNewSerialNumber(e.target.value)}
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="serial_generation">Serial Generation *</Label>
+                  <Input
+                    id="serial_generation"
+                    placeholder="e.g., AA"
+                    value={serialGeneration}
+                    onChange={(e) => setSerialGeneration(e.target.value.toUpperCase())}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="number_of_units">Number of Units *</Label>
+                  <Input
+                    id="number_of_units"
+                    type="number"
+                    min="1"
+                    placeholder="10"
+                    value={numberOfUnits}
+                    onChange={(e) => setNumberOfUnits(e.target.value)}
+                  />
+                </div>
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="model">Model</Label>
-                <Select value={newModelId} onValueChange={setNewModelId}>
+                <Label htmlFor="category">Category</Label>
+                <Select value={selectedCategoryId} onValueChange={(val) => {
+                  setSelectedCategoryId(val);
+                  setSelectedModelId(""); // Reset model when category changes
+                }}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a model" />
+                    <SelectValue placeholder="Select a category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {machineModels.map((model) => (
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="model">Model</Label>
+                <Select 
+                  value={selectedModelId} 
+                  onValueChange={setSelectedModelId}
+                  disabled={!selectedCategoryId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={selectedCategoryId ? "Select a model" : "Select category first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.map((model) => (
                       <SelectItem key={model.id} value={model.id}>
                         {model.name}
                       </SelectItem>
@@ -238,24 +334,26 @@ export default function MachinesPage() {
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="number_of_slots">Number of Slots</Label>
+                <Label htmlFor="number_of_slots">Number of Slots (per machine)</Label>
                 <Input
                   id="number_of_slots"
                   type="number"
                   min="1"
-                  value={newNumberOfSlots}
-                  onChange={(e) => setNewNumberOfSlots(e.target.value)}
+                  value={numberOfSlots}
+                  onChange={(e) => setNumberOfSlots(e.target.value)}
                 />
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="cash_key">Cash Key</Label>
                   <Input
                     id="cash_key"
                     placeholder="Optional"
-                    value={newCashKey}
-                    onChange={(e) => setNewCashKey(e.target.value)}
+                    value={cashKey}
+                    onChange={(e) => setCashKey(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
@@ -263,21 +361,36 @@ export default function MachinesPage() {
                   <Input
                     id="toy_key"
                     placeholder="Optional"
-                    value={newToyKey}
-                    onChange={(e) => setNewToyKey(e.target.value)}
+                    value={toyKey}
+                    onChange={(e) => setToyKey(e.target.value)}
                   />
                 </div>
               </div>
+
+              {/* Serial number preview */}
+              {serialGeneration && parseInt(numberOfUnits) > 0 && (
+                <div className="p-3 bg-muted rounded-md">
+                  <Label className="text-xs text-muted-foreground">Serial Numbers Preview</Label>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {previewSerials().map((serial) => (
+                      <Badge key={serial} variant="secondary">{serial}</Badge>
+                    ))}
+                    {parseInt(numberOfUnits) > 5 && (
+                      <Badge variant="outline">+{parseInt(numberOfUnits) - 5} more</Badge>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => { setIsCreateOpen(false); resetForm(); }}>
                 Cancel
               </Button>
               <Button
-                onClick={() => createMachine.mutate()}
-                disabled={!newSerialNumber.trim() || createMachine.isPending}
+                onClick={() => createMachines.mutate()}
+                disabled={!serialGeneration.trim() || !numberOfUnits || parseInt(numberOfUnits) < 1 || createMachines.isPending}
               >
-                Add Machine
+                {createMachines.isPending ? "Registering..." : `Register ${numberOfUnits || 0} Machine(s)`}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -309,7 +422,7 @@ export default function MachinesPage() {
           <div className="p-8 text-center text-muted-foreground">Loading machines...</div>
         ) : filteredMachines.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">
-            {searchQuery ? "No machines match your search" : "No machines found. Add your first machine!"}
+            {searchQuery ? "No machines match your search" : "No machines found. Register your first machines!"}
           </div>
         ) : (
           <Table>
