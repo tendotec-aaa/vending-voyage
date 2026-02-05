@@ -57,7 +57,7 @@ export function useMaintenanceTickets() {
           spot:spots(id, name),
           machine:machines(id, serial_number),
           setup:setups(id, name),
-          product:item_definitions(id, name),
+          product:item_details(id, name),
           reporter:user_profiles(id, first_names, last_names, email)
         `)
         .order("created_at", { ascending: false });

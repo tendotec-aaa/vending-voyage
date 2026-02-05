@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { Package, Truck, MapPin, Calendar, DollarSign, MoreVertical, Trash2 } from "lucide-react";
+import { Package, Truck, Calendar, DollarSign, MoreVertical, Trash2, CheckCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,7 @@ export function PurchaseCard({ purchase, onUpdateStatus, onDelete }: PurchaseCar
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const statusInfo = statusConfig[purchase.status];
-  const itemCount = purchase.purchase_lines?.length || 0;
+  const itemCount = purchase.purchase_items?.length || 0;
 
   return (
     <>
@@ -63,6 +63,12 @@ export function PurchaseCard({ purchase, onUpdateStatus, onDelete }: PurchaseCar
                 {purchase.type === "import" ? "Import" : "Local"}
               </Badge>
               <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+              {purchase.received_inventory && (
+                <Badge variant="outline" className="text-green-600 border-green-600">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Received
+                </Badge>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -108,10 +114,6 @@ export function PurchaseCard({ purchase, onUpdateStatus, onDelete }: PurchaseCar
                   ? format(new Date(purchase.expected_arrival_date), "MMM d, yyyy")
                   : format(new Date(purchase.created_at), "MMM d, yyyy")}
               </span>
-            </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <MapPin className="h-4 w-4" />
-              <span>{purchase.warehouse?.name || "No warehouse"}</span>
             </div>
           </div>
           

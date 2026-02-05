@@ -8,7 +8,7 @@ export type DistributionMethod = "by_value" | "by_quantity" | "by_cbm";
 
 export interface PurchaseLineItem {
   id?: string;
-  item_definition_id?: string;
+  item_detail_id?: string;
   quantity_ordered: number;
   unit_cost: number;
   cbm?: number;
@@ -34,22 +34,19 @@ export interface Purchase {
   total_amount: number;
   expected_arrival_date: string | null;
   created_at: string;
-  warehouse_id: string | null;
   local_tax_rate: number;
+  received_inventory: boolean;
+  received_at: string | null;
   supplier?: {
     id: string;
     name: string;
   };
-  warehouse?: {
-    id: string;
-    name: string;
-  };
-  purchase_lines?: {
+  purchase_items?: {
     id: string;
     quantity_ordered: number;
     unit_cost: number;
     cbm: number;
-    item_definition?: {
+    item_detail?: {
       id: string;
       name: string;
       sku: string;
@@ -60,7 +57,6 @@ export interface Purchase {
 export interface CreatePurchaseData {
   type: PurchaseType;
   supplier_id: string;
-  warehouse_id?: string;
   expected_arrival_date?: string;
   local_tax_rate?: number;
   currency?: string;
@@ -87,13 +83,12 @@ export function usePurchases() {
         .select(`
           *,
           supplier:suppliers(id, name),
-          warehouse:warehouses(id, name),
-          purchase_lines(
+          purchase_items(
             id,
             quantity_ordered,
             unit_cost,
             cbm,
-            item_definition:item_definitions(id, name, sku)
+            item_detail:item_details(id, name, sku)
           )
         `)
         .order("created_at", { ascending: false });
@@ -144,30 +139,33 @@ export function usePurchases() {
           purchase_order_number: poNumber,
           type: purchaseData.type,
           supplier_id: purchaseData.supplier_id,
-          warehouse_id: purchaseData.warehouse_id,
           expected_arrival_date: purchaseData.expected_arrival_date,
           local_tax_rate: purchaseData.local_tax_rate || 0,
           currency: purchaseData.currency || "USD",
           total_amount: purchaseData.total_amount,
           status: "pending" as PurchaseStatus,
+          received_inventory: false,
         })
         .select()
         .single();
 
       if (purchaseError) throw purchaseError;
 
-      // Create line items
+      // Create line items (now called purchase_items)
       if (purchaseData.line_items.length > 0) {
-        const lineItems = purchaseData.line_items.map((item) => ({
+        const lineItems = purchaseData.line_items.map((item, index) => ({
           purchase_id: purchase.id,
-          item_definition_id: item.item_definition_id || null,
+          item_detail_id: item.item_detail_id || null,
           quantity_ordered: item.quantity_ordered,
           unit_cost: item.unit_cost,
           cbm: item.cbm || 0,
+          quantity_remaining: item.quantity_ordered,
+          active_item: true,
+          arrival_order: index + 1,
         }));
 
         const { data: createdLines, error: linesError } = await supabase
-          .from("purchase_lines")
+          .from("purchase_items")
           .insert(lineItems)
           .select();
 
@@ -234,9 +232,17 @@ export function usePurchases() {
       id: string;
       status: PurchaseStatus;
     }) => {
+      const updateData: Record<string, unknown> = { status };
+      
+      // If marking as received, also set received_inventory and received_at
+      if (status === "received") {
+        updateData.received_inventory = true;
+        updateData.received_at = new Date().toISOString();
+      }
+      
       const { error } = await supabase
         .from("purchases")
-        .update({ status })
+        .update(updateData)
         .eq("id", id);
 
       if (error) throw error;

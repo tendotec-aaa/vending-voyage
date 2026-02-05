@@ -45,6 +45,14 @@ import type { Database } from "@/integrations/supabase/types";
 type Machine = Database["public"]["Tables"]["machines"]["Row"];
 type MachineStatus = Database["public"]["Enums"]["machine_status"];
 
+interface ItemDetailBasic {
+  id: string;
+  name: string;
+  sku: string;
+  category_id: string | null;
+  subcategory_id: string | null;
+}
+
 const statusConfig: Record<MachineStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   in_warehouse: { label: "In Warehouse", variant: "secondary" },
   deployed: { label: "Deployed", variant: "default" },
@@ -85,32 +93,32 @@ export default function MachinesPage() {
     },
   });
 
-  // Fetch item_definitions filtered by category (for models)
+  // Fetch item_details filtered by category (for models)
   const { data: models = [] } = useQuery({
-    queryKey: ["item-definitions-by-category", selectedCategoryId],
+    queryKey: ["item-details-by-category", selectedCategoryId],
     queryFn: async () => {
       if (!selectedCategoryId) return [];
       const { data, error } = await supabase
-        .from("item_definitions")
-        .select("*")
+        .from("item_details")
+        .select("id, name, sku, category_id, subcategory_id")
         .eq("category_id", selectedCategoryId)
         .order("name");
       if (error) throw error;
-      return data;
+      return (data || []) as ItemDetailBasic[];
     },
     enabled: !!selectedCategoryId,
   });
 
   // Fetch all machine models for display purposes
   const { data: allModels = [] } = useQuery({
-    queryKey: ["all-item-definitions"],
+    queryKey: ["all-item-details"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("item_definitions")
-        .select("*")
+        .from("item_details")
+        .select("id, name, sku, category_id, subcategory_id")
         .order("name");
       if (error) throw error;
-      return data;
+      return (data || []) as ItemDetailBasic[];
     },
   });
 

@@ -32,7 +32,66 @@ export type Database = {
         }
         Relationships: []
       }
-      item_definitions: {
+      inventory: {
+        Row: {
+          id: string
+          item_detail_id: string | null
+          last_updated: string | null
+          quantity_on_hand: number | null
+          slot_id: string | null
+          spot_id: string | null
+          warehouse_id: string | null
+        }
+        Insert: {
+          id?: string
+          item_detail_id?: string | null
+          last_updated?: string | null
+          quantity_on_hand?: number | null
+          slot_id?: string | null
+          spot_id?: string | null
+          warehouse_id?: string | null
+        }
+        Update: {
+          id?: string
+          item_detail_id?: string | null
+          last_updated?: string | null
+          quantity_on_hand?: number | null
+          slot_id?: string | null
+          spot_id?: string | null
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_slot_id_fkey"
+            columns: ["slot_id"]
+            isOneToOne: false
+            referencedRelation: "machine_slots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_spot_id_fkey"
+            columns: ["spot_id"]
+            isOneToOne: false
+            referencedRelation: "spots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "warehouse_inventory_item_definition_id_fkey"
+            columns: ["item_detail_id"]
+            isOneToOne: true
+            referencedRelation: "item_details"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      item_details: {
         Row: {
           category_id: string | null
           cost_price: number | null
@@ -44,6 +103,7 @@ export type Database = {
           sku: string
           subcategory_id: string | null
           type: Database["public"]["Enums"]["item_type"]
+          updated_at: string | null
         }
         Insert: {
           category_id?: string | null
@@ -56,6 +116,7 @@ export type Database = {
           sku: string
           subcategory_id?: string | null
           type: Database["public"]["Enums"]["item_type"]
+          updated_at?: string | null
         }
         Update: {
           category_id?: string | null
@@ -68,6 +129,7 @@ export type Database = {
           sku?: string
           subcategory_id?: string | null
           type?: Database["public"]["Enums"]["item_type"]
+          updated_at?: string | null
         }
         Relationships: [
           {
@@ -182,7 +244,7 @@ export type Database = {
             foreignKeyName: "machine_slots_current_product_id_fkey"
             columns: ["current_product_id"]
             isOneToOne: false
-            referencedRelation: "item_definitions"
+            referencedRelation: "item_details"
             referencedColumns: ["id"]
           },
           {
@@ -242,7 +304,7 @@ export type Database = {
             foreignKeyName: "machines_model_id_fkey"
             columns: ["model_id"]
             isOneToOne: false
-            referencedRelation: "item_definitions"
+            referencedRelation: "item_details"
             referencedColumns: ["id"]
           },
           {
@@ -331,7 +393,7 @@ export type Database = {
             foreignKeyName: "maintenance_tickets_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
-            referencedRelation: "item_definitions"
+            referencedRelation: "item_details"
             referencedColumns: ["id"]
           },
           {
@@ -406,6 +468,88 @@ export type Database = {
           },
         ]
       }
+      purchase_items: {
+        Row: {
+          active_item: boolean | null
+          arrival_order: number | null
+          cbm: number | null
+          created_at: string | null
+          global_fees_allocated: number | null
+          id: string
+          inventory_id: string | null
+          item_detail_id: string | null
+          landed_unit_cost: number | null
+          line_fees_total: number | null
+          purchase_id: string | null
+          quantity_ordered: number
+          quantity_received: number | null
+          quantity_remaining: number | null
+          tax_allocated: number | null
+          unit_cost: number
+          updated_at: string | null
+        }
+        Insert: {
+          active_item?: boolean | null
+          arrival_order?: number | null
+          cbm?: number | null
+          created_at?: string | null
+          global_fees_allocated?: number | null
+          id?: string
+          inventory_id?: string | null
+          item_detail_id?: string | null
+          landed_unit_cost?: number | null
+          line_fees_total?: number | null
+          purchase_id?: string | null
+          quantity_ordered: number
+          quantity_received?: number | null
+          quantity_remaining?: number | null
+          tax_allocated?: number | null
+          unit_cost: number
+          updated_at?: string | null
+        }
+        Update: {
+          active_item?: boolean | null
+          arrival_order?: number | null
+          cbm?: number | null
+          created_at?: string | null
+          global_fees_allocated?: number | null
+          id?: string
+          inventory_id?: string | null
+          item_detail_id?: string | null
+          landed_unit_cost?: number | null
+          line_fees_total?: number | null
+          purchase_id?: string | null
+          quantity_ordered?: number
+          quantity_received?: number | null
+          quantity_remaining?: number | null
+          tax_allocated?: number | null
+          unit_cost?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_items_inventory_id_fkey"
+            columns: ["inventory_id"]
+            isOneToOne: false
+            referencedRelation: "inventory"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_lines_item_definition_id_fkey"
+            columns: ["item_detail_id"]
+            isOneToOne: false
+            referencedRelation: "item_details"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_lines_purchase_id_fkey"
+            columns: ["purchase_id"]
+            isOneToOne: false
+            referencedRelation: "purchases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       purchase_line_fees: {
         Row: {
           amount: number
@@ -433,52 +577,7 @@ export type Database = {
             foreignKeyName: "purchase_line_fees_purchase_line_id_fkey"
             columns: ["purchase_line_id"]
             isOneToOne: false
-            referencedRelation: "purchase_lines"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      purchase_lines: {
-        Row: {
-          cbm: number | null
-          id: string
-          item_definition_id: string | null
-          purchase_id: string | null
-          quantity_ordered: number
-          quantity_received: number | null
-          unit_cost: number
-        }
-        Insert: {
-          cbm?: number | null
-          id?: string
-          item_definition_id?: string | null
-          purchase_id?: string | null
-          quantity_ordered: number
-          quantity_received?: number | null
-          unit_cost: number
-        }
-        Update: {
-          cbm?: number | null
-          id?: string
-          item_definition_id?: string | null
-          purchase_id?: string | null
-          quantity_ordered?: number
-          quantity_received?: number | null
-          unit_cost?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "purchase_lines_item_definition_id_fkey"
-            columns: ["item_definition_id"]
-            isOneToOne: false
-            referencedRelation: "item_definitions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "purchase_lines_purchase_id_fkey"
-            columns: ["purchase_id"]
-            isOneToOne: false
-            referencedRelation: "purchases"
+            referencedRelation: "purchase_items"
             referencedColumns: ["id"]
           },
         ]
@@ -491,12 +590,12 @@ export type Database = {
           id: string
           local_tax_rate: number | null
           purchase_order_number: string
+          received_at: string | null
+          received_inventory: boolean | null
           status: Database["public"]["Enums"]["purchase_status"] | null
           supplier_id: string | null
           total_amount: number | null
           type: Database["public"]["Enums"]["purchase_type"] | null
-          warehouse_destination: string | null
-          warehouse_id: string | null
         }
         Insert: {
           created_at?: string | null
@@ -505,12 +604,12 @@ export type Database = {
           id?: string
           local_tax_rate?: number | null
           purchase_order_number: string
+          received_at?: string | null
+          received_inventory?: boolean | null
           status?: Database["public"]["Enums"]["purchase_status"] | null
           supplier_id?: string | null
           total_amount?: number | null
           type?: Database["public"]["Enums"]["purchase_type"] | null
-          warehouse_destination?: string | null
-          warehouse_id?: string | null
         }
         Update: {
           created_at?: string | null
@@ -519,12 +618,12 @@ export type Database = {
           id?: string
           local_tax_rate?: number | null
           purchase_order_number?: string
+          received_at?: string | null
+          received_inventory?: boolean | null
           status?: Database["public"]["Enums"]["purchase_status"] | null
           supplier_id?: string | null
           total_amount?: number | null
           type?: Database["public"]["Enums"]["purchase_type"] | null
-          warehouse_destination?: string | null
-          warehouse_id?: string | null
         }
         Relationships: [
           {
@@ -532,13 +631,6 @@ export type Database = {
             columns: ["supplier_id"]
             isOneToOne: false
             referencedRelation: "suppliers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "purchases_warehouse_id_fkey"
-            columns: ["warehouse_id"]
-            isOneToOne: false
-            referencedRelation: "warehouses"
             referencedColumns: ["id"]
           },
         ]
@@ -862,7 +954,7 @@ export type Database = {
             foreignKeyName: "visit_line_items_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
-            referencedRelation: "item_definitions"
+            referencedRelation: "item_details"
             referencedColumns: ["id"]
           },
           {
@@ -877,38 +969,6 @@ export type Database = {
             columns: ["spot_visit_id"]
             isOneToOne: false
             referencedRelation: "spot_visits"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      warehouse_inventory: {
-        Row: {
-          average_cost: number | null
-          id: string
-          item_definition_id: string | null
-          last_updated: string | null
-          quantity_on_hand: number | null
-        }
-        Insert: {
-          average_cost?: number | null
-          id?: string
-          item_definition_id?: string | null
-          last_updated?: string | null
-          quantity_on_hand?: number | null
-        }
-        Update: {
-          average_cost?: number | null
-          id?: string
-          item_definition_id?: string | null
-          last_updated?: string | null
-          quantity_on_hand?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "warehouse_inventory_item_definition_id_fkey"
-            columns: ["item_definition_id"]
-            isOneToOne: true
-            referencedRelation: "item_definitions"
             referencedColumns: ["id"]
           },
         ]

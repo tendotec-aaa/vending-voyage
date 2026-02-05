@@ -31,34 +31,36 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { useWarehouseInventory, ItemDefinition } from "@/hooks/useWarehouseInventory";
+import { useWarehouseInventory, ItemDetail } from "@/hooks/useWarehouseInventory";
 import { useCategories } from "@/hooks/useCategories";
+import { usePurchases } from "@/hooks/usePurchases";
 
 export function AddWarehouseItemDialog() {
   const [open, setOpen] = useState(false);
   const [comboboxOpen, setComboboxOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
-  const [selectedItem, setSelectedItem] = useState<ItemDefinition | null>(null);
+  const [selectedItem, setSelectedItem] = useState<ItemDetail | null>(null);
   const [isNewItem, setIsNewItem] = useState(false);
   const [newItemName, setNewItemName] = useState("");
   const [quantity, setQuantity] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [subcategoryId, setSubcategoryId] = useState("");
-  const [unitCost, setUnitCost] = useState("");
+  const [warehouseId, setWarehouseId] = useState("");
 
   const {
-    itemDefinitions,
+    itemDetails,
     addInventory,
-    createItemDefinition,
+    createItemDetail,
     isAdding,
     isCreatingItem,
   } = useWarehouseInventory();
 
+  const { warehouses } = usePurchases();
   const { categories, getSubcategoriesByCategory } = useCategories();
   const filteredSubcategories = getSubcategoriesByCategory(categoryId);
 
   // Filter items based on search
-  const filteredItems = itemDefinitions.filter((item) =>
+  const filteredItems = itemDetails.filter((item) =>
     item.name.toLowerCase().includes(searchValue.toLowerCase())
   );
 
@@ -86,16 +88,15 @@ export function AddWarehouseItemDialog() {
     setQuantity("");
     setCategoryId("");
     setSubcategoryId("");
-    setUnitCost("");
+    setWarehouseId("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const qty = parseInt(quantity);
-    const cost = parseFloat(unitCost);
 
-    if (isNaN(qty) || qty <= 0 || isNaN(cost) || cost < 0) {
+    if (isNaN(qty) || qty <= 0) {
       return;
     }
 
@@ -104,7 +105,7 @@ export function AddWarehouseItemDialog() {
 
       // If creating a new item
       if (isNewItem && newItemName.trim()) {
-        const newItem = await createItemDefinition({
+        const newItem = await createItemDetail({
           name: newItemName.trim(),
           categoryId: categoryId || undefined,
           subcategoryId: subcategoryId || undefined,
@@ -115,9 +116,9 @@ export function AddWarehouseItemDialog() {
       if (!itemId) return;
 
       await addInventory({
-        itemDefinitionId: itemId,
+        itemDetailId: itemId,
         quantity: qty,
-        unitCost: cost,
+        warehouseId: warehouseId || undefined,
       });
 
       resetForm();
@@ -137,8 +138,8 @@ export function AddWarehouseItemDialog() {
   };
 
   const isFormValid = isNewItem
-    ? newItemName.trim() && quantity && unitCost
-    : selectedItem && quantity && unitCost;
+    ? newItemName.trim() && quantity
+    : selectedItem && quantity;
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => {
@@ -153,7 +154,7 @@ export function AddWarehouseItemDialog() {
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Item to Warehouse</DialogTitle>
+          <DialogTitle>Add Item to Inventory</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Item Name Combobox */}
@@ -253,6 +254,23 @@ export function AddWarehouseItemDialog() {
             )}
           </div>
 
+          {/* Warehouse Selection */}
+          <div className="space-y-2">
+            <Label>Warehouse *</Label>
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select warehouse" />
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses.map((warehouse) => (
+                  <SelectItem key={warehouse.id} value={warehouse.id}>
+                    {warehouse.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Quantity */}
           <div className="space-y-2">
             <Label htmlFor="quantity">Quantity *</Label>
@@ -308,20 +326,6 @@ export function AddWarehouseItemDialog() {
             </Select>
           </div>
 
-          {/* Landed Unit Cost */}
-          <div className="space-y-2">
-            <Label htmlFor="unitCost">Landed Unit Cost *</Label>
-            <Input
-              id="unitCost"
-              type="number"
-              min="0"
-              step="0.01"
-              value={unitCost}
-              onChange={(e) => setUnitCost(e.target.value)}
-              placeholder="0.00"
-            />
-          </div>
-
           <div className="flex justify-end gap-2 pt-4">
             <Button
               type="button"
@@ -332,7 +336,7 @@ export function AddWarehouseItemDialog() {
             </Button>
             <Button
               type="submit"
-              disabled={!isFormValid || isAdding || isCreatingItem}
+              disabled={!isFormValid || !warehouseId || isAdding || isCreatingItem}
             >
               {isAdding || isCreatingItem ? "Adding..." : "Add Item"}
             </Button>

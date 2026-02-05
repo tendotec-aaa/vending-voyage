@@ -36,14 +36,14 @@ export default function Warehouse() {
   // Filter inventory based on search and filters
   const filteredInventory = useMemo(() => {
     return inventory.filter((item) => {
-      const itemName = item.item_definition?.name?.toLowerCase() || "";
+      const itemName = item.item_detail?.name?.toLowerCase() || "";
       const matchesSearch = itemName.includes(searchQuery.toLowerCase());
 
-      const itemCategoryId = item.item_definition?.category_id;
+      const itemCategoryId = item.item_detail?.category_id;
       const matchesCategory =
         categoryFilter === "all" || itemCategoryId === categoryFilter;
 
-      const itemSubcategoryId = item.item_definition?.subcategory_id;
+      const itemSubcategoryId = item.item_detail?.subcategory_id;
       const matchesSubcategory =
         subcategoryFilter === "all" || itemSubcategoryId === subcategoryFilter;
 
@@ -54,11 +54,6 @@ export default function Warehouse() {
   // Calculate totals
   const totalItems = filteredInventory.reduce(
     (sum, item) => sum + (item.quantity_on_hand || 0),
-    0
-  );
-  const totalValue = filteredInventory.reduce(
-    (sum, item) =>
-      sum + (item.quantity_on_hand || 0) * (item.average_cost || 0),
     0
   );
 
@@ -79,7 +74,7 @@ export default function Warehouse() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="bg-card border border-border rounded-lg p-4">
             <p className="text-sm text-muted-foreground">Total SKUs</p>
             <p className="text-2xl font-bold text-foreground">
@@ -90,12 +85,6 @@ export default function Warehouse() {
             <p className="text-sm text-muted-foreground">Total Items</p>
             <p className="text-2xl font-bold text-foreground">
               {totalItems.toLocaleString()}
-            </p>
-          </div>
-          <div className="bg-card border border-border rounded-lg p-4">
-            <p className="text-sm text-muted-foreground">Total Value</p>
-            <p className="text-2xl font-bold text-primary">
-              ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </p>
           </div>
         </div>
@@ -165,11 +154,11 @@ export default function Warehouse() {
             {filteredInventory.map((item) => (
               <WarehouseItemCard
                 key={item.id}
-                name={item.item_definition?.name || "Unknown Item"}
+                name={item.item_detail?.name || "Unknown Item"}
                 quantity={item.quantity_on_hand || 0}
-                category={item.item_definition?.category?.name || null}
-                subcategory={item.item_definition?.subcategory?.name || null}
-                unitCost={item.average_cost || 0}
+                category={item.item_detail?.category?.name || null}
+                subcategory={item.item_detail?.subcategory?.name || null}
+                unitCost={0}
               />
             ))}
           </div>
