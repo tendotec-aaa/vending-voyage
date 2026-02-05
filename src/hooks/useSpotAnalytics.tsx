@@ -1,0 +1,232 @@
+ import { useQuery } from "@tanstack/react-query";
+ import { supabase } from "@/integrations/supabase/client";
+ import { differenceInDays, subDays, format } from "date-fns";
+ 
+ export interface SpotAnalytics {
+   id: string;
+   name: string;
+   locationId: string | null;
+   locationName: string;
+   status: string;
+   createdAt: string;
+   totalSales: number;
+   rentAmount: number;
+   netProfit: number;
+   roi: number;
+   currentStock: number;
+   totalCapacity: number;
+   stockPercentage: number;
+   openTickets: number;
+   daysActive: number;
+   visitCount: number;
+   trend: "up" | "down" | "flat";
+   last30DaySales: number;
+   previous30DaySales: number;
+ }
+ 
+ export interface SpotTrendData {
+   date: string;
+   spotId: string;
+   spotName: string;
+   sales: number;
+ }
+ 
+ export function useSpotAnalytics() {
+   return useQuery({
+     queryKey: ["spot-analytics"],
+     queryFn: async (): Promise<SpotAnalytics[]> => {
+       // Fetch spots with locations
+       const { data: spots, error: spotsError } = await supabase
+         .from("spots")
+         .select(`
+           id,
+           name,
+           status,
+           created_at,
+           location_id,
+           locations (
+             id,
+             name,
+             rent_amount
+           )
+         `);
+ 
+       if (spotsError) throw spotsError;
+ 
+       // Fetch all spot visits
+       const { data: visits, error: visitsError } = await supabase
+         .from("spot_visits")
+         .select("id, spot_id, total_cash_collected, visit_date");
+ 
+       if (visitsError) throw visitsError;
+ 
+       // Fetch stock capacity via setups -> machines -> machine_slots
+       const { data: setups, error: setupsError } = await supabase
+         .from("setups")
+         .select(`
+           id,
+           spot_id,
+           machines (
+             id,
+             machine_slots (
+               current_stock,
+               capacity
+             )
+           )
+         `);
+ 
+       if (setupsError) throw setupsError;
+ 
+       // Fetch open maintenance tickets
+       const { data: tickets, error: ticketsError } = await supabase
+         .from("maintenance_tickets")
+         .select("id, spot_id, status")
+         .neq("status", "completed");
+ 
+       if (ticketsError) throw ticketsError;
+ 
+       const now = new Date();
+       const thirtyDaysAgo = subDays(now, 30);
+       const sixtyDaysAgo = subDays(now, 60);
+ 
+       // Process each spot
+       return (spots || []).map((spot: any) => {
+         const location = spot.locations;
+         const spotVisits = (visits || []).filter((v: any) => v.spot_id === spot.id);
+         
+         // Calculate total sales
+         const totalSales = spotVisits.reduce(
+           (sum: number, v: any) => sum + (v.total_cash_collected || 0),
+           0
+         );
+ 
+         // Calculate last 30 days vs previous 30 days
+         const last30DaySales = spotVisits
+           .filter((v: any) => new Date(v.visit_date) >= thirtyDaysAgo)
+           .reduce((sum: number, v: any) => sum + (v.total_cash_collected || 0), 0);
+ 
+         const previous30DaySales = spotVisits
+           .filter((v: any) => {
+             const date = new Date(v.visit_date);
+             return date >= sixtyDaysAgo && date < thirtyDaysAgo;
+           })
+           .reduce((sum: number, v: any) => sum + (v.total_cash_collected || 0), 0);
+ 
+         // Determine trend
+         let trend: "up" | "down" | "flat" = "flat";
+         if (last30DaySales > previous30DaySales * 1.1) trend = "up";
+         else if (last30DaySales < previous30DaySales * 0.9) trend = "down";
+ 
+         // Calculate stock from setups
+         const spotSetups = (setups || []).filter((s: any) => s.spot_id === spot.id);
+         let currentStock = 0;
+         let totalCapacity = 0;
+         spotSetups.forEach((setup: any) => {
+           (setup.machines || []).forEach((machine: any) => {
+             (machine.machine_slots || []).forEach((slot: any) => {
+               currentStock += slot.current_stock || 0;
+               totalCapacity += slot.capacity || 0;
+             });
+           });
+         });
+ 
+         // Calculate open tickets
+         const openTickets = (tickets || []).filter(
+           (t: any) => t.spot_id === spot.id
+         ).length;
+ 
+         // Calculate metrics
+         const rentAmount = location?.rent_amount || 0;
+         const netProfit = totalSales - rentAmount;
+         const roi = rentAmount > 0 ? (netProfit / rentAmount) * 100 : 0;
+         const stockPercentage = totalCapacity > 0 ? (currentStock / totalCapacity) * 100 : 0;
+         const daysActive = differenceInDays(now, new Date(spot.created_at));
+ 
+         return {
+           id: spot.id,
+           name: spot.name,
+           locationId: spot.location_id,
+           locationName: location?.name || "Unassigned",
+           status: spot.status || "active",
+           createdAt: spot.created_at,
+           totalSales,
+           rentAmount,
+           netProfit,
+           roi,
+           currentStock,
+           totalCapacity,
+           stockPercentage,
+           openTickets,
+           daysActive,
+           visitCount: spotVisits.length,
+           trend,
+           last30DaySales,
+           previous30DaySales,
+         };
+       });
+     },
+   });
+ }
+ 
+ export function useSpotTrends(spotIds: string[], timeRange: number = 30) {
+   return useQuery({
+     queryKey: ["spot-trends", spotIds, timeRange],
+     queryFn: async (): Promise<SpotTrendData[]> => {
+       if (spotIds.length === 0) return [];
+ 
+       const startDate = subDays(new Date(), timeRange);
+ 
+       const { data: visits, error } = await supabase
+         .from("spot_visits")
+         .select("spot_id, total_cash_collected, visit_date")
+         .in("spot_id", spotIds)
+         .gte("visit_date", startDate.toISOString());
+ 
+       if (error) throw error;
+ 
+       const { data: spots } = await supabase
+         .from("spots")
+         .select("id, name")
+         .in("id", spotIds);
+ 
+       const spotNameMap = new Map((spots || []).map((s: any) => [s.id, s.name]));
+ 
+       // Group by date and spot
+       const grouped = new Map<string, number>();
+       (visits || []).forEach((v: any) => {
+         const date = format(new Date(v.visit_date), "yyyy-MM-dd");
+         const key = `${date}-${v.spot_id}`;
+         grouped.set(key, (grouped.get(key) || 0) + (v.total_cash_collected || 0));
+       });
+ 
+       const result: SpotTrendData[] = [];
+       grouped.forEach((sales, key) => {
+         const [date, spotId] = key.split("-");
+         result.push({
+           date,
+           spotId,
+           spotName: spotNameMap.get(spotId) || "Unknown",
+           sales,
+         });
+       });
+ 
+       return result.sort((a, b) => a.date.localeCompare(b.date));
+     },
+     enabled: spotIds.length > 0,
+   });
+ }
+ 
+ export function useLocationsForFilter() {
+   return useQuery({
+     queryKey: ["locations-filter"],
+     queryFn: async () => {
+       const { data, error } = await supabase
+         .from("locations")
+         .select("id, name")
+         .order("name");
+ 
+       if (error) throw error;
+       return data || [];
+     },
+   });
+ }

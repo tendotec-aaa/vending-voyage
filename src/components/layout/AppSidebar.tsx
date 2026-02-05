@@ -12,7 +12,9 @@ import {
   Layers,
   Building2,
   ShoppingCart,
-  Warehouse
+   Warehouse,
+   Boxes,
+   Target
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -37,6 +39,7 @@ const operationsItems = [
 ];
 
 const assetsItems = [
+   { title: "Inventory", icon: Boxes, url: "/inventory" },
   { title: "Warehouse", icon: Warehouse, url: "/warehouse" },
   { title: "Machines", icon: Truck, url: "/machines" },
   { title: "Setups", icon: Layers, url: "/setups" },
@@ -49,7 +52,7 @@ const supplyChainItems = [
 
 const locationsItems = [
   { title: "Locations", icon: MapPin, url: "/locations" },
-  { title: "Spots", icon: Package, url: "/inventory" },
+   { title: "Spots", icon: Target, url: "/spots" },
 ];
 
 const insightsItems = [
