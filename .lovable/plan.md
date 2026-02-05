@@ -1,363 +1,263 @@
 
 
-# Database Restructuring Plan: Inventory & Purchase System Overhaul
+# Plan: Separate Inventory Page + New Spots Analytics Dashboard
 
 ## Summary
 
-This plan redesigns the database schema to implement **FIFO (First-In-First-Out) inventory costing**, real-time stock tracking across warehouses and machines, and comprehensive landed cost accounting at the purchase item level.
+This plan involves two main changes:
+1. **Update the current Inventory page** at `/inventory` to connect to real database data showing stock across warehouses and machines
+2. **Create a new Spots Analytics page** at `/spots` with a comprehensive dashboard featuring Leaderboard, Trends, and Alerts tabs
+3. **Update sidebar navigation** to place Inventory above Warehouse in the Assets & Inventory section
 
 ---
 
 ## Current State Analysis
 
-### Tables to Modify
+| Route | Current State |
+|-------|---------------|
+| `/inventory` | Displays mock product inventory table with hardcoded data |
+| `/warehouse` | Shows actual warehouse inventory from database with item cards |
+| Sidebar | "Spots" under Locations section links to `/inventory` (confusing) |
 
-| Current Table | New Name | Key Changes |
-|---------------|----------|-------------|
-| `warehouse_inventory` | `inventory` | Remove `average_cost`, add `warehouse_id`, add `spot_id` for machine tracking |
-| `item_definitions` | `item_details` | Track item movements, link to purchases, store current pricing |
-| `purchases` | `purchases` | Remove `warehouse_id`, `warehouse_destination`, add `received_inventory` boolean |
-| `purchase_lines` | `purchase_items` | Add FIFO costing fields, landed cost breakdown, `active_item` flag, inventory tracking |
+### Data Available for Analytics
 
-### Files That Will Need Updates
-
-| File | Dependencies |
-|------|--------------|
-| `src/hooks/useWarehouseInventory.tsx` | Queries `warehouse_inventory`, `item_definitions` |
-| `src/hooks/usePurchases.tsx` | Queries `purchases`, `purchase_lines`, `warehouses` |
-| `src/pages/Warehouse.tsx` | Uses warehouse inventory hook |
-| `src/pages/NewPurchase.tsx` | Creates purchase orders and line items |
-| `src/pages/Inventory.tsx` | Product inventory display |
-| `src/pages/Machines.tsx` | Uses `item_definitions` for models |
-| `src/pages/NewVisitReport.tsx` | Uses `item_definitions` for products |
-| `src/components/purchases/PurchaseCard.tsx` | Displays purchase lines count |
-| `src/components/warehouse/AddWarehouseItemDialog.tsx` | Inserts into warehouse inventory |
+| Data Source | Metrics Available |
+|-------------|-------------------|
+| `spots` table | Spot name, status, creation date |
+| `locations` table | Location name, rent_amount, commission_percentage |
+| `spot_visits` table | Total cash collected, visit dates per spot |
+| `machine_slots` table | current_stock, capacity per slot |
+| `maintenance_tickets` table | Open tickets linked to spots |
+| `setups` / `machines` | Setup and machine assignments per spot |
 
 ---
 
-## New Database Schema Design
+## Changes Overview
 
-### 1. Rename `item_definitions` to `item_details`
+### 1. Navigation Restructure
 
-This table tracks all items in the system with their current state and links to their purchase history.
+**Sidebar Updates:**
 
-```text
-item_details (renamed from item_definitions)
-├── id (uuid, PK)
-├── sku (text, required)
-├── name (text, required)
-├── type (enum: merchandise, machine, component)
-├── description (text)
-├── photo_url (text)
-├── cost_price (numeric) - current weighted average or latest cost
-├── category_id (uuid, FK -> categories)
-├── subcategory_id (uuid, FK -> subcategories)
-├── created_at (timestamptz)
-└── updated_at (timestamptz, NEW)
-```
+Assets & Inventory section (new order):
+- Inventory -> `/inventory` (existing, updated)
+- Warehouse -> `/warehouse`
+- Machines -> `/machines`
+- Setups -> `/setups`
 
-### 2. Rename `warehouse_inventory` to `inventory`
+Locations section (updated):
+- Locations -> `/locations`
+- Spots -> `/spots` (new analytics page)
 
-Unified inventory tracking across all locations (warehouses and machine spots).
+### 2. Updated Inventory Page (`/inventory`)
 
-```text
-inventory (renamed from warehouse_inventory)
-├── id (uuid, PK)
-├── item_detail_id (uuid, FK -> item_details) - renamed from item_definition_id
-├── quantity_on_hand (integer)
-├── warehouse_id (uuid, FK -> warehouses, nullable) - NEW: for warehouse stock
-├── spot_id (uuid, FK -> spots, nullable) - NEW: for in-machine stock
-├── slot_id (uuid, FK -> machine_slots, nullable) - NEW: specific slot tracking
-├── last_updated (timestamptz)
-└── CHECK: Either warehouse_id OR spot_id must be set (XOR constraint)
-```
+Convert from mock data to real database queries showing consolidated stock:
 
-The `average_cost` field is removed because costing now lives at the `purchase_items` level (FIFO).
+**Features:**
+- Summary cards: Total SKUs, Warehouse Stock, In Machines, Low Stock Items
+- Search and filter by name and category
+- Table showing: SKU, Product Name, Category, Warehouse qty, In Machines qty, Stock Level progress bar, Cost, Price
+- Real data from `inventory` table joined with `item_details`, `machine_slots`
 
-### 3. Modify `purchases` Table
+### 3. New Spots Analytics Page (`/spots`)
 
-```text
-purchases
-├── id (uuid, PK)
-├── purchase_order_number (text, required)
-├── supplier_id (uuid, FK -> suppliers)
-├── type (enum: local, import)
-├── status (enum: draft, pending, in_transit, received, cancelled)
-├── total_amount (numeric)
-├── currency (text)
-├── expected_arrival_date (date)
-├── local_tax_rate (numeric)
-├── received_inventory (boolean, NEW) - indicates ready for inventory assignment
-├── received_at (timestamptz, NEW) - when items arrived
-├── created_at (timestamptz)
-└── REMOVED: warehouse_id, warehouse_destination
-```
+Create a comprehensive analytics dashboard with three tabs:
 
-### 4. Rename `purchase_lines` to `purchase_items`
+**Leaderboard Tab:**
+- Top 3 performer cards with medal badges (gold/silver/bronze)
+- Sortable table with columns: Rank, Spot Name, Location, Total Sales, Total Rent, Net Profit, ROI %, Stock Level, Trend Arrow
+- Color-coded rows: subtle green tint for profitable, subtle red tint for loss
 
-This becomes the core table for FIFO inventory costing. Each row represents a specific batch of items from a purchase with its own landed cost.
+**Trends Tab:**
+- Line charts showing sales/profit over time using Recharts (already installed)
+- Comparison selector to compare 2-3 spots against each other
+- Time range selector (7d, 30d, 90d, 1y)
 
-```text
-purchase_items (renamed from purchase_lines)
-├── id (uuid, PK)
-├── purchase_id (uuid, FK -> purchases)
-├── item_detail_id (uuid, FK -> item_details) - renamed from item_definition_id
-├── quantity_ordered (integer)
-├── quantity_received (integer)
-├── quantity_remaining (integer, NEW) - tracks unsold inventory from this batch
-├── unit_cost (numeric) - base purchase price per unit
-├── cbm (numeric) - cubic meters for shipping
-│
-│ -- Fee Breakdown Fields (NEW) --
-├── line_fees_total (numeric, NEW) - sum of item-specific fees
-├── global_fees_allocated (numeric, NEW) - distributed portion of global fees
-├── tax_allocated (numeric, NEW) - tax portion for this line
-├── landed_unit_cost (numeric, NEW) - CALCULATED: (unit_cost * qty + all fees) / qty
-│
-│ -- Inventory Tracking (NEW) --
-├── active_item (boolean, NEW) - false when quantity_remaining = 0
-├── inventory_id (uuid, FK -> inventory, nullable, NEW) - links to current stock location
-├── arrival_order (integer, NEW) - sequence for FIFO processing
-│
-├── created_at (timestamptz)
-└── updated_at (timestamptz, NEW)
-```
+**Alerts Tab:**
+- Low stock spots: under 25% capacity
+- Unprofitable spots: negative ROI
+- Spots needing maintenance: open ticket count > 0
+- Each alert card links to the relevant detail page
 
-### 5. Update Foreign Key References
-
-All tables referencing the old names need updated foreign keys:
-
-| Table | Old FK | New FK |
-|-------|--------|--------|
-| `inventory` | `item_definition_id` | `item_detail_id` |
-| `purchase_items` | `item_definition_id` | `item_detail_id` |
-| `machine_slots` | `current_product_id` | Keep as-is (links to `item_details`) |
-| `visit_line_items` | `product_id` | Keep as-is (links to `item_details`) |
-| `maintenance_tickets` | `product_id` | Keep as-is (links to `item_details`) |
+**Quick Features:**
+- Quick filters: By location, profitability status, stock level
+- Export to CSV button for reporting
+- Click-through to spot details (navigates to Locations page)
 
 ---
 
-## FIFO Costing Logic
+## Technical Implementation
 
-### How It Works
+### Files to Create
 
-When items are sold from a machine:
-
-1. Query `purchase_items` for that `item_detail_id` where `active_item = true`
-2. Order by `arrival_order ASC` (oldest first)
-3. Deduct from `quantity_remaining` of the oldest batch
-4. When `quantity_remaining` reaches 0, set `active_item = false`
-5. Move to next batch and continue
-
-### Example Scenario
-
-```text
-Purchase 1 (2024): 10,000 units @ $0.13 landed cost
-Purchase 2 (2025): 20,000 units @ $0.10 landed cost
-
-Sale of 10,500 units:
-├── First 10,000 sold at $0.13 cost (Purchase 1 depleted, active_item = false)
-└── Next 500 sold at $0.10 cost (from Purchase 2)
-```
-
-### Landed Cost Calculation
-
-When a purchase is received, calculate for each line item:
-
-```text
-landed_unit_cost = (
-  (unit_cost * quantity_ordered) +    // Base item cost
-  line_fees_total +                    // Item-specific fees
-  global_fees_allocated +              // Distributed global fees
-  tax_allocated                        // Tax portion
-) / quantity_ordered
-```
-
----
-
-## Migration Steps
-
-### Step 1: Rename Tables
-
-```sql
-ALTER TABLE item_definitions RENAME TO item_details;
-ALTER TABLE warehouse_inventory RENAME TO inventory;
-ALTER TABLE purchase_lines RENAME TO purchase_items;
-```
-
-### Step 2: Add New Columns to `inventory`
-
-```sql
-ALTER TABLE inventory 
-  ADD COLUMN warehouse_id uuid REFERENCES warehouses(id),
-  ADD COLUMN spot_id uuid REFERENCES spots(id),
-  ADD COLUMN slot_id uuid REFERENCES machine_slots(id),
-  RENAME COLUMN item_definition_id TO item_detail_id;
-
-ALTER TABLE inventory DROP COLUMN average_cost;
-```
-
-### Step 3: Add New Columns to `purchases`
-
-```sql
-ALTER TABLE purchases
-  ADD COLUMN received_inventory boolean DEFAULT false,
-  ADD COLUMN received_at timestamptz;
-
-ALTER TABLE purchases 
-  DROP COLUMN warehouse_id,
-  DROP COLUMN warehouse_destination;
-```
-
-### Step 4: Add New Columns to `purchase_items`
-
-```sql
-ALTER TABLE purchase_items
-  RENAME COLUMN item_definition_id TO item_detail_id;
-
-ALTER TABLE purchase_items
-  ADD COLUMN quantity_remaining integer DEFAULT 0,
-  ADD COLUMN line_fees_total numeric DEFAULT 0,
-  ADD COLUMN global_fees_allocated numeric DEFAULT 0,
-  ADD COLUMN tax_allocated numeric DEFAULT 0,
-  ADD COLUMN landed_unit_cost numeric DEFAULT 0,
-  ADD COLUMN active_item boolean DEFAULT true,
-  ADD COLUMN inventory_id uuid REFERENCES inventory(id),
-  ADD COLUMN arrival_order integer,
-  ADD COLUMN updated_at timestamptz DEFAULT now();
-```
-
-### Step 5: Add Columns to `item_details`
-
-```sql
-ALTER TABLE item_details
-  ADD COLUMN updated_at timestamptz DEFAULT now();
-```
-
-### Step 6: Update Foreign Key Constraints
-
-Rename constraint references and update any views that reference the old table names.
-
-### Step 7: Create Validation Trigger for Inventory Location
-
-```sql
-CREATE OR REPLACE FUNCTION validate_inventory_location()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF (NEW.warehouse_id IS NULL AND NEW.spot_id IS NULL) THEN
-    RAISE EXCEPTION 'Inventory must have either warehouse_id or spot_id set';
-  END IF;
-  IF (NEW.warehouse_id IS NOT NULL AND NEW.spot_id IS NOT NULL) THEN
-    RAISE EXCEPTION 'Inventory cannot have both warehouse_id and spot_id set';
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER check_inventory_location
-  BEFORE INSERT OR UPDATE ON inventory
-  FOR EACH ROW EXECUTE FUNCTION validate_inventory_location();
-```
-
-### Step 8: Update RLS Policies
-
-All existing RLS policies will need to reference the new table names.
-
----
-
-## Frontend Code Updates
-
-### Hooks to Update
-
-| Hook | Changes |
+| File | Purpose |
 |------|---------|
-| `useWarehouseInventory.tsx` | Query `inventory` table, update column names, remove average cost logic |
-| `usePurchases.tsx` | Query `purchase_items`, remove warehouse fields, add received_inventory handling |
+| `src/pages/Spots.tsx` | Main Spots analytics dashboard with tabs |
+| `src/components/spots/SpotLeaderboard.tsx` | Leaderboard tab with top performers and sortable table |
+| `src/components/spots/SpotTrends.tsx` | Trends tab with charts and comparison selector |
+| `src/components/spots/SpotAlerts.tsx` | Alerts tab showing actionable items |
+| `src/components/spots/TopPerformerCard.tsx` | Card component for top 3 spots with medal badges |
+| `src/hooks/useSpotAnalytics.tsx` | Hook to fetch and calculate spot performance metrics |
 
-### Pages to Update
+### Files to Modify
 
-| Page | Changes |
+| File | Changes |
 |------|---------|
-| `Warehouse.tsx` | Use new `inventory` table with `warehouse_id` filter |
-| `NewPurchase.tsx` | Use `item_details`, create `purchase_items`, calculate landed costs |
-| `Inventory.tsx` | Show consolidated view from `inventory` table |
-| `Machines.tsx` | Reference `item_details` instead of `item_definitions` |
-| `NewVisitReport.tsx` | Reference `item_details` instead of `item_definitions` |
+| `src/App.tsx` | Add `/spots` route |
+| `src/components/layout/AppSidebar.tsx` | Update navigation order and Spots link |
+| `src/pages/Inventory.tsx` | Convert to real data from inventory table |
 
-### Components to Update
+### New Hook: useSpotAnalytics
 
-| Component | Changes |
-|-----------|---------|
-| `AddWarehouseItemDialog.tsx` | Create inventory records with `warehouse_id` |
-| `PurchaseCard.tsx` | Display from `purchase_items` instead of `purchase_lines` |
-| `WarehouseItemCard.tsx` | Updated field names |
-
----
-
-## Data Flow Diagrams
-
-### Purchase Receiving Flow
+This hook will aggregate data from multiple tables:
 
 ```text
-Purchase Order Created (status: pending)
-         │
-         ▼
-   Items In Transit (status: in_transit)
-         │
-         ▼
-   Items Received (received_inventory: true)
-         │
-         ├──► Calculate landed_unit_cost per item
-         │    (base + line fees + global fees + tax)
-         │
-         ▼
-   Assign to Warehouse (create inventory records)
-         │
-         ├──► Set inventory.warehouse_id
-         ├──► Set purchase_item.inventory_id
-         └──► Set purchase_item.quantity_remaining = quantity_received
+Query Flow:
+1. Fetch all spots with their locations (rent data)
+2. Fetch spot_visits to calculate total sales per spot
+3. Fetch machine_slots through setups to calculate stock capacity
+4. Fetch maintenance_tickets for open issues per spot
+5. Calculate derived metrics per spot
 ```
 
-### FIFO Sales Flow
+**Calculated Metrics:**
+
+| Metric | Calculation |
+|--------|-------------|
+| Total Sales | SUM(spot_visits.total_cash_collected) |
+| Total Rent | location.rent_amount (monthly) |
+| Net Profit | Total Sales - Total Rent |
+| ROI % | (Net Profit / Total Rent) * 100 |
+| Stock Level % | (current_stock / capacity) * 100 across all slots |
+| Trend | Compare current 30-day sales to previous 30-day |
+| Days Active | DATEDIFF(now, spot.created_at) |
+
+### Component Structure
 
 ```text
-Sale Made at Machine Slot
-         │
-         ▼
-   Query Active Purchase Items for product
-   (WHERE active_item = true ORDER BY arrival_order)
-         │
-         ▼
-   Deduct from Oldest Batch First
-         │
-         ├──► quantity_remaining -= sold_qty
-         ├──► IF quantity_remaining = 0
-         │         └──► active_item = false
-         │
-         ▼
-   Record Cost of Goods Sold
-   (using landed_unit_cost from that batch)
+Spots.tsx
+├── Header with title, export button
+├── Quick Filters row
+│   ├── Location dropdown
+│   ├── Profitability filter (All/Profitable/Loss)
+│   └── Stock level filter (All/Low/Healthy)
+└── Tabs
+    ├── Leaderboard
+    │   ├── TopPerformerCard x3 (with medal badges)
+    │   └── Sortable Table
+    ├── Trends
+    │   ├── Time Range Selector (pills)
+    │   ├── Spot Comparison Selector (multi-select up to 3)
+    │   └── LineChart (Recharts)
+    └── Alerts
+        ├── Low Stock Section (cards)
+        ├── Unprofitable Section (cards)
+        └── Maintenance Section (cards)
 ```
 
 ---
 
-## Summary of Breaking Changes
+## UI/UX Details
 
-1. **Table renames** - All queries must use new table names
-2. **Column renames** - `item_definition_id` becomes `item_detail_id`
-3. **Removed columns** - `average_cost` from inventory, `warehouse_id`/`warehouse_destination` from purchases
-4. **New required logic** - Landed cost calculation, FIFO deduction, inventory location validation
-5. **TypeScript types** - Will auto-regenerate after migration
+### Leaderboard Tab Design
+- Top 3 performer cards displayed horizontally with gradient backgrounds
+- Medal emojis for ranking: first place gold, second place silver, third place bronze
+- Key metrics shown: Total Sales, Net Profit, ROI %
+- Sortable table with click-to-sort column headers
+- Row backgrounds: subtle green tint (`bg-green-500/10`) for profitable, subtle red tint (`bg-red-500/10`) for loss
+- Trend arrows: green up arrow for positive, red down arrow for negative, gray horizontal for flat
+
+### Trends Tab Design
+- Multi-select dropdown to choose 2-3 spots for comparison
+- Time range pills: 7d | 30d | 90d | 1y
+- Recharts LineChart with multiple colored series (one per spot)
+- Legend showing spot names with color indicators
+- Tooltip showing values on hover
+
+### Alerts Tab Design
+- Three collapsible sections with badge counts in headers
+- Card-based alerts showing:
+  - Spot name and location
+  - Specific issue (e.g., "15% stock remaining" or "-$45 ROI this month")
+  - Quick action button linking to relevant page
+
+### Inventory Page Updates
+- Keep existing table layout
+- Connect to real data from `inventory` table
+- Show warehouse quantities alongside machine quantities
+- Calculate totals dynamically
+
+---
+
+## Route and Navigation Updates
+
+### App.tsx Route Addition
+```text
+/spots -> <Spots />
+```
+
+### AppSidebar.tsx Changes
+
+Assets & Inventory section items:
+1. Inventory -> `/inventory` (moved from Locations section)
+2. Warehouse -> `/warehouse`
+3. Machines -> `/machines`
+4. Setups -> `/setups`
+
+Locations section items:
+1. Locations -> `/locations`
+2. Spots -> `/spots` (updated from `/inventory`)
+
+---
+
+## Database Queries
+
+### Spot Analytics Query
+```sql
+SELECT 
+  s.id, s.name as spot_name, s.created_at, s.status,
+  l.id as location_id, l.name as location_name, 
+  l.rent_amount, l.commission_percentage,
+  COALESCE(SUM(sv.total_cash_collected), 0) as total_sales,
+  COUNT(DISTINCT sv.id) as visit_count
+FROM spots s
+LEFT JOIN locations l ON s.location_id = l.id
+LEFT JOIN spot_visits sv ON sv.spot_id = s.id
+GROUP BY s.id, l.id
+```
+
+### Stock Capacity Query
+```sql
+SELECT 
+  s.id as spot_id,
+  COALESCE(SUM(ms.current_stock), 0) as current_stock,
+  COALESCE(SUM(ms.capacity), 0) as total_capacity
+FROM spots s
+LEFT JOIN setups set ON set.spot_id = s.id
+LEFT JOIN machines m ON m.setup_id = set.id
+LEFT JOIN machine_slots ms ON ms.machine_id = m.id
+GROUP BY s.id
+```
+
+### Open Tickets Query
+```sql
+SELECT spot_id, COUNT(*) as open_tickets
+FROM maintenance_tickets
+WHERE status != 'completed' AND spot_id IS NOT NULL
+GROUP BY spot_id
+```
 
 ---
 
 ## Implementation Order
 
-1. Create and run database migration
-2. Update TypeScript types (auto-generated)
-3. Update hooks (`useWarehouseInventory`, `usePurchases`)
-4. Update pages (`Warehouse`, `NewPurchase`, `Inventory`, `Machines`, `NewVisitReport`)
-5. Update components (`AddWarehouseItemDialog`, `PurchaseCard`, `WarehouseItemCard`)
-6. Test purchase receiving flow
-7. Test FIFO sales deduction
+1. Create navigation updates in AppSidebar.tsx
+2. Add /spots route to App.tsx
+3. Create useSpotAnalytics hook with all data fetching
+4. Create TopPerformerCard component
+5. Create SpotLeaderboard component
+6. Create SpotTrends component
+7. Create SpotAlerts component
+8. Create main Spots.tsx page with tabs
+9. Update Inventory.tsx to use real database data
+10. Test end-to-end functionality
 
