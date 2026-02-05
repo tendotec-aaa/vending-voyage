@@ -48,6 +48,7 @@ interface LineItem extends PurchaseLineItem {
   fees: LineItemFee[];
   category_id?: string;
   subcategory_id?: string;
+  item_detail_id?: string;
 }
 
 export default function NewPurchase() {
@@ -83,14 +84,14 @@ export default function NewPurchase() {
 
   // Fetch products for linking (with category/subcategory)
   const { data: products = [] } = useQuery({
-    queryKey: ["item_definitions_with_categories"],
+    queryKey: ["item_details_with_categories"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("item_definitions")
+        .from("item_details")
         .select("id, name, sku, category_id, subcategory_id")
         .order("name");
       if (error) throw error;
-      return data;
+      return data || [];
     },
   });
 
@@ -118,7 +119,7 @@ export default function NewPurchase() {
     updated[index] = { ...updated[index], [field]: value };
     
     // If linking to an existing product, autopopulate category/subcategory
-    if (field === "item_definition_id" && value) {
+    if (field === "item_detail_id" && value) {
       const product = products.find((p) => p.id === value);
       if (product) {
         updated[index].category_id = product.category_id || undefined;
@@ -254,7 +255,6 @@ export default function NewPurchase() {
       {
         type: orderType,
         supplier_id: supplierId,
-        warehouse_id: warehouseId || undefined,
         expected_arrival_date: purchaseDate?.toISOString(),
         local_tax_rate: orderType === "local" ? localTaxRate : 0,
         currency,
@@ -264,7 +264,7 @@ export default function NewPurchase() {
           quantity_ordered: item.quantity_ordered,
           unit_cost: item.unit_cost,
           cbm: item.cbm,
-          item_definition_id: item.item_definition_id,
+          item_detail_id: item.item_detail_id,
           fees: item.fees,
         })),
         global_fees: globalFees,
@@ -456,8 +456,8 @@ export default function NewPurchase() {
                   <div className="space-y-2">
                     <Label>Link to Product</Label>
                     <Select
-                      value={item.item_definition_id || ""}
-                      onValueChange={(value) => updateLineItem(index, "item_definition_id", value || undefined)}
+                      value={item.item_detail_id || ""}
+                      onValueChange={(value) => updateLineItem(index, "item_detail_id", value || undefined)}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Optional" />

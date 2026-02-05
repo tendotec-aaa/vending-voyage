@@ -41,7 +41,12 @@ type Spot = Database["public"]["Tables"]["spots"]["Row"];
 type Setup = Database["public"]["Tables"]["setups"]["Row"];
 type Machine = Database["public"]["Tables"]["machines"]["Row"];
 type MachineSlot = Database["public"]["Tables"]["machine_slots"]["Row"];
-type ItemDefinition = Database["public"]["Tables"]["item_definitions"]["Row"];
+interface ItemDetailBasic {
+  id: string;
+  name: string;
+  sku: string;
+  type: string;
+}
 type VisitActionType = Database["public"]["Enums"]["visit_action_type"];
 
 // Visit types - maps to visit_action_type enum where applicable
@@ -201,12 +206,12 @@ export default function NewVisitReport() {
     queryKey: ['products'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('item_definitions')
-        .select('*')
+        .from('item_details')
+        .select('id, name, sku, type')
         .eq('type', 'merchandise')
         .order('name');
       if (error) throw error;
-      return data;
+      return (data || []) as ItemDetailBasic[];
     },
   });
 
