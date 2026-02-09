@@ -61,6 +61,7 @@ const insightsItems = [
 
 const businessItems = [
   { title: "Users", icon: Users, url: "/users" },
+  { title: "Company", icon: Building2, url: "/company" },
 ];
 
 const personalItems = [

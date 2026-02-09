@@ -32,6 +32,69 @@ export type Database = {
         }
         Relationships: []
       }
+      company_info: {
+        Row: {
+          address: string | null
+          city: string | null
+          company_name: string
+          country: string | null
+          created_at: string
+          default_currency: string | null
+          email: string | null
+          id: string
+          logo_url: string | null
+          notes: string | null
+          phone: string | null
+          postal_code: string | null
+          registration_number: string | null
+          state_province: string | null
+          tax_id: string | null
+          trade_name: string | null
+          updated_at: string | null
+          website: string | null
+        }
+        Insert: {
+          address?: string | null
+          city?: string | null
+          company_name: string
+          country?: string | null
+          created_at?: string
+          default_currency?: string | null
+          email?: string | null
+          id?: string
+          logo_url?: string | null
+          notes?: string | null
+          phone?: string | null
+          postal_code?: string | null
+          registration_number?: string | null
+          state_province?: string | null
+          tax_id?: string | null
+          trade_name?: string | null
+          updated_at?: string | null
+          website?: string | null
+        }
+        Update: {
+          address?: string | null
+          city?: string | null
+          company_name?: string
+          country?: string | null
+          created_at?: string
+          default_currency?: string | null
+          email?: string | null
+          id?: string
+          logo_url?: string | null
+          notes?: string | null
+          phone?: string | null
+          postal_code?: string | null
+          registration_number?: string | null
+          state_province?: string | null
+          tax_id?: string | null
+          trade_name?: string | null
+          updated_at?: string | null
+          website?: string | null
+        }
+        Relationships: []
+      }
       inventory: {
         Row: {
           id: string
