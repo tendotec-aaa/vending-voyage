@@ -118,13 +118,19 @@ export default function NewPurchase() {
     const updated = [...lineItems];
     updated[index] = { ...updated[index], [field]: value };
     
-    // If linking to an existing product, autopopulate category/subcategory
+    // If linking to an existing product, autopopulate name, category/subcategory and make name readonly
     if (field === "item_detail_id" && value) {
       const product = products.find((p) => p.id === value);
       if (product) {
+        updated[index].item_name = product.name;
         updated[index].category_id = product.category_id || undefined;
         updated[index].subcategory_id = product.subcategory_id || undefined;
       }
+    }
+    
+    // If clearing product link, allow name editing again
+    if (field === "item_detail_id" && !value) {
+      // Keep name but allow editing
     }
     
     // Clear subcategory when category changes
@@ -450,26 +456,40 @@ export default function NewPurchase() {
                       value={item.item_name}
                       onChange={(e) => updateLineItem(index, "item_name", e.target.value)}
                       placeholder="Enter item name"
+                      disabled={!!item.item_detail_id}
                     />
                   </div>
 
                   <div className="space-y-2">
                     <Label>Link to Product</Label>
-                    <Select
-                      value={item.item_detail_id || ""}
-                      onValueChange={(value) => updateLineItem(index, "item_detail_id", value || undefined)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Optional" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-popover">
-                        {products.map((product) => (
-                          <SelectItem key={product.id} value={product.id}>
-                            {product.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex gap-2">
+                      <Select
+                        value={item.item_detail_id || ""}
+                        onValueChange={(value) => updateLineItem(index, "item_detail_id", value || undefined)}
+                      >
+                        <SelectTrigger className="flex-1">
+                          <SelectValue placeholder="Optional" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-popover">
+                          {products.map((product) => (
+                            <SelectItem key={product.id} value={product.id}>
+                              {product.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {item.item_detail_id && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-10 w-10 text-destructive"
+                          onClick={() => updateLineItem(index, "item_detail_id", undefined)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -519,8 +539,8 @@ export default function NewPurchase() {
                     <Label>SKU</Label>
                     <Input
                       value={item.sku}
-                      onChange={(e) => updateLineItem(index, "sku", e.target.value)}
                       placeholder="Auto-generated"
+                      disabled
                     />
                   </div>
 

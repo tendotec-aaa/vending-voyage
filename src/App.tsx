@@ -15,17 +15,22 @@ import Locations from "./pages/Locations";
 import Analytics from "./pages/Analytics";
 import Maintenance from "./pages/Maintenance";
 import Suppliers from "./pages/Suppliers";
+import SupplierDetail from "./pages/SupplierDetail";
 import Purchases from "./pages/Purchases";
+import PurchaseDetail from "./pages/PurchaseDetail";
 import NewPurchase from "./pages/NewPurchase";
 import Warehouse from "./pages/Warehouse";
 import Spots from "./pages/Spots";
+import SpotDetail from "./pages/SpotDetail";
 import Users from "./pages/Users";
+import UserDetail from "./pages/UserDetail";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Onboarding from "./pages/Onboarding";
 import UserProfile from "./pages/UserProfile";
 import CompanyProfile from "./pages/CompanyProfile";
+import LocationDetail from "./pages/LocationDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -54,13 +59,19 @@ const App = () => (
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/maintenance" element={<ProtectedRoute><Maintenance /></ProtectedRoute>} />
             <Route path="/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
+            <Route path="/suppliers/:id" element={<ProtectedRoute><SupplierDetail /></ProtectedRoute>} />
             <Route path="/purchases" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />
             <Route path="/purchases/new" element={<ProtectedRoute><NewPurchase /></ProtectedRoute>} />
+            <Route path="/purchases/:id" element={<ProtectedRoute><PurchaseDetail /></ProtectedRoute>} />
             <Route path="/warehouse" element={<ProtectedRoute><Warehouse /></ProtectedRoute>} />
              <Route path="/spots" element={<ProtectedRoute><Spots /></ProtectedRoute>} />
+            <Route path="/spots/:id" element={<ProtectedRoute><SpotDetail /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
+            <Route path="/users/:id" element={<ProtectedRoute><UserDetail /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
+            <Route path="/company" element={<ProtectedRoute><CompanyProfile /></ProtectedRoute>} />
+            <Route path="/locations/:id" element={<ProtectedRoute><LocationDetail /></ProtectedRoute>} />
             <Route path="/company" element={<ProtectedRoute><CompanyProfile /></ProtectedRoute>} />
             
             {/* Catch-all */}
