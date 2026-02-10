@@ -30,32 +30,57 @@ export interface ItemDetail {
   subcategory_id: string | null;
 }
 
-export function useWarehouseInventory() {
+export interface Warehouse {
+  id: string;
+  name: string;
+  address: string | null;
+  description: string | null;
+  is_system: boolean;
+  created_at: string | null;
+}
+
+export function useWarehouseInventory(warehouseFilter?: string) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const inventoryQuery = useQuery({
-    queryKey: ["warehouse-inventory"],
+    queryKey: ["warehouse-inventory", warehouseFilter],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("inventory")
         .select(`
           *,
           item_detail:item_details(
-            id,
-            name,
-            sku,
-            category_id,
-            subcategory_id,
+            id, name, sku, category_id, subcategory_id,
             category:categories(id, name),
             subcategory:subcategories(id, name)
           ),
           warehouse:warehouses(id, name)
         `)
+        .not("warehouse_id", "is", null)
         .order("last_updated", { ascending: false });
 
+      if (warehouseFilter && warehouseFilter !== "all") {
+        query = query.eq("warehouse_id", warehouseFilter);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data as WarehouseItem[];
+    },
+  });
+
+  const warehousesQuery = useQuery({
+    queryKey: ["warehouses-list"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("warehouses")
+        .select("id, name, address, description, is_system, created_at")
+        .order("is_system", { ascending: true })
+        .order("name");
+
+      if (error) throw error;
+      return data as Warehouse[];
     },
   });
 
@@ -72,6 +97,31 @@ export function useWarehouseInventory() {
     },
   });
 
+  const createWarehouseMutation = useMutation({
+    mutationFn: async (data: { name: string; address?: string; description?: string }) => {
+      const { data: result, error } = await supabase
+        .from("warehouses")
+        .insert({
+          name: data.name,
+          address: data.address || null,
+          description: data.description || null,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["warehouses-list"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouses"] });
+      toast({ title: "Warehouse created", description: "New warehouse has been added." });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: `Failed to create warehouse: ${error.message}`, variant: "destructive" });
+    },
+  });
+
   const addInventoryMutation = useMutation({
     mutationFn: async ({
       itemDetailId,
@@ -82,7 +132,6 @@ export function useWarehouseInventory() {
       quantity: number;
       warehouseId?: string;
     }) => {
-      // Check if item already exists in the same warehouse
       let query = supabase
         .from("inventory")
         .select("id, quantity_on_hand")
@@ -97,15 +146,10 @@ export function useWarehouseInventory() {
       const { data: existing } = await query.single();
 
       if (existing) {
-        // Update existing - add to quantity
         const totalQuantity = (existing.quantity_on_hand || 0) + quantity;
-
         const { data, error } = await supabase
           .from("inventory")
-          .update({
-            quantity_on_hand: totalQuantity,
-            last_updated: new Date().toISOString(),
-          })
+          .update({ quantity_on_hand: totalQuantity, last_updated: new Date().toISOString() })
           .eq("id", existing.id)
           .select()
           .single();
@@ -113,7 +157,6 @@ export function useWarehouseInventory() {
         if (error) throw error;
         return data;
       } else {
-        // Insert new
         const { data, error } = await supabase
           .from("inventory")
           .insert({
@@ -130,17 +173,10 @@ export function useWarehouseInventory() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["warehouse-inventory"] });
-      toast({
-        title: "Success",
-        description: "Item added to inventory",
-      });
+      toast({ title: "Success", description: "Item added to inventory" });
     },
     onError: (error) => {
-      toast({
-        title: "Error",
-        description: `Failed to add item: ${error.message}`,
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: `Failed to add item: ${error.message}`, variant: "destructive" });
     },
   });
 
@@ -154,9 +190,7 @@ export function useWarehouseInventory() {
       categoryId?: string;
       subcategoryId?: string;
     }) => {
-      // Generate a simple SKU
       const sku = `SKU-${Date.now().toString(36).toUpperCase()}`;
-      
       const { data, error } = await supabase
         .from("item_details")
         .insert({
@@ -176,21 +210,21 @@ export function useWarehouseInventory() {
       queryClient.invalidateQueries({ queryKey: ["item-details"] });
     },
     onError: (error) => {
-      toast({
-        title: "Error",
-        description: `Failed to create item: ${error.message}`,
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: `Failed to create item: ${error.message}`, variant: "destructive" });
     },
   });
 
   return {
     inventory: inventoryQuery.data || [],
+    warehouses: warehousesQuery.data || [],
     itemDetails: itemDetailsQuery.data || [],
-    isLoading: inventoryQuery.isLoading || itemDetailsQuery.isLoading,
+    isLoading: inventoryQuery.isLoading,
+    isWarehousesLoading: warehousesQuery.isLoading,
     addInventory: addInventoryMutation.mutateAsync,
     createItemDetail: createItemDetailMutation.mutateAsync,
+    createWarehouse: createWarehouseMutation.mutateAsync,
     isAdding: addInventoryMutation.isPending,
     isCreatingItem: createItemDetailMutation.isPending,
+    isCreatingWarehouse: createWarehouseMutation.isPending,
   };
 }

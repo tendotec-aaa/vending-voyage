@@ -12,10 +12,11 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
-import { Search, Filter, Package, AlertTriangle, Loader2 } from "lucide-react";
+import { Search, Filter, AlertTriangle, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState, useMemo } from "react";
+import { ReceiveStockDialog } from "@/components/inventory/ReceiveStockDialog";
 
 interface InventoryItem {
   id: string;
@@ -132,10 +133,7 @@ export default function InventoryPage() {
       subtitle="Track product stock across warehouses and machines"
       actions={
         <div className="flex gap-3">
-          <Button variant="outline" className="gap-2">
-            <Package className="w-4 h-4" />
-            Receive Stock
-          </Button>
+          <ReceiveStockDialog />
           <Button className="gap-2">
             Transfer Stock
           </Button>
