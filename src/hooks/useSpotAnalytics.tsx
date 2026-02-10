@@ -85,20 +85,28 @@
  
        if (ticketsError) throw ticketsError;
  
-       const now = new Date();
-       const thirtyDaysAgo = subDays(now, 30);
-       const sixtyDaysAgo = subDays(now, 60);
- 
-       // Process each spot
-       return (spots || []).map((spot: any) => {
-         const location = spot.locations;
-         const spotVisits = (visits || []).filter((v: any) => v.spot_id === spot.id);
-         
-         // Calculate total sales
-         const totalSales = spotVisits.reduce(
-           (sum: number, v: any) => sum + (v.total_cash_collected || 0),
-           0
-         );
+        const now = new Date();
+        const thirtyDaysAgo = subDays(now, 30);
+        const sixtyDaysAgo = subDays(now, 60);
+
+        // Count spots per location for rent division
+        const spotsPerLocation = new Map<string, number>();
+        (spots || []).forEach((s: any) => {
+          if (s.location_id) {
+            spotsPerLocation.set(s.location_id, (spotsPerLocation.get(s.location_id) || 0) + 1);
+          }
+        });
+
+        // Process each spot
+        return (spots || []).map((spot: any) => {
+          const location = spot.locations;
+          const spotVisits = (visits || []).filter((v: any) => v.spot_id === spot.id);
+          
+          // Calculate total sales
+          const totalSales = spotVisits.reduce(
+            (sum: number, v: any) => sum + (v.total_cash_collected || 0),
+            0
+          );
  
          // Calculate last 30 days vs previous 30 days
          const last30DaySales = spotVisits
@@ -136,9 +144,11 @@
          ).length;
  
          // Calculate metrics
-         const rentAmount = location?.rent_amount || 0;
-         const netProfit = totalSales - rentAmount;
-         const roi = rentAmount > 0 ? (netProfit / rentAmount) * 100 : 0;
+          // Divide rent by number of spots at this location
+          const locationSpotCount = spot.location_id ? (spotsPerLocation.get(spot.location_id) || 1) : 1;
+          const rentAmount = (location?.rent_amount || 0) / locationSpotCount;
+          const netProfit = totalSales - rentAmount;
+          const roi = rentAmount > 0 ? (netProfit / rentAmount) * 100 : 0;
          const stockPercentage = totalCapacity > 0 ? (currentStock / totalCapacity) * 100 : 0;
          const daysActive = differenceInDays(now, new Date(spot.created_at));
  

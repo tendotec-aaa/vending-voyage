@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -19,6 +20,7 @@ type Spot = Database["public"]["Tables"]["spots"]["Row"];
 type Setup = Database["public"]["Tables"]["setups"]["Row"];
 
 export default function Locations() {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   
@@ -32,6 +34,9 @@ export default function Locations() {
   const [newNegotiationType, setNewNegotiationType] = useState<"fixed_rent" | "commission" | "hybrid">("fixed_rent");
   const [newRentAmount, setNewRentAmount] = useState("");
   const [newCommissionPercentage, setNewCommissionPercentage] = useState("");
+  const [newContractStartDate, setNewContractStartDate] = useState("");
+  const [newContractEndDate, setNewContractEndDate] = useState("");
+  const [newContractTerm, setNewContractTerm] = useState<"1_year" | "2_years" | "indefinite" | "custom">("indefinite");
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -93,6 +98,9 @@ export default function Locations() {
         negotiation_type: newNegotiationType,
         rent_amount: newRentAmount ? parseFloat(newRentAmount) : 0,
         commission_percentage: newCommissionPercentage ? parseFloat(newCommissionPercentage) : 0,
+        contract_start_date: newContractStartDate || null,
+        contract_end_date: newContractEndDate || null,
+        contract_term: newContractTerm,
       };
       
       const { data, error } = await supabase
@@ -192,6 +200,9 @@ export default function Locations() {
     setNewNegotiationType("fixed_rent");
     setNewRentAmount("");
     setNewCommissionPercentage("");
+    setNewContractStartDate("");
+    setNewContractEndDate("");
+    setNewContractTerm("indefinite");
   };
 
   const filteredLocations = locations.filter(
@@ -343,6 +354,38 @@ export default function Locations() {
                     This determines how many setups can be placed at this location.
                   </p>
                 </div>
+                <div className="space-y-2">
+                  <Label>Contract Term</Label>
+                  <Select value={newContractTerm} onValueChange={(v) => setNewContractTerm(v as typeof newContractTerm)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1_year">1 Year</SelectItem>
+                      <SelectItem value="2_years">2 Years</SelectItem>
+                      <SelectItem value="indefinite">Indefinite</SelectItem>
+                      <SelectItem value="custom">Custom</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="contract_start_date">Contract Start Date</Label>
+                    <Input
+                      id="contract_start_date"
+                      type="date"
+                      value={newContractStartDate}
+                      onChange={(e) => setNewContractStartDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contract_end_date">Contract End Date</Label>
+                    <Input
+                      id="contract_end_date"
+                      type="date"
+                      value={newContractEndDate}
+                      onChange={(e) => setNewContractEndDate(e.target.value)}
+                    />
+                  </div>
+                </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setIsCreateOpen(false); resetForm(); }}>
@@ -391,7 +434,7 @@ export default function Locations() {
               const totalSpots = location.total_spots || locationSpots.length;
 
               return (
-                <Card key={location.id}>
+                <Card key={location.id} className="cursor-pointer" onClick={() => navigate(`/locations/${location.id}`)}>
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div>

@@ -88,7 +88,7 @@
                  <SortButton column="rentAmount" label="Total Rent" />
                </TableHead>
                <TableHead className="text-muted-foreground text-right">
-                 <SortButton column="netProfit" label="Net Profit" />
+                 <SortButton column="netProfit" label="Sales - Rent" />
                </TableHead>
                <TableHead className="text-muted-foreground text-right">
                  <SortButton column="roi" label="ROI %" />
@@ -113,7 +113,7 @@
                  <TableRow
                    key={spot.id}
                    className={`border-border cursor-pointer ${rowBg}`}
-                   onClick={() => navigate(`/locations`)}
+                   onClick={() => navigate(`/spots/${spot.id}`)}
                  >
                    <TableCell className="font-bold text-foreground">#{spot.rank}</TableCell>
                    <TableCell className="font-medium text-foreground">{spot.name}</TableCell>

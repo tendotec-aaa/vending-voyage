@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -79,6 +79,13 @@ export default function MachinesPage() {
 
   // Find "Machines" category for preselection
   const machinesCategory = categories.find(c => c.name.toLowerCase() === "machines");
+
+  // Auto-set category when machinesCategory loads
+  useEffect(() => {
+    if (machinesCategory && !selectedCategoryId) {
+      setSelectedCategoryId(machinesCategory.id);
+    }
+  }, [machinesCategory, selectedCategoryId]);
 
   // Fetch machines from database
   const { data: machines = [], isLoading } = useQuery({

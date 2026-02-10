@@ -48,7 +48,7 @@
              <p className={`text-lg font-bold ${spot.netProfit >= 0 ? "text-green-500" : "text-destructive"}`}>
                ${spot.netProfit.toLocaleString()}
              </p>
-             <p className="text-xs text-muted-foreground">Net Profit</p>
+             <p className="text-xs text-muted-foreground">Sales - Rent</p>
            </div>
            <div>
              <p className={`text-lg font-bold ${spot.roi >= 0 ? "text-green-500" : "text-destructive"}`}>

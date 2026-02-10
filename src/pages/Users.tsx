@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ const roleConfig: Record<UserRole, { label: string; color: string; icon: React.E
 };
 
 export default function UsersPage() {
+  const navigate = useNavigate();
   const { teamMembers, isLoading, updateUserRole, toggleUserActive } = useTeamManagement();
   
   const [searchQuery, setSearchQuery] = useState("");
@@ -162,7 +164,7 @@ export default function UsersPage() {
                 const RoleIcon = config?.icon || Shield;
 
                 return (
-                  <TableRow key={member.id}>
+                  <TableRow key={member.id} className="cursor-pointer" onClick={() => navigate(`/users/${member.id}`)}>
                     <TableCell className="font-medium">
                       {getDisplayName(member)}
                       {!member.profile_completed && (
