@@ -69,6 +69,7 @@ export interface Warehouse {
   id: string;
   name: string;
   address?: string;
+  is_system?: boolean;
 }
 
 export function usePurchases() {
@@ -103,7 +104,7 @@ export function usePurchases() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("warehouses")
-        .select("*")
+        .select("id, name, address, is_system")
         .order("name");
 
       if (error) throw error;

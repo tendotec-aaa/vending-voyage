@@ -1,4 +1,4 @@
-import { Box } from "lucide-react";
+import { Box, Warehouse } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -8,6 +8,8 @@ interface WarehouseItemCardProps {
   category: string | null;
   subcategory: string | null;
   unitCost: number;
+  warehouseName?: string;
+  showWarehouse?: boolean;
 }
 
 export function WarehouseItemCard({
@@ -16,6 +18,8 @@ export function WarehouseItemCard({
   category,
   subcategory,
   unitCost,
+  warehouseName,
+  showWarehouse,
 }: WarehouseItemCardProps) {
   const totalValue = quantity * unitCost;
 
@@ -43,21 +47,22 @@ export function WarehouseItemCard({
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-border">
+        {showWarehouse && warehouseName && (
+          <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
+            <Warehouse className="w-3 h-3" />
+            {warehouseName}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-border">
           <div>
             <p className="text-xs text-muted-foreground">Quantity</p>
-            <p className="text-sm font-semibold text-foreground">{quantity}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Unit Cost</p>
-            <p className="text-sm font-semibold text-foreground">
-              ${unitCost.toFixed(2)}
-            </p>
+            <p className="text-sm font-semibold text-foreground">{quantity.toLocaleString()}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Total Value</p>
             <p className="text-sm font-semibold text-primary">
-              ${totalValue.toFixed(2)}
+              {unitCost > 0 ? `$${totalValue.toFixed(2)}` : "—"}
             </p>
           </div>
         </div>

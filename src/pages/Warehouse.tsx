@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
-import { Search, Package } from "lucide-react";
+import { Search, Package, Warehouse as WarehouseIcon } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -11,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { WarehouseItemCard } from "@/components/warehouse/WarehouseItemCard";
 import { AddWarehouseItemDialog } from "@/components/warehouse/AddWarehouseItemDialog";
+import { CreateWarehouseDialog } from "@/components/warehouse/CreateWarehouseDialog";
 import { useWarehouseInventory } from "@/hooks/useWarehouseInventory";
 import { useCategories } from "@/hooks/useCategories";
 import { Loader2 } from "lucide-react";
@@ -19,43 +21,41 @@ export default function Warehouse() {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [subcategoryFilter, setSubcategoryFilter] = useState("all");
+  const [selectedWarehouse, setSelectedWarehouse] = useState("all");
 
-  const { inventory, isLoading } = useWarehouseInventory();
+  const { inventory, warehouses, isLoading, isWarehousesLoading, createWarehouse, isCreatingWarehouse } =
+    useWarehouseInventory(selectedWarehouse);
   const { categories, getSubcategoriesByCategory } = useCategories();
 
   const filteredSubcategories = getSubcategoriesByCategory(
     categoryFilter !== "all" ? categoryFilter : undefined
   );
 
-  // Reset subcategory filter when category changes
   const handleCategoryChange = (value: string) => {
     setCategoryFilter(value);
     setSubcategoryFilter("all");
   };
 
-  // Filter inventory based on search and filters
   const filteredInventory = useMemo(() => {
     return inventory.filter((item) => {
       const itemName = item.item_detail?.name?.toLowerCase() || "";
       const matchesSearch = itemName.includes(searchQuery.toLowerCase());
-
-      const itemCategoryId = item.item_detail?.category_id;
       const matchesCategory =
-        categoryFilter === "all" || itemCategoryId === categoryFilter;
-
-      const itemSubcategoryId = item.item_detail?.subcategory_id;
+        categoryFilter === "all" || item.item_detail?.category_id === categoryFilter;
       const matchesSubcategory =
-        subcategoryFilter === "all" || itemSubcategoryId === subcategoryFilter;
-
+        subcategoryFilter === "all" || item.item_detail?.subcategory_id === subcategoryFilter;
       return matchesSearch && matchesCategory && matchesSubcategory;
     });
   }, [inventory, searchQuery, categoryFilter, subcategoryFilter]);
 
-  // Calculate totals
   const totalItems = filteredInventory.reduce(
     (sum, item) => sum + (item.quantity_on_hand || 0),
     0
   );
+
+  const selectedWarehouseData = warehouses.find((w) => w.id === selectedWarehouse);
+  const userWarehouses = warehouses.filter((w) => !w.is_system);
+  const systemWarehouses = warehouses.filter((w) => w.is_system);
 
   return (
     <AppLayout>
@@ -63,15 +63,86 @@ export default function Warehouse() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              Warehouse Items
-            </h1>
+            <h1 className="text-2xl font-bold text-foreground">Warehouses</h1>
             <p className="text-muted-foreground">
-              Manage your inventory stock levels
+              Manage inventory across your warehouses
             </p>
           </div>
-          <AddWarehouseItemDialog />
+          <div className="flex gap-2">
+            <AddWarehouseItemDialog />
+            <CreateWarehouseDialog
+              onCreate={createWarehouse}
+              isCreating={isCreatingWarehouse}
+            />
+          </div>
         </div>
+
+        {/* Warehouse Selector */}
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setSelectedWarehouse("all")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+              selectedWarehouse === "all"
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card text-foreground border-border hover:bg-muted"
+            }`}
+          >
+            All Warehouses
+            <Badge variant="secondary" className="ml-2 text-xs">
+              {inventory.length}
+            </Badge>
+          </button>
+          {userWarehouses.map((wh) => {
+            const count = inventory.filter((i) =>
+              selectedWarehouse === "all" ? i.warehouse_id === wh.id : true
+            ).length;
+            return (
+              <button
+                key={wh.id}
+                onClick={() => setSelectedWarehouse(wh.id)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  selectedWarehouse === wh.id
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-card text-foreground border-border hover:bg-muted"
+                }`}
+              >
+                {wh.name}
+              </button>
+            );
+          })}
+          {systemWarehouses.map((wh) => (
+            <button
+              key={wh.id}
+              onClick={() => setSelectedWarehouse(wh.id)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                selectedWarehouse === wh.id
+                  ? "bg-destructive text-destructive-foreground border-destructive"
+                  : "bg-card text-muted-foreground border-border hover:bg-muted"
+              }`}
+            >
+              {wh.name}
+            </button>
+          ))}
+        </div>
+
+        {/* Warehouse Info */}
+        {selectedWarehouseData && (
+          <div className="bg-card border border-border rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <WarehouseIcon className="w-4 h-4 text-muted-foreground" />
+              <h2 className="font-semibold text-foreground">{selectedWarehouseData.name}</h2>
+              {selectedWarehouseData.is_system && (
+                <Badge variant="outline" className="text-xs">System</Badge>
+              )}
+            </div>
+            {selectedWarehouseData.address && (
+              <p className="text-sm text-muted-foreground">{selectedWarehouseData.address}</p>
+            )}
+            {selectedWarehouseData.description && (
+              <p className="text-sm text-muted-foreground mt-1">{selectedWarehouseData.description}</p>
+            )}
+          </div>
+        )}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -133,7 +204,7 @@ export default function Warehouse() {
         </div>
 
         {/* Content */}
-        {isLoading ? (
+        {isLoading || isWarehousesLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
@@ -145,7 +216,7 @@ export default function Warehouse() {
             </h3>
             <p className="text-muted-foreground mt-1">
               {inventory.length === 0
-                ? "Add your first item to get started"
+                ? "Add your first item or receive a purchase order"
                 : "Try adjusting your search or filters"}
             </p>
           </div>
@@ -159,6 +230,8 @@ export default function Warehouse() {
                 category={item.item_detail?.category?.name || null}
                 subcategory={item.item_detail?.subcategory?.name || null}
                 unitCost={0}
+                warehouseName={item.warehouse?.name || undefined}
+                showWarehouse={selectedWarehouse === "all"}
               />
             ))}
           </div>

@@ -698,6 +698,106 @@ export type Database = {
           },
         ]
       }
+      receiving_allocations: {
+        Row: {
+          created_at: string
+          id: string
+          purchase_id: string
+          purchase_item_id: string
+          quantity: number
+          warehouse_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          purchase_id: string
+          purchase_item_id: string
+          quantity: number
+          warehouse_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          purchase_id?: string
+          purchase_item_id?: string
+          quantity?: number
+          warehouse_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receiving_allocations_purchase_id_fkey"
+            columns: ["purchase_id"]
+            isOneToOne: false
+            referencedRelation: "purchases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "receiving_allocations_purchase_item_id_fkey"
+            columns: ["purchase_item_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "receiving_allocations_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      receiving_notes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          difference: number
+          id: string
+          note: string | null
+          purchase_id: string
+          purchase_item_id: string
+          quantity_expected: number
+          quantity_received: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          difference: number
+          id?: string
+          note?: string | null
+          purchase_id: string
+          purchase_item_id: string
+          quantity_expected: number
+          quantity_received: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          difference?: number
+          id?: string
+          note?: string | null
+          purchase_id?: string
+          purchase_item_id?: string
+          quantity_expected?: number
+          quantity_received?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receiving_notes_purchase_id_fkey"
+            columns: ["purchase_id"]
+            isOneToOne: false
+            referencedRelation: "purchases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "receiving_notes_purchase_item_id_fkey"
+            columns: ["purchase_item_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       setups: {
         Row: {
           created_at: string | null
@@ -1040,19 +1140,25 @@ export type Database = {
         Row: {
           address: string | null
           created_at: string | null
+          description: string | null
           id: string
+          is_system: boolean
           name: string
         }
         Insert: {
           address?: string | null
           created_at?: string | null
+          description?: string | null
           id?: string
+          is_system?: boolean
           name: string
         }
         Update: {
           address?: string | null
           created_at?: string | null
+          description?: string | null
           id?: string
+          is_system?: boolean
           name?: string
         }
         Relationships: []
