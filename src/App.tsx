@@ -31,6 +31,7 @@ import Onboarding from "./pages/Onboarding";
 import UserProfile from "./pages/UserProfile";
 import CompanyProfile from "./pages/CompanyProfile";
 import LocationDetail from "./pages/LocationDetail";
+import ItemDetail from "./pages/ItemDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -55,6 +56,7 @@ const App = () => (
             <Route path="/visits" element={<ProtectedRoute><Visits /></ProtectedRoute>} />
             <Route path="/visits/new" element={<ProtectedRoute><NewVisitReport /></ProtectedRoute>} />
             <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
+            <Route path="/inventory/:id" element={<ProtectedRoute><ItemDetail /></ProtectedRoute>} />
             <Route path="/locations" element={<ProtectedRoute><Locations /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/maintenance" element={<ProtectedRoute><Maintenance /></ProtectedRoute>} />

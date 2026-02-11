@@ -331,21 +331,27 @@ export default function MachinesPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="model">Model</Label>
+                <Label htmlFor="model">Item Name</Label>
                 <Select 
                   value={selectedModelId} 
                   onValueChange={setSelectedModelId}
                   disabled={!selectedCategoryId}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={selectedCategoryId ? "Select a model" : "Select category first"} />
+                    <SelectValue placeholder={selectedCategoryId ? "Select an item" : "Select category first"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {models.map((model) => (
-                      <SelectItem key={model.id} value={model.id}>
-                        {model.name}
-                      </SelectItem>
-                    ))}
+                    {models.length === 0 && selectedCategoryId ? (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
+                        No items found in this category. Create items first via a Purchase Order.
+                      </div>
+                    ) : (
+                      models.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.name}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
