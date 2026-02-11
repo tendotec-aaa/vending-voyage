@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Pencil, Save, X } from "lucide-react";
+import { ArrowLeft, Pencil, Save, X, Truck, Package } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
 import { Textarea } from "@/components/ui/textarea";
@@ -60,6 +60,47 @@ export default function SpotDetail() {
     enabled: !!id,
   });
 
+  // Available setups (not assigned to any spot)
+  const { data: availableSetups = [] } = useQuery({
+    queryKey: ["available-setups"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("setups").select("id, name, type").is("spot_id", null);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Machines in this spot's setups
+  const { data: spotMachines = [] } = useQuery({
+    queryKey: ["spot-machines", id],
+    queryFn: async () => {
+      const setupIds = setups.map((s) => s.id);
+      if (setupIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("machines")
+        .select("id, serial_number, status, position_on_setup, model_id, item_details:model_id(name)")
+        .in("setup_id", setupIds)
+        .order("position_on_setup");
+      if (error) throw error;
+      return data;
+    },
+    enabled: setups.length > 0,
+  });
+
+  // Inventory at this spot
+  const { data: spotInventory = [] } = useQuery({
+    queryKey: ["spot-inventory", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("inventory")
+        .select("id, quantity_on_hand, item_detail:item_details(id, name, sku)")
+        .eq("spot_id", id!);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
+
   const { data: recentVisits = [] } = useQuery({
     queryKey: ["spot-recent-visits", id],
     queryFn: async () => {
@@ -99,15 +140,36 @@ export default function SpotDetail() {
     },
   });
 
-  if (isLoading) return <AppLayout><div className="text-muted-foreground">Loading...</div></AppLayout>;
-  if (!spot) return <AppLayout><div className="text-muted-foreground">Spot not found</div></AppLayout>;
+  const assignSetup = useMutation({
+    mutationFn: async (setupId: string) => {
+      // Unassign current setups from this spot
+      await supabase.from("setups").update({ spot_id: null }).eq("spot_id", id!);
+      if (setupId !== "none") {
+        const { error } = await supabase.from("setups").update({ spot_id: id }).eq("id", setupId);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["spot-setups", id] });
+      queryClient.invalidateQueries({ queryKey: ["available-setups"] });
+      queryClient.invalidateQueries({ queryKey: ["spot-machines", id] });
+      toast({ title: "Setup assignment updated" });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  if (isLoading) return <AppLayout><div className="text-muted-foreground p-6">Loading...</div></AppLayout>;
+  if (!spot) return <AppLayout><div className="text-muted-foreground p-6">Spot not found</div></AppLayout>;
 
   const location = spot.locations as any;
   const rentPerSpot = location?.rent_amount && siblingCount > 0 ? (location.rent_amount / siblingCount) : 0;
+  const currentSetup = setups[0];
 
   return (
     <AppLayout>
-      <div className="space-y-6 max-w-3xl">
+      <div className="space-y-6 max-w-3xl p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
@@ -136,6 +198,7 @@ export default function SpotDetail() {
           )}
         </div>
 
+        {/* Spot Information */}
         <Card>
           <CardHeader><CardTitle>Spot Information</CardTitle></CardHeader>
           <CardContent className="space-y-4">
@@ -164,6 +227,7 @@ export default function SpotDetail() {
           </CardContent>
         </Card>
 
+        {/* Rent Information */}
         <Card>
           <CardHeader><CardTitle>Rent Information</CardTitle></CardHeader>
           <CardContent>
@@ -184,17 +248,65 @@ export default function SpotDetail() {
           </CardContent>
         </Card>
 
+        {/* Assigned Setup */}
         <Card>
-          <CardHeader><CardTitle>Setups ({setups.length})</CardTitle></CardHeader>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Setup</CardTitle>
+              {isAdmin && (
+                <Select
+                  value={currentSetup?.id || "none"}
+                  onValueChange={(v) => assignSetup.mutate(v)}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Assign setup" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— None —</SelectItem>
+                    {currentSetup && <SelectItem value={currentSetup.id}>{currentSetup.name} (current)</SelectItem>}
+                    {availableSetups.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          </CardHeader>
           <CardContent>
-            {setups.length === 0 ? (
-              <p className="text-muted-foreground">No setups assigned.</p>
+            {currentSetup ? (
+              <div className="flex items-center gap-3">
+                <Badge variant="secondary">{currentSetup.type}</Badge>
+                <span className="font-medium text-foreground">{currentSetup.name}</span>
+              </div>
+            ) : (
+              <p className="text-muted-foreground">No setup assigned to this spot.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Machines */}
+        <Card>
+          <CardHeader><CardTitle>Machines ({spotMachines.length})</CardTitle></CardHeader>
+          <CardContent>
+            {spotMachines.length === 0 ? (
+              <p className="text-muted-foreground">No machines at this spot.</p>
             ) : (
               <div className="space-y-2">
-                {setups.map((setup) => (
-                  <div key={setup.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                    <span className="font-medium text-foreground">{setup.name || "Unnamed Setup"}</span>
-                    <Badge variant="secondary">{setup.type}</Badge>
+                {spotMachines.map((machine: any) => (
+                  <div key={machine.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Truck className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <span className="font-medium text-foreground">{machine.serial_number}</span>
+                        {machine.item_details?.name && (
+                          <p className="text-xs text-muted-foreground">{machine.item_details.name}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {machine.position_on_setup && <Badge variant="outline">Pos {machine.position_on_setup}</Badge>}
+                      <Badge variant={machine.status === "deployed" ? "default" : "secondary"}>{machine.status}</Badge>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -202,6 +314,32 @@ export default function SpotDetail() {
           </CardContent>
         </Card>
 
+        {/* Spot Inventory */}
+        <Card>
+          <CardHeader><CardTitle>Inventory ({spotInventory.length})</CardTitle></CardHeader>
+          <CardContent>
+            {spotInventory.length === 0 ? (
+              <p className="text-muted-foreground">No inventory at this spot.</p>
+            ) : (
+              <div className="space-y-2">
+                {spotInventory.map((inv: any) => (
+                  <div key={inv.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Package className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <span className="font-medium text-foreground">{inv.item_detail?.name || "Unknown"}</span>
+                        <p className="text-xs text-muted-foreground font-mono">{inv.item_detail?.sku}</p>
+                      </div>
+                    </div>
+                    <span className="font-medium text-foreground">{inv.quantity_on_hand || 0}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recent Visits */}
         <Card>
           <CardHeader><CardTitle>Recent Visits</CardTitle></CardHeader>
           <CardContent>

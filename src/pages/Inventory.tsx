@@ -2,20 +2,14 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
 } from "@/components/ui/table";
-import { Progress } from "@/components/ui/progress";
-import { Search, Filter, AlertTriangle, Loader2 } from "lucide-react";
+import { Search, Filter, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { ReceiveStockDialog } from "@/components/inventory/ReceiveStockDialog";
 
 interface InventoryItem {
@@ -27,78 +21,60 @@ interface InventoryItem {
   inMachinesQty: number;
   total: number;
   costPrice: number;
-  minStock: number;
 }
 
 function useConsolidatedInventory() {
   return useQuery({
-     queryKey: ["consolidated-inventory"],
-     queryFn: async (): Promise<InventoryItem[]> => {
-       // Fetch item details with categories
-       const { data: items, error: itemsError } = await supabase
-         .from("item_details")
-         .select(`
-           id,
-           sku,
-           name,
-           cost_price,
-           type,
-           categories (name)
-         `)
-         .eq("type", "merchandise");
+    queryKey: ["consolidated-inventory"],
+    queryFn: async (): Promise<InventoryItem[]> => {
+      const { data: items, error: itemsError } = await supabase
+        .from("item_details")
+        .select(`id, sku, name, cost_price, type, categories (name)`)
+        .eq("type", "merchandise");
+      if (itemsError) throw itemsError;
 
-       if (itemsError) throw itemsError;
+      const { data: inventory, error: invError } = await supabase
+        .from("inventory")
+        .select("item_detail_id, quantity_on_hand, warehouse_id, spot_id");
+      if (invError) throw invError;
 
-       // Fetch inventory records (warehouse stock)
-       const { data: inventory, error: invError } = await supabase
-         .from("inventory")
-         .select("item_detail_id, quantity_on_hand, warehouse_id, spot_id");
+      const { data: slots, error: slotsError } = await supabase
+        .from("machine_slots")
+        .select("current_product_id, current_stock");
+      if (slotsError) throw slotsError;
 
-       if (invError) throw invError;
+      return (items || []).map((item: any) => {
+        const warehouseQty = (inventory || [])
+          .filter((inv: any) => inv.item_detail_id === item.id && inv.warehouse_id)
+          .reduce((sum: number, inv: any) => sum + (inv.quantity_on_hand || 0), 0);
 
-       // Fetch machine slots for in-machine stock
-       const { data: slots, error: slotsError } = await supabase
-         .from("machine_slots")
-         .select("current_product_id, current_stock");
+        const inMachinesQty = (slots || [])
+          .filter((slot: any) => slot.current_product_id === item.id)
+          .reduce((sum: number, slot: any) => sum + (slot.current_stock || 0), 0);
 
-       if (slotsError) throw slotsError;
-
-       // Aggregate data per item
-       return (items || []).map((item: any) => {
-         // Sum warehouse inventory
-         const warehouseQty = (inventory || [])
-           .filter((inv: any) => inv.item_detail_id === item.id && inv.warehouse_id)
-           .reduce((sum: number, inv: any) => sum + (inv.quantity_on_hand || 0), 0);
-
-         // Sum in-machine stock from machine_slots
-         const inMachinesQty = (slots || [])
-           .filter((slot: any) => slot.current_product_id === item.id)
-           .reduce((sum: number, slot: any) => sum + (slot.current_stock || 0), 0);
-
-         return {
-           id: item.id,
-           sku: item.sku,
-           name: item.name,
-           category: item.categories?.name || "Uncategorized",
-           warehouseQty,
-           inMachinesQty,
-           total: warehouseQty + inMachinesQty,
-           costPrice: item.cost_price || 0,
-           minStock: 100, // Default minimum stock threshold
-         };
-       });
-     },
-   });
+        return {
+          id: item.id,
+          sku: item.sku,
+          name: item.name,
+          category: item.categories?.name || "Uncategorized",
+          warehouseQty,
+          inMachinesQty,
+          total: warehouseQty + inMachinesQty,
+          costPrice: item.cost_price || 0,
+        };
+      });
+    },
+  });
 }
 
 export default function InventoryPage() {
+  const navigate = useNavigate();
   const { data: inventory, isLoading } = useConsolidatedInventory();
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredInventory = useMemo(() => {
     if (!inventory) return [];
     if (!searchQuery) return inventory;
-    
     const query = searchQuery.toLowerCase();
     return inventory.filter(
       (item) =>
@@ -108,22 +84,12 @@ export default function InventoryPage() {
     );
   }, [inventory, searchQuery]);
 
-  const getStockStatus = (total: number, minStock: number) => {
-    const ratio = total / minStock;
-    if (ratio < 0.7) return { status: "critical", label: "Critical", variant: "destructive" as const };
-    if (ratio < 1) return { status: "low", label: "Low Stock", variant: "secondary" as const };
-    return { status: "healthy", label: "Healthy", variant: "default" as const };
-  };
-
-  // Calculate summary stats
   const stats = useMemo(() => {
-    if (!inventory) return { totalSKUs: 0, warehouseStock: 0, inMachines: 0, lowStockCount: 0 };
-    
+    if (!inventory) return { totalSKUs: 0, warehouseStock: 0, inMachines: 0 };
     return {
       totalSKUs: inventory.length,
       warehouseStock: inventory.reduce((sum, item) => sum + item.warehouseQty, 0),
       inMachines: inventory.reduce((sum, item) => sum + item.inMachinesQty, 0),
-      lowStockCount: inventory.filter((item) => item.total < item.minStock).length,
     };
   }, [inventory]);
 
@@ -134,37 +100,28 @@ export default function InventoryPage() {
       actions={
         <div className="flex gap-3">
           <ReceiveStockDialog />
-          <Button className="gap-2">
-            Transfer Stock
-          </Button>
+          <Button className="gap-2">Transfer Stock</Button>
         </div>
       }
     >
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <Card className="p-4 bg-card border-border">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <Card className="p-4">
           <p className="text-sm text-muted-foreground">Total SKUs</p>
           <p className="text-2xl font-bold text-foreground">{stats.totalSKUs}</p>
         </Card>
-        <Card className="p-4 bg-card border-border">
+        <Card className="p-4">
           <p className="text-sm text-muted-foreground">Warehouse Stock</p>
           <p className="text-2xl font-bold text-foreground">{stats.warehouseStock.toLocaleString()}</p>
         </Card>
-        <Card className="p-4 bg-card border-border">
+        <Card className="p-4">
           <p className="text-sm text-muted-foreground">In Machines</p>
           <p className="text-2xl font-bold text-foreground">{stats.inMachines.toLocaleString()}</p>
-        </Card>
-        <Card className="p-4 bg-card border-border flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-destructive" />
-          <div>
-            <p className="text-sm text-muted-foreground">Low Stock Items</p>
-            <p className="text-2xl font-bold text-destructive">{stats.lowStockCount}</p>
-          </div>
         </Card>
       </div>
 
       {/* Filters */}
-      <Card className="p-4 mb-6 bg-card border-border">
+      <Card className="p-4 mb-6">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -183,66 +140,53 @@ export default function InventoryPage() {
       </Card>
 
       {/* Inventory Table */}
-      <Card className="bg-card border-border">
+      <Card>
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-        <Table>
-          <TableHeader>
-            <TableRow className="border-border">
-              <TableHead className="text-muted-foreground">SKU</TableHead>
-              <TableHead className="text-muted-foreground">Product Name</TableHead>
-              <TableHead className="text-muted-foreground">Category</TableHead>
-              <TableHead className="text-muted-foreground text-right">Warehouse</TableHead>
-              <TableHead className="text-muted-foreground text-right">In Machines</TableHead>
-              <TableHead className="text-muted-foreground">Stock Level</TableHead>
-              <TableHead className="text-muted-foreground text-right">Cost</TableHead>
-              <TableHead className="text-muted-foreground text-right">Total</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredInventory.map((item) => {
-              const stockStatus = getStockStatus(item.total, item.minStock);
-              const stockPercentage = Math.min((item.total / item.minStock) * 100, 100);
-              
-              return (
-                <TableRow key={item.id} className="border-border hover:bg-muted/50">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>SKU</TableHead>
+                <TableHead>Product Name</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead className="text-right">Warehouse</TableHead>
+                <TableHead className="text-right">In Machines</TableHead>
+                <TableHead className="text-right">Cost</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredInventory.map((item) => (
+                <TableRow
+                  key={item.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => navigate(`/inventory/${item.id}`)}
+                >
                   <TableCell className="font-mono text-sm text-primary">{item.sku}</TableCell>
                   <TableCell className="font-medium text-foreground">{item.name}</TableCell>
                   <TableCell className="text-muted-foreground">{item.category}</TableCell>
                   <TableCell className="text-right text-foreground">{item.warehouseQty.toLocaleString()}</TableCell>
                   <TableCell className="text-right text-foreground">{item.inMachinesQty.toLocaleString()}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-3 min-w-[150px]">
-                      <Progress 
-                        value={stockPercentage} 
-                        className="flex-1 h-2"
-                      />
-                      <Badge variant={stockStatus.variant} className="text-xs">
-                        {stockStatus.label}
-                      </Badge>
-                    </div>
-                  </TableCell>
                   <TableCell className="text-right text-muted-foreground">
-                    ${item.costPrice.toFixed(2)}
+                    {item.costPrice > 0 ? `$${item.costPrice.toFixed(2)}` : "N/A"}
                   </TableCell>
                   <TableCell className="text-right font-medium text-foreground">
                     {item.total.toLocaleString()}
                   </TableCell>
                 </TableRow>
-              );
-            })}
-            {filteredInventory.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                  {searchQuery ? "No items match your search" : "No inventory items found"}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              ))}
+              {filteredInventory.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    {searchQuery ? "No items match your search" : "No inventory items found"}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         )}
       </Card>
     </AppLayout>

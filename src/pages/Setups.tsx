@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -25,17 +25,36 @@ const setupTypeLabels: Record<SetupType, string> = {
   custom: "Custom",
 };
 
+const setupTypeMachineCount: Record<SetupType, number> = {
+  single: 1,
+  double: 2,
+  triple: 3,
+  quad: 4,
+  custom: 0,
+};
+
+function getPositionLabel(type: SetupType, position: number, total: number): string {
+  if (total === 1) return "";
+  if (type === "triple") return ["Left", "Center", "Right"][position - 1] || `Position ${position}`;
+  return `Position ${position}`;
+}
+
 export default function Setups() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newSetupName, setNewSetupName] = useState("");
   const [newSetupType, setNewSetupType] = useState<SetupType>("single");
+  const [customMachineCount, setCustomMachineCount] = useState("2");
+  const [selectedMachines, setSelectedMachines] = useState<Record<number, string>>({});
   const [selectedSetup, setSelectedSetup] = useState<Setup | null>(null);
   const [isManageMachinesOpen, setIsManageMachinesOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch setups - using correct columns from database
+  const machineCount = newSetupType === "custom"
+    ? parseInt(customMachineCount) || 0
+    : setupTypeMachineCount[newSetupType];
+
   const { data: setups = [], isLoading: setupsLoading } = useQuery({
     queryKey: ["setups"],
     queryFn: async () => {
@@ -48,7 +67,6 @@ export default function Setups() {
     },
   });
 
-  // Fetch all machines - using correct columns
   const { data: machines = [] } = useQuery({
     queryKey: ["machines"],
     queryFn: async () => {
@@ -61,22 +79,50 @@ export default function Setups() {
     },
   });
 
-  // Create setup mutation - uses correct database columns
+  const availableMachines = useMemo(() => {
+    const selectedIds = new Set(Object.values(selectedMachines));
+    return machines.filter(
+      (m) => (m.setup_id === null && m.status === "in_warehouse") || selectedIds.has(m.id)
+    );
+  }, [machines, selectedMachines]);
+
   const createSetup = useMutation({
     mutationFn: async () => {
-      const setupData: Database["public"]["Tables"]["setups"]["Insert"] = {
-        name: newSetupName.trim(),
-        type: newSetupType,
-      };
-      
-      const { error } = await supabase.from("setups").insert(setupData);
+      // 1. Create the setup
+      const { data: setup, error } = await supabase
+        .from("setups")
+        .insert({ name: newSetupName.trim(), type: newSetupType })
+        .select()
+        .single();
       if (error) throw error;
+
+      // 2. Assign machines with positions
+      const machineAssignments = Object.entries(selectedMachines)
+        .filter(([_, machineId]) => machineId)
+        .map(([posStr, machineId]) => ({
+          machineId,
+          position: parseInt(posStr),
+        }));
+
+      for (const { machineId, position } of machineAssignments) {
+        const { error: assignError } = await supabase
+          .from("machines")
+          .update({
+            setup_id: setup.id,
+            position_on_setup: position,
+            status: "deployed" as const,
+          })
+          .eq("id", machineId);
+        if (assignError) console.error("Error assigning machine:", assignError);
+      }
+
+      return setup;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["setups"] });
+      queryClient.invalidateQueries({ queryKey: ["machines"] });
       setIsCreateOpen(false);
-      setNewSetupName("");
-      setNewSetupType("single");
+      resetCreateForm();
       toast({ title: "Setup created successfully" });
     },
     onError: (error) => {
@@ -84,9 +130,13 @@ export default function Setups() {
     },
   });
 
-  // Delete setup mutation
   const deleteSetup = useMutation({
     mutationFn: async (setupId: string) => {
+      // Unassign machines first
+      await supabase
+        .from("machines")
+        .update({ setup_id: null, position_on_setup: null, status: "in_warehouse" as const })
+        .eq("setup_id", setupId);
       const { error } = await supabase.from("setups").delete().eq("id", setupId);
       if (error) throw error;
     },
@@ -100,20 +150,13 @@ export default function Setups() {
     },
   });
 
-  // Add machine to setup - uses setup_id and position_on_setup
   const addMachineToSetup = useMutation({
     mutationFn: async ({ machineId, setupId }: { machineId: string; setupId: string }) => {
-      // Get current max position for this setup
-      const currentMachines = machines.filter(m => m.setup_id === setupId);
+      const currentMachines = machines.filter((m) => m.setup_id === setupId);
       const maxPosition = currentMachines.reduce((max, m) => Math.max(max, m.position_on_setup || 0), 0);
-      
       const { error } = await supabase
         .from("machines")
-        .update({ 
-          setup_id: setupId,
-          position_on_setup: maxPosition + 1,
-          status: 'deployed' as const
-        })
+        .update({ setup_id: setupId, position_on_setup: maxPosition + 1, status: "deployed" as const })
         .eq("id", machineId);
       if (error) throw error;
     },
@@ -126,16 +169,11 @@ export default function Setups() {
     },
   });
 
-  // Remove machine from setup
   const removeMachineFromSetup = useMutation({
     mutationFn: async (machineId: string) => {
       const { error } = await supabase
         .from("machines")
-        .update({ 
-          setup_id: null,
-          position_on_setup: null,
-          status: 'in_warehouse' as const
-        })
+        .update({ setup_id: null, position_on_setup: null, status: "in_warehouse" as const })
         .eq("id", machineId);
       if (error) throw error;
     },
@@ -148,77 +186,127 @@ export default function Setups() {
     },
   });
 
-  const filteredSetups = setups.filter(
-    (setup) =>
-      setup.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  const resetCreateForm = () => {
+    setNewSetupName("");
+    setNewSetupType("single");
+    setCustomMachineCount("2");
+    setSelectedMachines({});
+  };
+
+  const handleSetupTypeChange = (type: SetupType) => {
+    setNewSetupType(type);
+    setSelectedMachines({});
+  };
+
+  const handleMachineSelect = (position: number, machineId: string) => {
+    setSelectedMachines((prev) => {
+      const next = { ...prev };
+      if (machineId === "none") {
+        delete next[position];
+      } else {
+        next[position] = machineId;
+      }
+      return next;
+    });
+  };
+
+  const filteredSetups = setups.filter((setup) =>
+    setup.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const getMachinesForSetup = (setupId: string) =>
-    machines.filter((m) => m.setup_id === setupId).sort((a, b) => (a.position_on_setup || 0) - (b.position_on_setup || 0));
+    machines
+      .filter((m) => m.setup_id === setupId)
+      .sort((a, b) => (a.position_on_setup || 0) - (b.position_on_setup || 0));
 
-  const getAvailableMachines = () =>
-    machines.filter((m) => m.setup_id === null && m.status === 'in_warehouse');
+  const getAvailableMachinesForManage = () =>
+    machines.filter((m) => m.setup_id === null && m.status === "in_warehouse");
 
   return (
     <AppLayout>
       <div className="space-y-6">
-        {/* Header */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Setups</h1>
             <p className="text-muted-foreground">Group machines into setups for deployment to spots</p>
           </div>
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) resetCreateForm(); }}>
             <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                New Setup
-              </Button>
+              <Button><Plus className="mr-2 h-4 w-4" /> New Setup</Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>Create New Setup</DialogTitle>
-                <DialogDescription>
-                  Create a setup to group multiple machines together for deployment.
-                </DialogDescription>
+                <DialogDescription>Create a setup and assign machines with positions.</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
+              <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input
-                    id="name"
-                    placeholder="e.g., Mall Plaza Setup"
-                    value={newSetupName}
-                    onChange={(e) => setNewSetupName(e.target.value)}
-                  />
+                  <Label>Name</Label>
+                  <Input placeholder="e.g., Mall Plaza Setup" value={newSetupName} onChange={(e) => setNewSetupName(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="type">Setup Type</Label>
-                  <Select value={newSetupType} onValueChange={(v) => setNewSetupType(v as SetupType)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                  <Label>Setup Type</Label>
+                  <Select value={newSetupType} onValueChange={(v) => handleSetupTypeChange(v as SetupType)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {Object.entries(setupTypeLabels).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
+                        <SelectItem key={value} value={value}>{label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Indicates the number of machines typically in this setup
-                  </p>
                 </div>
+
+                {newSetupType === "custom" && (
+                  <div className="space-y-2">
+                    <Label>Number of Machines</Label>
+                    <Input type="number" min="1" max="10" value={customMachineCount} onChange={(e) => { setCustomMachineCount(e.target.value); setSelectedMachines({}); }} />
+                  </div>
+                )}
+
+                {machineCount > 0 && (
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">Assign Machines</Label>
+                    {Array.from({ length: machineCount }, (_, i) => {
+                      const position = i + 1;
+                      const label = getPositionLabel(newSetupType, position, machineCount);
+                      const selectedId = selectedMachines[position] || "";
+                      // Available = in_warehouse + not selected by another position
+                      const otherSelected = new Set(
+                        Object.entries(selectedMachines)
+                          .filter(([p]) => parseInt(p) !== position)
+                          .map(([_, id]) => id)
+                      );
+                      const options = machines.filter(
+                        (m) =>
+                          (m.setup_id === null && m.status === "in_warehouse") || m.id === selectedId
+                      ).filter((m) => !otherSelected.has(m.id));
+
+                      return (
+                        <div key={position} className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">
+                            {label || `Machine ${position}`}
+                          </Label>
+                          <Select value={selectedId || "none"} onValueChange={(v) => handleMachineSelect(position, v)}>
+                            <SelectTrigger><SelectValue placeholder="Select a machine" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">— None —</SelectItem>
+                              {options.map((m) => (
+                                <SelectItem key={m.id} value={m.id}>{m.serial_number}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    })}
+                    {machines.filter((m) => m.setup_id === null && m.status === "in_warehouse").length === 0 && (
+                      <p className="text-sm text-muted-foreground">No machines available in warehouse. Register machines first.</p>
+                    )}
+                  </div>
+                )}
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => createSetup.mutate()}
-                  disabled={!newSetupName.trim() || createSetup.isPending}
-                >
+                <Button variant="outline" onClick={() => { setIsCreateOpen(false); resetCreateForm(); }}>Cancel</Button>
+                <Button onClick={() => createSetup.mutate()} disabled={!newSetupName.trim() || createSetup.isPending}>
                   Create Setup
                 </Button>
               </DialogFooter>
@@ -226,18 +314,11 @@ export default function Setups() {
           </Dialog>
         </div>
 
-        {/* Search */}
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search setups..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
+          <Input placeholder="Search setups..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
         </div>
 
-        {/* Setups Grid */}
         {setupsLoading ? (
           <div className="text-muted-foreground">Loading setups...</div>
         ) : filteredSetups.length === 0 ? (
@@ -245,86 +326,52 @@ export default function Setups() {
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Layers className="h-12 w-12 text-muted-foreground mb-4" />
               <p className="text-muted-foreground">No setups found</p>
-              <Button variant="outline" className="mt-4" onClick={() => setIsCreateOpen(true)}>
-                Create your first setup
-              </Button>
+              <Button variant="outline" className="mt-4" onClick={() => setIsCreateOpen(true)}>Create your first setup</Button>
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredSetups.map((setup) => {
               const setupMachines = getMachinesForSetup(setup.id);
+              const setupType = setup.type || "single";
               return (
                 <Card key={setup.id}>
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div>
                         <CardTitle className="text-lg">{setup.name || "Unnamed Setup"}</CardTitle>
-                        <CardDescription className="mt-1">
-                          Type: {setupTypeLabels[setup.type || "single"]}
-                        </CardDescription>
+                        <CardDescription className="mt-1">Type: {setupTypeLabels[setupType]}</CardDescription>
                       </div>
                       <Badge variant="secondary">{setupMachines.length} machines</Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {/* Machines in this setup */}
                     <div className="space-y-2">
                       {setupMachines.length === 0 ? (
                         <p className="text-sm text-muted-foreground">No machines assigned</p>
                       ) : (
-                        setupMachines.slice(0, 3).map((machine) => (
-                          <div
-                            key={machine.id}
-                            className="flex items-center justify-between rounded-md border p-2"
-                          >
-                            <div className="flex items-center gap-2">
-                              <Truck className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-sm font-medium">{machine.serial_number}</span>
-                              {machine.position_on_setup && (
-                                <Badge variant="outline" className="text-xs">
-                                  Pos {machine.position_on_setup}
-                                </Badge>
-                              )}
+                        setupMachines.map((machine) => {
+                          const posLabel = getPositionLabel(setupType, machine.position_on_setup || 0, setupMachines.length);
+                          return (
+                            <div key={machine.id} className="flex items-center justify-between rounded-md border p-2">
+                              <div className="flex items-center gap-2">
+                                <Truck className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm font-medium">{machine.serial_number}</span>
+                                {posLabel && <Badge variant="outline" className="text-xs">{posLabel}</Badge>}
+                              </div>
+                              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeMachineFromSetup.mutate(machine.id)}>
+                                <X className="h-3 w-3" />
+                              </Button>
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => removeMachineFromSetup.mutate(machine.id)}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        ))
-                      )}
-                      {setupMachines.length > 3 && (
-                        <p className="text-sm text-muted-foreground">
-                          +{setupMachines.length - 3} more machines
-                        </p>
+                          );
+                        })
                       )}
                     </div>
-
-                    {/* Actions */}
                     <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => {
-                          setSelectedSetup(setup);
-                          setIsManageMachinesOpen(true);
-                        }}
-                      >
+                      <Button variant="outline" size="sm" className="flex-1" onClick={() => { setSelectedSetup(setup); setIsManageMachinesOpen(true); }}>
                         Manage Machines
                       </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => deleteSetup.mutate(setup.id)}
-                      >
-                        Delete
-                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => deleteSetup.mutate(setup.id)}>Delete</Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -338,79 +385,46 @@ export default function Setups() {
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Manage Machines - {selectedSetup?.name}</DialogTitle>
-              <DialogDescription>
-                Add or remove machines from this setup. Machines must be in warehouse to be added.
-              </DialogDescription>
+              <DialogDescription>Add or remove machines from this setup.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4 max-h-96 overflow-y-auto">
-              {/* Current machines */}
               <div>
                 <h4 className="text-sm font-medium mb-2">Current Machines</h4>
                 {selectedSetup && getMachinesForSetup(selectedSetup.id).length === 0 ? (
                   <p className="text-sm text-muted-foreground">No machines in this setup</p>
                 ) : (
                   <div className="space-y-2">
-                    {selectedSetup &&
-                      getMachinesForSetup(selectedSetup.id).map((machine) => (
-                        <div
-                          key={machine.id}
-                          className="flex items-center justify-between rounded-md border p-2"
-                        >
+                    {selectedSetup && getMachinesForSetup(selectedSetup.id).map((machine) => {
+                      const setupType = selectedSetup.type || "single";
+                      const total = getMachinesForSetup(selectedSetup.id).length;
+                      const posLabel = getPositionLabel(setupType, machine.position_on_setup || 0, total);
+                      return (
+                        <div key={machine.id} className="flex items-center justify-between rounded-md border p-2">
                           <div className="flex items-center gap-2">
                             <Truck className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <span className="text-sm font-medium">{machine.serial_number}</span>
-                              {machine.position_on_setup && (
-                                <span className="text-xs text-muted-foreground ml-2">
-                                  (Position {machine.position_on_setup})
-                                </span>
-                              )}
-                            </div>
+                            <span className="text-sm font-medium">{machine.serial_number}</span>
+                            {posLabel && <span className="text-xs text-muted-foreground">({posLabel})</span>}
                           </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => removeMachineFromSetup.mutate(machine.id)}
-                          >
-                            Remove
-                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => removeMachineFromSetup.mutate(machine.id)}>Remove</Button>
                         </div>
-                      ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
-
-              {/* Available machines */}
               <div>
                 <h4 className="text-sm font-medium mb-2">Available Machines (In Warehouse)</h4>
-                {getAvailableMachines().length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No machines available in warehouse
-                  </p>
+                {getAvailableMachinesForManage().length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No machines available in warehouse</p>
                 ) : (
                   <div className="space-y-2">
-                    {getAvailableMachines().map((machine) => (
-                      <div
-                        key={machine.id}
-                        className="flex items-center justify-between rounded-md border p-2"
-                      >
+                    {getAvailableMachinesForManage().map((machine) => (
+                      <div key={machine.id} className="flex items-center justify-between rounded-md border p-2">
                         <div className="flex items-center gap-2">
                           <Truck className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <span className="text-sm font-medium">{machine.serial_number}</span>
-                          </div>
+                          <span className="text-sm font-medium">{machine.serial_number}</span>
                         </div>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={() =>
-                            selectedSetup &&
-                            addMachineToSetup.mutate({
-                              machineId: machine.id,
-                              setupId: selectedSetup.id,
-                            })
-                          }
-                        >
+                        <Button variant="default" size="sm" onClick={() => selectedSetup && addMachineToSetup.mutate({ machineId: machine.id, setupId: selectedSetup.id })}>
                           Add
                         </Button>
                       </div>

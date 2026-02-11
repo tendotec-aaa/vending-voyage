@@ -157,14 +157,14 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Supply Chain */}
+        {/* Locations */}
         <SidebarGroup className="mt-4">
           <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            Supply Chain
+            Locations
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {supplyChainItems.map((item) => (
+              {locationsItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
                     <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
@@ -178,14 +178,14 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Locations */}
+        {/* Supply Chain */}
         <SidebarGroup className="mt-4">
           <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            Locations
+            Supply Chain
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {locationsItems.map((item) => (
+              {supplyChainItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
                     <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
