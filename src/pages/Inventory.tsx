@@ -115,7 +115,7 @@ export default function InventoryPage() {
           <p className="text-2xl font-bold text-foreground">{stats.warehouseStock.toLocaleString()}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-sm text-muted-foreground">In Machines</p>
+          <p className="text-sm text-muted-foreground">Deployed</p>
           <p className="text-2xl font-bold text-foreground">{stats.inMachines.toLocaleString()}</p>
         </Card>
       </div>
@@ -153,7 +153,7 @@ export default function InventoryPage() {
                 <TableHead>Product Name</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead className="text-right">Warehouse</TableHead>
-                <TableHead className="text-right">In Machines</TableHead>
+                <TableHead className="text-right">Deployed</TableHead>
                 <TableHead className="text-right">Cost</TableHead>
                 <TableHead className="text-right">Total</TableHead>
               </TableRow>

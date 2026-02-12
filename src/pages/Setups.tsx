@@ -1,16 +1,18 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Layers, Truck, X, Search } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Plus, Layers, Truck, X, Search, GripVertical, ChevronDown, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 import type { Database } from "@/integrations/supabase/types";
 
 type Setup = Database["public"]["Tables"]["setups"]["Row"];
@@ -19,7 +21,7 @@ type SetupType = Database["public"]["Enums"]["setup_type"];
 
 const setupTypeLabels: Record<SetupType, string> = {
   single: "Single",
-  double: "Double", 
+  double: "Double",
   triple: "Triple",
   quad: "Quad",
   custom: "Custom",
@@ -39,15 +41,35 @@ function getPositionLabel(type: SetupType, position: number, total: number): str
   return `Position ${position}`;
 }
 
+function generateSetupName(serials: string[]): string {
+  if (serials.length === 0) return "";
+  if (serials.length === 1) return serials[0];
+  const prefixes: string[] = [];
+  const suffixes: string[] = [];
+  for (const serial of serials) {
+    const dashIdx = serial.lastIndexOf("-");
+    if (dashIdx >= 0) {
+      prefixes.push(serial.substring(0, dashIdx));
+      suffixes.push(serial.substring(dashIdx + 1));
+    } else {
+      prefixes.push(serial);
+      suffixes.push("");
+    }
+  }
+  return `${prefixes.join("")}-${suffixes.join("")}`;
+}
+
 export default function Setups() {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [newSetupName, setNewSetupName] = useState("");
   const [newSetupType, setNewSetupType] = useState<SetupType>("single");
   const [customMachineCount, setCustomMachineCount] = useState("2");
   const [selectedMachines, setSelectedMachines] = useState<Record<number, string>>({});
   const [selectedSetup, setSelectedSetup] = useState<Setup | null>(null);
   const [isManageMachinesOpen, setIsManageMachinesOpen] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [expandedSetups, setExpandedSetups] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -79,43 +101,54 @@ export default function Setups() {
     },
   });
 
-  const availableMachines = useMemo(() => {
-    const selectedIds = new Set(Object.values(selectedMachines));
-    return machines.filter(
-      (m) => (m.setup_id === null && m.status === "in_warehouse") || selectedIds.has(m.id)
-    );
-  }, [machines, selectedMachines]);
+  const { data: spots = [] } = useQuery({
+    queryKey: ["spots"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("spots").select("id, name, location_id");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: locations = [] } = useQuery({
+    queryKey: ["locations"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("locations").select("id, name");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Compute auto-generated name from selected machines
+  const autoName = useMemo(() => {
+    const serials = Object.entries(selectedMachines)
+      .sort(([a], [b]) => parseInt(a) - parseInt(b))
+      .map(([_, machineId]) => machines.find((m) => m.id === machineId)?.serial_number)
+      .filter(Boolean) as string[];
+    return generateSetupName(serials);
+  }, [selectedMachines, machines]);
 
   const createSetup = useMutation({
     mutationFn: async () => {
-      // 1. Create the setup
+      const name = autoName || "Unnamed Setup";
       const { data: setup, error } = await supabase
         .from("setups")
-        .insert({ name: newSetupName.trim(), type: newSetupType })
+        .insert({ name, type: newSetupType })
         .select()
         .single();
       if (error) throw error;
 
-      // 2. Assign machines with positions
       const machineAssignments = Object.entries(selectedMachines)
         .filter(([_, machineId]) => machineId)
-        .map(([posStr, machineId]) => ({
-          machineId,
-          position: parseInt(posStr),
-        }));
+        .map(([posStr, machineId]) => ({ machineId, position: parseInt(posStr) }));
 
       for (const { machineId, position } of machineAssignments) {
         const { error: assignError } = await supabase
           .from("machines")
-          .update({
-            setup_id: setup.id,
-            position_on_setup: position,
-            status: "deployed" as const,
-          })
+          .update({ setup_id: setup.id, position_on_setup: position, status: "deployed" as const })
           .eq("id", machineId);
         if (assignError) console.error("Error assigning machine:", assignError);
       }
-
       return setup;
     },
     onSuccess: () => {
@@ -132,7 +165,6 @@ export default function Setups() {
 
   const deleteSetup = useMutation({
     mutationFn: async (setupId: string) => {
-      // Unassign machines first
       await supabase
         .from("machines")
         .update({ setup_id: null, position_on_setup: null, status: "in_warehouse" as const })
@@ -162,6 +194,7 @@ export default function Setups() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["machines"] });
+      queryClient.invalidateQueries({ queryKey: ["setups"] });
       toast({ title: "Machine added to setup" });
     },
     onError: (error) => {
@@ -179,6 +212,7 @@ export default function Setups() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["machines"] });
+      queryClient.invalidateQueries({ queryKey: ["setups"] });
       toast({ title: "Machine removed from setup" });
     },
     onError: (error) => {
@@ -186,8 +220,43 @@ export default function Setups() {
     },
   });
 
+  const updateSetupName = useMutation({
+    mutationFn: async ({ setupId, name }: { setupId: string; name: string }) => {
+      const { error } = await supabase.from("setups").update({ name }).eq("id", setupId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["setups"] });
+    },
+  });
+
+  // Drag-and-drop reorder
+  const reorderMachines = useMutation({
+    mutationFn: async ({ setupId, orderedIds }: { setupId: string; orderedIds: string[] }) => {
+      for (let i = 0; i < orderedIds.length; i++) {
+        const { error } = await supabase
+          .from("machines")
+          .update({ position_on_setup: i + 1 })
+          .eq("id", orderedIds[i]);
+        if (error) throw error;
+      }
+      // Regenerate setup name
+      const serials = orderedIds
+        .map((id) => machines.find((m) => m.id === id)?.serial_number)
+        .filter(Boolean) as string[];
+      const newName = generateSetupName(serials);
+      if (newName) {
+        await supabase.from("setups").update({ name: newName }).eq("id", setupId);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["machines"] });
+      queryClient.invalidateQueries({ queryKey: ["setups"] });
+      toast({ title: "Positions updated" });
+    },
+  });
+
   const resetCreateForm = () => {
-    setNewSetupName("");
     setNewSetupType("single");
     setCustomMachineCount("2");
     setSelectedMachines({});
@@ -201,11 +270,8 @@ export default function Setups() {
   const handleMachineSelect = (position: number, machineId: string) => {
     setSelectedMachines((prev) => {
       const next = { ...prev };
-      if (machineId === "none") {
-        delete next[position];
-      } else {
-        next[position] = machineId;
-      }
+      if (machineId === "none") delete next[position];
+      else next[position] = machineId;
       return next;
     });
   };
@@ -222,6 +288,43 @@ export default function Setups() {
   const getAvailableMachinesForManage = () =>
     machines.filter((m) => m.setup_id === null && m.status === "in_warehouse");
 
+  const getSpotForSetup = (setupSpotId: string | null) => {
+    if (!setupSpotId) return null;
+    return spots.find((s) => s.id === setupSpotId) || null;
+  };
+
+  const getLocationForSpot = (locationId: string | null) => {
+    if (!locationId) return null;
+    return locations.find((l) => l.id === locationId) || null;
+  };
+
+  const toggleExpanded = (setupId: string) => {
+    setExpandedSetups((prev) => {
+      const next = new Set(prev);
+      if (next.has(setupId)) next.delete(setupId);
+      else next.add(setupId);
+      return next;
+    });
+  };
+
+  // Drag handlers for manage machines
+  const handleDragStart = useCallback((index: number) => {
+    setDragIndex(index);
+  }, []);
+
+  const handleDrop = useCallback((targetIndex: number) => {
+    if (dragIndex === null || !selectedSetup) return;
+    const setupMachines = getMachinesForSetup(selectedSetup.id);
+    const reordered = [...setupMachines];
+    const [moved] = reordered.splice(dragIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+    reorderMachines.mutate({
+      setupId: selectedSetup.id,
+      orderedIds: reordered.map((m) => m.id),
+    });
+    setDragIndex(null);
+  }, [dragIndex, selectedSetup, machines]);
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -237,13 +340,9 @@ export default function Setups() {
             <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>Create New Setup</DialogTitle>
-                <DialogDescription>Create a setup and assign machines with positions.</DialogDescription>
+                <DialogDescription>Select machines and their positions. Name is auto-generated.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
-                <div className="space-y-2">
-                  <Label>Name</Label>
-                  <Input placeholder="e.g., Mall Plaza Setup" value={newSetupName} onChange={(e) => setNewSetupName(e.target.value)} />
-                </div>
                 <div className="space-y-2">
                   <Label>Setup Type</Label>
                   <Select value={newSetupType} onValueChange={(v) => handleSetupTypeChange(v as SetupType)}>
@@ -270,15 +369,13 @@ export default function Setups() {
                       const position = i + 1;
                       const label = getPositionLabel(newSetupType, position, machineCount);
                       const selectedId = selectedMachines[position] || "";
-                      // Available = in_warehouse + not selected by another position
                       const otherSelected = new Set(
                         Object.entries(selectedMachines)
                           .filter(([p]) => parseInt(p) !== position)
                           .map(([_, id]) => id)
                       );
                       const options = machines.filter(
-                        (m) =>
-                          (m.setup_id === null && m.status === "in_warehouse") || m.id === selectedId
+                        (m) => (m.setup_id === null && m.status === "in_warehouse") || m.id === selectedId
                       ).filter((m) => !otherSelected.has(m.id));
 
                       return (
@@ -303,10 +400,18 @@ export default function Setups() {
                     )}
                   </div>
                 )}
+
+                {/* Auto-generated name preview */}
+                {autoName && (
+                  <div className="p-3 bg-muted rounded-md">
+                    <Label className="text-xs text-muted-foreground">Setup Name (auto-generated)</Label>
+                    <p className="text-sm font-medium text-foreground mt-1">{autoName}</p>
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setIsCreateOpen(false); resetCreateForm(); }}>Cancel</Button>
-                <Button onClick={() => createSetup.mutate()} disabled={!newSetupName.trim() || createSetup.isPending}>
+                <Button onClick={() => createSetup.mutate()} disabled={Object.keys(selectedMachines).length === 0 || createSetup.isPending}>
                   Create Setup
                 </Button>
               </DialogFooter>
@@ -334,73 +439,111 @@ export default function Setups() {
             {filteredSetups.map((setup) => {
               const setupMachines = getMachinesForSetup(setup.id);
               const setupType = setup.type || "single";
+              const isExpanded = expandedSetups.has(setup.id);
+              const spot = getSpotForSetup(setup.spot_id);
+              const location = spot ? getLocationForSpot(spot.location_id) : null;
+
               return (
                 <Card key={setup.id}>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="text-lg">{setup.name || "Unnamed Setup"}</CardTitle>
-                        <CardDescription className="mt-1">Type: {setupTypeLabels[setupType]}</CardDescription>
-                      </div>
-                      <Badge variant="secondary">{setupMachines.length} machines</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      {setupMachines.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No machines assigned</p>
-                      ) : (
-                        setupMachines.map((machine) => {
-                          const posLabel = getPositionLabel(setupType, machine.position_on_setup || 0, setupMachines.length);
-                          return (
-                            <div key={machine.id} className="flex items-center justify-between rounded-md border p-2">
-                              <div className="flex items-center gap-2">
-                                <Truck className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-sm font-medium">{machine.serial_number}</span>
-                                {posLabel && <Badge variant="outline" className="text-xs">{posLabel}</Badge>}
-                              </div>
-                              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeMachineFromSetup.mutate(machine.id)}>
-                                <X className="h-3 w-3" />
-                              </Button>
+                  <Collapsible open={isExpanded} onOpenChange={() => toggleExpanded(setup.id)}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <CardTitle className="text-lg truncate">{setup.name || "Unnamed Setup"}</CardTitle>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="secondary">{setupTypeLabels[setupType]}</Badge>
+                            <Badge variant="outline">{setupMachines.length} machines</Badge>
+                          </div>
+                          {spot ? (
+                            <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
+                              <MapPin className="h-3 w-3" />
+                              <button className="hover:underline text-primary" onClick={(e) => { e.stopPropagation(); navigate(`/spots/${spot.id}`); }}>
+                                {spot.name}
+                              </button>
+                              {location && (
+                                <>
+                                  <span>•</span>
+                                  <button className="hover:underline text-primary" onClick={(e) => { e.stopPropagation(); navigate(`/locations/${location.id}`); }}>
+                                    {location.name}
+                                  </button>
+                                </>
+                              )}
                             </div>
-                          );
-                        })
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="flex-1" onClick={() => { setSelectedSetup(setup); setIsManageMachinesOpen(true); }}>
-                        Manage Machines
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={() => deleteSetup.mutate(setup.id)}>Delete</Button>
-                    </div>
-                  </CardContent>
+                          ) : (
+                            <p className="text-xs text-muted-foreground mt-2">Not deployed</p>
+                          )}
+                        </div>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
+                            <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                          </Button>
+                        </CollapsibleTrigger>
+                      </div>
+                    </CardHeader>
+                    <CollapsibleContent>
+                      <CardContent className="space-y-4 pt-0">
+                        <div className="space-y-2">
+                          {setupMachines.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">No machines assigned</p>
+                          ) : (
+                            setupMachines.map((machine) => {
+                              const posLabel = getPositionLabel(setupType, machine.position_on_setup || 0, setupMachines.length);
+                              return (
+                                <div key={machine.id} className="flex items-center justify-between rounded-md border p-2">
+                                  <div className="flex items-center gap-2">
+                                    <Truck className="h-4 w-4 text-muted-foreground" />
+                                    <span className="text-sm font-medium">{machine.serial_number}</span>
+                                    {posLabel && <Badge variant="outline" className="text-xs">{posLabel}</Badge>}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" className="flex-1" onClick={() => { setSelectedSetup(setup); setIsManageMachinesOpen(true); }}>
+                            Manage Machines
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => deleteSetup.mutate(setup.id)}>Delete</Button>
+                        </div>
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Collapsible>
                 </Card>
               );
             })}
           </div>
         )}
 
-        {/* Manage Machines Dialog */}
+        {/* Manage Machines Dialog with Drag-and-Drop */}
         <Dialog open={isManageMachinesOpen} onOpenChange={setIsManageMachinesOpen}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Manage Machines - {selectedSetup?.name}</DialogTitle>
-              <DialogDescription>Add or remove machines from this setup.</DialogDescription>
+              <DialogDescription>Drag to reorder positions. Add or remove machines.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4 max-h-96 overflow-y-auto">
               <div>
-                <h4 className="text-sm font-medium mb-2">Current Machines</h4>
+                <h4 className="text-sm font-medium mb-2">Current Machines (drag to reorder)</h4>
                 {selectedSetup && getMachinesForSetup(selectedSetup.id).length === 0 ? (
                   <p className="text-sm text-muted-foreground">No machines in this setup</p>
                 ) : (
-                  <div className="space-y-2">
-                    {selectedSetup && getMachinesForSetup(selectedSetup.id).map((machine) => {
+                  <div className="space-y-1">
+                    {selectedSetup && getMachinesForSetup(selectedSetup.id).map((machine, index) => {
                       const setupType = selectedSetup.type || "single";
                       const total = getMachinesForSetup(selectedSetup.id).length;
                       const posLabel = getPositionLabel(setupType, machine.position_on_setup || 0, total);
                       return (
-                        <div key={machine.id} className="flex items-center justify-between rounded-md border p-2">
+                        <div
+                          key={machine.id}
+                          draggable
+                          onDragStart={() => handleDragStart(index)}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={() => handleDrop(index)}
+                          className={`flex items-center justify-between rounded-md border p-2 cursor-grab active:cursor-grabbing ${dragIndex === index ? "opacity-50" : ""}`}
+                        >
                           <div className="flex items-center gap-2">
+                            <GripVertical className="h-4 w-4 text-muted-foreground" />
                             <Truck className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm font-medium">{machine.serial_number}</span>
                             {posLabel && <span className="text-xs text-muted-foreground">({posLabel})</span>}
