@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ArrowLeft, Pencil, Save, X, Truck, Package } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -60,7 +61,6 @@ export default function SpotDetail() {
     enabled: !!id,
   });
 
-  // Available setups (not assigned to any spot)
   const { data: availableSetups = [] } = useQuery({
     queryKey: ["available-setups"],
     queryFn: async () => {
@@ -70,7 +70,6 @@ export default function SpotDetail() {
     },
   });
 
-  // Machines in this spot's setups
   const { data: spotMachines = [] } = useQuery({
     queryKey: ["spot-machines", id],
     queryFn: async () => {
@@ -78,7 +77,7 @@ export default function SpotDetail() {
       if (setupIds.length === 0) return [];
       const { data, error } = await supabase
         .from("machines")
-        .select("id, serial_number, status, position_on_setup, model_id, item_details:model_id(name)")
+        .select("id, serial_number, status, position_on_setup, model_id, setup_id, item_details:model_id(name)")
         .in("setup_id", setupIds)
         .order("position_on_setup");
       if (error) throw error;
@@ -87,7 +86,23 @@ export default function SpotDetail() {
     enabled: setups.length > 0,
   });
 
-  // Inventory at this spot
+  // Fetch machine slots for all machines in this spot
+  const { data: machineSlots = [] } = useQuery({
+    queryKey: ["spot-machine-slots", id],
+    queryFn: async () => {
+      const machineIds = spotMachines.map((m: any) => m.id);
+      if (machineIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("machine_slots")
+        .select("*, item_details:current_product_id(name)")
+        .in("machine_id", machineIds)
+        .order("slot_number");
+      if (error) throw error;
+      return data;
+    },
+    enabled: spotMachines.length > 0,
+  });
+
   const { data: spotInventory = [] } = useQuery({
     queryKey: ["spot-inventory", id],
     queryFn: async () => {
@@ -142,7 +157,6 @@ export default function SpotDetail() {
 
   const assignSetup = useMutation({
     mutationFn: async (setupId: string) => {
-      // Unassign current setups from this spot
       await supabase.from("setups").update({ spot_id: null }).eq("spot_id", id!);
       if (setupId !== "none") {
         const { error } = await supabase.from("setups").update({ spot_id: id }).eq("id", setupId);
@@ -153,6 +167,7 @@ export default function SpotDetail() {
       queryClient.invalidateQueries({ queryKey: ["spot-setups", id] });
       queryClient.invalidateQueries({ queryKey: ["available-setups"] });
       queryClient.invalidateQueries({ queryKey: ["spot-machines", id] });
+      queryClient.invalidateQueries({ queryKey: ["spot-machine-slots", id] });
       toast({ title: "Setup assignment updated" });
     },
     onError: (error) => {
@@ -166,6 +181,9 @@ export default function SpotDetail() {
   const location = spot.locations as any;
   const rentPerSpot = location?.rent_amount && siblingCount > 0 ? (location.rent_amount / siblingCount) : 0;
   const currentSetup = setups[0];
+
+  const getSlotsForMachine = (machineId: string) =>
+    machineSlots.filter((s: any) => s.machine_id === machineId);
 
   return (
     <AppLayout>
@@ -254,13 +272,8 @@ export default function SpotDetail() {
             <div className="flex items-center justify-between">
               <CardTitle>Setup</CardTitle>
               {isAdmin && (
-                <Select
-                  value={currentSetup?.id || "none"}
-                  onValueChange={(v) => assignSetup.mutate(v)}
-                >
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Assign setup" />
-                  </SelectTrigger>
+                <Select value={currentSetup?.id || "none"} onValueChange={(v) => assignSetup.mutate(v)}>
+                  <SelectTrigger className="w-48"><SelectValue placeholder="Assign setup" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">— None —</SelectItem>
                     {currentSetup && <SelectItem value={currentSetup.id}>{currentSetup.name} (current)</SelectItem>}
@@ -284,31 +297,61 @@ export default function SpotDetail() {
           </CardContent>
         </Card>
 
-        {/* Machines */}
+        {/* Machines with Slots */}
         <Card>
           <CardHeader><CardTitle>Machines ({spotMachines.length})</CardTitle></CardHeader>
           <CardContent>
             {spotMachines.length === 0 ? (
               <p className="text-muted-foreground">No machines at this spot.</p>
             ) : (
-              <div className="space-y-2">
-                {spotMachines.map((machine: any) => (
-                  <div key={machine.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <Truck className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <span className="font-medium text-foreground">{machine.serial_number}</span>
-                        {machine.item_details?.name && (
-                          <p className="text-xs text-muted-foreground">{machine.item_details.name}</p>
-                        )}
+              <div className="space-y-4">
+                {spotMachines.map((machine: any) => {
+                  const slots = getSlotsForMachine(machine.id);
+                  return (
+                    <div key={machine.id} className="border rounded-lg overflow-hidden">
+                      <div
+                        className="flex items-center justify-between p-3 bg-muted/50 cursor-pointer hover:bg-muted"
+                        onClick={() => navigate(`/machines/${machine.id}`)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Truck className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <span className="font-medium text-foreground">{machine.serial_number}</span>
+                            {machine.item_details?.name && (
+                              <p className="text-xs text-muted-foreground">{machine.item_details.name}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {machine.position_on_setup && <Badge variant="outline">Pos {machine.position_on_setup}</Badge>}
+                          <Badge variant={machine.status === "deployed" ? "default" : "secondary"}>{machine.status}</Badge>
+                        </div>
                       </div>
+                      {slots.length > 0 && (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">Slot</TableHead>
+                              <TableHead className="text-xs">Product</TableHead>
+                              <TableHead className="text-xs text-right">Stock</TableHead>
+                              <TableHead className="text-xs text-right">Capacity</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {slots.map((slot: any) => (
+                              <TableRow key={slot.id}>
+                                <TableCell className="py-1 text-sm">{slot.slot_number}</TableCell>
+                                <TableCell className="py-1 text-sm">{slot.item_details?.name || "—"}</TableCell>
+                                <TableCell className="py-1 text-sm text-right">{slot.current_stock ?? 0}</TableCell>
+                                <TableCell className="py-1 text-sm text-right">{slot.capacity ?? 150}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      {machine.position_on_setup && <Badge variant="outline">Pos {machine.position_on_setup}</Badge>}
-                      <Badge variant={machine.status === "deployed" ? "default" : "secondary"}>{machine.status}</Badge>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>

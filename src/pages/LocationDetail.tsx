@@ -9,7 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Pencil, Save, X, MapPin } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ArrowLeft, Pencil, Save, X, MapPin, ChevronDown, Truck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
 import type { Database } from "@/integrations/supabase/types";
@@ -24,19 +26,12 @@ export default function LocationDetail() {
   const queryClient = useQueryClient();
   const { isAdmin } = useUserRole();
   const [isEditing, setIsEditing] = useState(false);
+  const [expandedSpots, setExpandedSpots] = useState<Set<string>>(new Set());
   const [form, setForm] = useState({
-    name: "",
-    address: "",
-    contact_person_name: "",
-    contact_person_number: "",
-    contact_person_email: "",
-    negotiation_type: "fixed_rent" as NegotiationType,
-    rent_amount: 0,
-    commission_percentage: 0,
-    total_spots: 0,
-    contract_start_date: "",
-    contract_end_date: "",
-    contract_term: "indefinite" as ContractTerm,
+    name: "", address: "", contact_person_name: "", contact_person_number: "",
+    contact_person_email: "", negotiation_type: "fixed_rent" as NegotiationType,
+    rent_amount: 0, commission_percentage: 0, total_spots: 0,
+    contract_start_date: "", contract_end_date: "", contract_term: "indefinite" as ContractTerm,
   });
 
   const { data: location, isLoading } = useQuery({
@@ -59,17 +54,62 @@ export default function LocationDetail() {
     enabled: !!id,
   });
 
+  // Fetch setups for spots at this location
+  const { data: setups = [] } = useQuery({
+    queryKey: ["location-setups", id],
+    queryFn: async () => {
+      const spotIds = spots.map((s) => s.id);
+      if (spotIds.length === 0) return [];
+      const { data, error } = await supabase.from("setups").select("id, name, type, spot_id").in("spot_id", spotIds);
+      if (error) throw error;
+      return data;
+    },
+    enabled: spots.length > 0,
+  });
+
+  // Fetch machines for those setups
+  const { data: machines = [] } = useQuery({
+    queryKey: ["location-machines", id],
+    queryFn: async () => {
+      const setupIds = setups.map((s) => s.id);
+      if (setupIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("machines")
+        .select("id, serial_number, setup_id, position_on_setup, model_id, item_details:model_id(name)")
+        .in("setup_id", setupIds)
+        .order("position_on_setup");
+      if (error) throw error;
+      return data;
+    },
+    enabled: setups.length > 0,
+  });
+
+  // Fetch slots for machines
+  const { data: machineSlots = [] } = useQuery({
+    queryKey: ["location-machine-slots", id],
+    queryFn: async () => {
+      const machineIds = machines.map((m: any) => m.id);
+      if (machineIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("machine_slots")
+        .select("*, item_details:current_product_id(name)")
+        .in("machine_id", machineIds)
+        .order("slot_number");
+      if (error) throw error;
+      return data;
+    },
+    enabled: machines.length > 0,
+  });
+
   useEffect(() => {
     if (location) {
       setForm({
-        name: location.name || "",
-        address: location.address || "",
+        name: location.name || "", address: location.address || "",
         contact_person_name: location.contact_person_name || "",
         contact_person_number: location.contact_person_number || "",
         contact_person_email: location.contact_person_email || "",
         negotiation_type: (location.negotiation_type as NegotiationType) || "fixed_rent",
-        rent_amount: location.rent_amount || 0,
-        commission_percentage: location.commission_percentage || 0,
+        rent_amount: location.rent_amount || 0, commission_percentage: location.commission_percentage || 0,
         total_spots: location.total_spots || 0,
         contract_start_date: location.contract_start_date || "",
         contract_end_date: location.contract_end_date || "",
@@ -81,18 +121,14 @@ export default function LocationDetail() {
   const updateLocation = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from("locations").update({
-        name: form.name.trim(),
-        address: form.address.trim() || null,
+        name: form.name.trim(), address: form.address.trim() || null,
         contact_person_name: form.contact_person_name.trim() || null,
         contact_person_number: form.contact_person_number.trim() || null,
         contact_person_email: form.contact_person_email.trim() || null,
-        negotiation_type: form.negotiation_type,
-        rent_amount: form.rent_amount,
-        commission_percentage: form.commission_percentage,
-        total_spots: form.total_spots,
+        negotiation_type: form.negotiation_type, rent_amount: form.rent_amount,
+        commission_percentage: form.commission_percentage, total_spots: form.total_spots,
         contract_start_date: form.contract_start_date || null,
-        contract_end_date: form.contract_end_date || null,
-        contract_term: form.contract_term,
+        contract_end_date: form.contract_end_date || null, contract_term: form.contract_term,
       }).eq("id", id!);
       if (error) throw error;
     },
@@ -109,6 +145,18 @@ export default function LocationDetail() {
 
   if (isLoading) return <AppLayout><div className="text-muted-foreground">Loading...</div></AppLayout>;
   if (!location) return <AppLayout><div className="text-muted-foreground">Location not found</div></AppLayout>;
+
+  const getSetupForSpot = (spotId: string) => setups.find((s) => s.spot_id === spotId);
+  const getMachinesForSetup = (setupId: string) => machines.filter((m: any) => m.setup_id === setupId);
+  const getSlotsForMachine = (machineId: string) => machineSlots.filter((s: any) => s.machine_id === machineId);
+
+  const toggleSpot = (spotId: string) => {
+    setExpandedSpots((prev) => {
+      const next = new Set(prev);
+      if (next.has(spotId)) next.delete(spotId); else next.add(spotId);
+      return next;
+    });
+  };
 
   return (
     <AppLayout>
@@ -232,6 +280,7 @@ export default function LocationDetail() {
           </CardContent>
         </Card>
 
+        {/* Spots with Setups, Machines, and Slots */}
         <Card>
           <CardHeader><CardTitle>Spots ({spots.length})</CardTitle></CardHeader>
           <CardContent>
@@ -239,18 +288,85 @@ export default function LocationDetail() {
               <p className="text-muted-foreground">No spots assigned to this location.</p>
             ) : (
               <div className="space-y-2">
-                {spots.map((spot) => (
-                  <div
-                    key={spot.id}
-                    className="flex items-center justify-between p-3 bg-muted/50 rounded-lg cursor-pointer hover:bg-muted"
-                    onClick={() => navigate(`/spots/${spot.id}`)}
-                  >
-                    <span className="font-medium text-foreground">{spot.name}</span>
-                    <Badge variant={spot.status === "active" ? "default" : "secondary"}>
-                      {spot.status}
-                    </Badge>
-                  </div>
-                ))}
+                {spots.map((spot) => {
+                  const spotSetup = getSetupForSpot(spot.id);
+                  const spotMachines = spotSetup ? getMachinesForSetup(spotSetup.id) : [];
+                  const isExpanded = expandedSpots.has(spot.id);
+
+                  return (
+                    <Collapsible key={spot.id} open={isExpanded} onOpenChange={() => toggleSpot(spot.id)}>
+                      <div className="border rounded-lg overflow-hidden">
+                        <div className="flex items-center justify-between p-3 bg-muted/50">
+                          <div className="flex items-center gap-3">
+                            <button
+                              className="font-medium text-primary hover:underline"
+                              onClick={() => navigate(`/spots/${spot.id}`)}
+                            >
+                              {spot.name}
+                            </button>
+                            <Badge variant={spot.status === "active" ? "default" : "secondary"}>{spot.status}</Badge>
+                            {spotSetup && <Badge variant="outline">{spotSetup.name}</Badge>}
+                          </div>
+                          <CollapsibleTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7">
+                              <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                            </Button>
+                          </CollapsibleTrigger>
+                        </div>
+                        <CollapsibleContent>
+                          {spotMachines.length === 0 ? (
+                            <div className="p-3 text-sm text-muted-foreground">No machines at this spot.</div>
+                          ) : (
+                            <div className="p-3 space-y-3">
+                              {spotMachines.map((machine: any) => {
+                                const slots = getSlotsForMachine(machine.id);
+                                return (
+                                  <div key={machine.id} className="border rounded-md overflow-hidden">
+                                    <div
+                                      className="flex items-center justify-between p-2 bg-background cursor-pointer hover:bg-muted/30"
+                                      onClick={() => navigate(`/machines/${machine.id}`)}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <Truck className="h-4 w-4 text-muted-foreground" />
+                                        <span className="text-sm font-medium">{machine.serial_number}</span>
+                                        {machine.item_details?.name && (
+                                          <span className="text-xs text-muted-foreground">({machine.item_details.name})</span>
+                                        )}
+                                      </div>
+                                      {machine.position_on_setup && <Badge variant="outline" className="text-xs">Pos {machine.position_on_setup}</Badge>}
+                                    </div>
+                                    {slots.length > 0 && (
+                                      <Table>
+                                        <TableHeader>
+                                          <TableRow>
+                                            <TableHead className="text-xs py-1">Slot</TableHead>
+                                            <TableHead className="text-xs py-1">Product</TableHead>
+                                            <TableHead className="text-xs py-1 text-right">Stock</TableHead>
+                                            <TableHead className="text-xs py-1 text-right">Capacity</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {slots.map((slot: any) => (
+                                            <TableRow key={slot.id}>
+                                              <TableCell className="py-1 text-xs">{slot.slot_number}</TableCell>
+                                              <TableCell className="py-1 text-xs">{slot.item_details?.name || "—"}</TableCell>
+                                              <TableCell className="py-1 text-xs text-right">{slot.current_stock ?? 0}</TableCell>
+                                              <TableCell className="py-1 text-xs text-right">{slot.capacity ?? 150}</TableCell>
+                                            </TableRow>
+                                          ))}
+                                        </TableBody>
+                                      </Table>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </CollapsibleContent>
+                      </div>
+                    </Collapsible>
+                  );
+                })}
               </div>
             )}
           </CardContent>
