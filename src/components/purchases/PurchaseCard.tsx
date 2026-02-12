@@ -32,6 +32,7 @@ const statusConfig: Record<PurchaseStatus, { label: string; variant: "default" |
   draft: { label: "Draft", variant: "outline" },
   pending: { label: "Pending", variant: "secondary" },
   in_transit: { label: "In Transit", variant: "default" },
+  arrived: { label: "Arrived", variant: "secondary" },
   received: { label: "Received", variant: "default" },
   cancelled: { label: "Cancelled", variant: "destructive" },
 };

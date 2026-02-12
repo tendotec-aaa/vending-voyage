@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
-export type PurchaseStatus = "draft" | "pending" | "in_transit" | "received" | "cancelled";
+export type PurchaseStatus = "draft" | "pending" | "in_transit" | "arrived" | "received" | "cancelled";
 export type PurchaseType = "local" | "import";
 export type DistributionMethod = "by_value" | "by_quantity" | "by_cbm";
 
@@ -152,18 +152,39 @@ export function usePurchases() {
 
       if (purchaseError) throw purchaseError;
 
-      // Create line items (now called purchase_items)
+      // Create line items
       if (purchaseData.line_items.length > 0) {
-        const lineItems = purchaseData.line_items.map((item, index) => ({
-          purchase_id: purchase.id,
-          item_detail_id: item.item_detail_id || null,
-          quantity_ordered: item.quantity_ordered,
-          unit_cost: item.unit_cost,
-          cbm: item.cbm || 0,
-          quantity_remaining: item.quantity_ordered,
-          active_item: true,
-          arrival_order: index + 1,
-        }));
+        const lineItems = [];
+        for (const item of purchaseData.line_items) {
+          let itemDetailId = item.item_detail_id || null;
+
+          // If no existing item_detail linked, create a new one
+          if (!itemDetailId && item.item_name) {
+            const { data: newItem, error: newItemError } = await supabase
+              .from("item_details")
+              .insert({
+                name: item.item_name,
+                sku: item.sku || `SKU-${Date.now().toString(36).toUpperCase()}`,
+                type: "merchandise" as const,
+              })
+              .select()
+              .single();
+
+            if (newItemError) throw newItemError;
+            itemDetailId = newItem.id;
+          }
+
+          lineItems.push({
+            purchase_id: purchase.id,
+            item_detail_id: itemDetailId,
+            quantity_ordered: item.quantity_ordered,
+            unit_cost: item.unit_cost,
+            cbm: item.cbm || 0,
+            quantity_remaining: item.quantity_ordered,
+            active_item: true,
+            arrival_order: lineItems.length + 1,
+          });
+        }
 
         const { data: createdLines, error: linesError } = await supabase
           .from("purchase_items")
