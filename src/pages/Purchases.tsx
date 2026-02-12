@@ -18,6 +18,7 @@ const statusColors: Record<PurchaseStatus, string> = {
   draft: "bg-muted text-muted-foreground",
   pending: "bg-yellow-500/20 text-yellow-600",
   in_transit: "bg-blue-500/20 text-blue-600",
+  arrived: "bg-orange-500/20 text-orange-600",
   received: "bg-green-500/20 text-green-600",
   cancelled: "bg-destructive/20 text-destructive",
 };
@@ -66,6 +67,7 @@ export default function Purchases() {
                 <SelectItem value="draft">Draft</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="in_transit">In Transit</SelectItem>
+                <SelectItem value="arrived">Arrived</SelectItem>
                 <SelectItem value="received">Received</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>

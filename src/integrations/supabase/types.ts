@@ -1212,6 +1212,7 @@ export type Database = {
         | "draft"
         | "pending"
         | "in_transit"
+        | "arrived"
         | "received"
         | "cancelled"
       purchase_type: "local" | "import"
@@ -1357,6 +1358,7 @@ export const Constants = {
         "draft",
         "pending",
         "in_transit",
+        "arrived",
         "received",
         "cancelled",
       ],

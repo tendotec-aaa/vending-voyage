@@ -64,7 +64,7 @@ export function useReceiveStock() {
             item_detail:item_details(id, name, sku)
           )
         `)
-        .in("status", ["in_transit", "pending"])
+        .in("status", ["arrived"])
         .eq("received_inventory", false)
         .order("expected_arrival_date", { ascending: true });
 
