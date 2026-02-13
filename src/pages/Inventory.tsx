@@ -46,7 +46,7 @@ function useConsolidatedInventory() {
       // Fetch active purchase batches for FIFO cost calculation
       const { data: purchaseBatches, error: batchError } = await supabase
         .from("purchase_items")
-        .select("item_detail_id, quantity_remaining, landed_unit_cost, active_item")
+        .select("item_detail_id, quantity_remaining, landed_unit_cost, final_unit_cost, active_item")
         .eq("active_item", true);
       if (batchError) throw batchError;
 
@@ -64,7 +64,8 @@ function useConsolidatedInventory() {
         // Calculate total inventory cost from active FIFO batches
         const itemBatches = (purchaseBatches || []).filter((b: any) => b.item_detail_id === item.id);
         const totalInventoryCost = itemBatches.reduce((sum: number, b: any) => {
-          return sum + ((b.quantity_remaining || 0) * (b.landed_unit_cost || 0));
+          const costPerUnit = b.final_unit_cost || b.landed_unit_cost || 0;
+          return sum + ((b.quantity_remaining || 0) * costPerUnit);
         }, 0);
 
         return {

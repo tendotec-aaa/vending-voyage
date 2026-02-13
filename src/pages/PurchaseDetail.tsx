@@ -45,7 +45,7 @@ export default function PurchaseDetail() {
           supplier:suppliers(id, name),
           purchase_items(
             id, quantity_ordered, unit_cost, cbm, quantity_received, quantity_remaining,
-            landed_unit_cost, line_fees_total, global_fees_allocated, tax_allocated,
+            landed_unit_cost, final_unit_cost, line_fees_total, global_fees_allocated, tax_allocated,
             item_detail_id,
             item_detail:item_details(id, name, sku)
           )
@@ -125,6 +125,11 @@ export default function PurchaseDetail() {
         const landedUnitCost = item.quantity_ordered > 0 ? totalItemCost / item.quantity_ordered : 0;
 
         // Round to 3 decimal places for storage
+        // For import orders, final_unit_cost = landed_unit_cost
+        // For local orders, final_unit_cost = (subtotal + line fees + global fees + tax) / qty
+        // In practice both formulas yield the same result since landed_unit_cost = totalItemCost / qty
+        const finalUnitCost = landedUnitCost;
+
         await supabase
           .from("purchase_items")
           .update({
@@ -132,7 +137,8 @@ export default function PurchaseDetail() {
             global_fees_allocated: Math.round(distributedGlobalFees * 1000) / 1000,
             tax_allocated: Math.round(taxAllocated * 1000) / 1000,
             landed_unit_cost: Math.round(landedUnitCost * 1000) / 1000,
-          })
+            final_unit_cost: Math.round(finalUnitCost * 1000) / 1000,
+          } as any)
           .eq("id", item.id);
       }
 
@@ -375,8 +381,8 @@ export default function PurchaseDetail() {
                           <>
                             <Separator className="my-1" />
                             <div className="flex justify-between font-semibold text-foreground">
-                              <span>Landed Unit Cost</span>
-                              <span>${fmt3(item.landed_unit_cost || 0)}</span>
+                              <span>Final Unit Cost</span>
+                              <span>${fmt3(item.final_unit_cost || item.landed_unit_cost || 0)}</span>
                             </div>
                           </>
                         )}

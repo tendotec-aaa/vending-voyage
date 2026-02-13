@@ -1,0 +1,1 @@
+ALTER TABLE public.purchase_items ADD COLUMN IF NOT EXISTS final_unit_cost numeric DEFAULT 0;

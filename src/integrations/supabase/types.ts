@@ -537,6 +537,7 @@ export type Database = {
           arrival_order: number | null
           cbm: number | null
           created_at: string | null
+          final_unit_cost: number | null
           global_fees_allocated: number | null
           id: string
           inventory_id: string | null
@@ -556,6 +557,7 @@ export type Database = {
           arrival_order?: number | null
           cbm?: number | null
           created_at?: string | null
+          final_unit_cost?: number | null
           global_fees_allocated?: number | null
           id?: string
           inventory_id?: string | null
@@ -575,6 +577,7 @@ export type Database = {
           arrival_order?: number | null
           cbm?: number | null
           created_at?: string | null
+          final_unit_cost?: number | null
           global_fees_allocated?: number | null
           id?: string
           inventory_id?: string | null
