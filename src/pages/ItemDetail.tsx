@@ -35,11 +35,13 @@ export default function ItemDetail() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("item_details")
-        .select(`
+        .select(
+          `
           *,
           category:categories(id, name),
           subcategory:subcategories(id, name)
-        `)
+        `,
+        )
         .eq("id", id!)
         .single();
       if (error) throw error;
@@ -83,11 +85,13 @@ export default function ItemDetail() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("purchase_items")
-        .select(`
+        .select(
+          `
           id, quantity_ordered, quantity_received, quantity_remaining,
           unit_cost, landed_unit_cost, active_item, arrival_order,
           purchase:purchases(id, purchase_order_number, status, created_at, received_at)
-        `)
+        `,
+        )
         .eq("item_detail_id", id!)
         .order("arrival_order", { ascending: true });
       if (error) throw error;
@@ -133,8 +137,18 @@ export default function ItemDetail() {
     },
   });
 
-  if (isLoading) return <AppLayout><div className="text-muted-foreground p-6">Loading...</div></AppLayout>;
-  if (!item) return <AppLayout><div className="text-muted-foreground p-6">Item not found</div></AppLayout>;
+  if (isLoading)
+    return (
+      <AppLayout>
+        <div className="text-muted-foreground p-6">Loading...</div>
+      </AppLayout>
+    );
+  if (!item)
+    return (
+      <AppLayout>
+        <div className="text-muted-foreground p-6">Item not found</div>
+      </AppLayout>
+    );
 
   const totalWarehouse = warehouseStock.reduce((s, i) => s + (i.quantity_on_hand || 0), 0);
   const totalMachine = machineStock.reduce((s, i) => s + (i.current_stock || 0), 0);
@@ -143,7 +157,7 @@ export default function ItemDetail() {
   // FIFO cost calculations
   const activeBatches = purchaseBatches.filter((b: any) => b.active_item && (b.quantity_remaining || 0) > 0);
   const totalInventoryCost = activeBatches.reduce((sum: number, b: any) => {
-    return sum + ((b.quantity_remaining || 0) * (b.landed_unit_cost || 0));
+    return sum + (b.quantity_remaining || 0) * (b.landed_unit_cost || 0);
   }, 0);
   const weightedAvgCost = totalStock > 0 ? totalInventoryCost / totalStock : 0;
 
@@ -164,13 +178,17 @@ export default function ItemDetail() {
             <div className="flex gap-2">
               {isEditing ? (
                 <>
-                  <Button variant="outline" onClick={() => setIsEditing(false)}><X className="mr-2 h-4 w-4" /> Cancel</Button>
+                  <Button variant="outline" onClick={() => setIsEditing(false)}>
+                    <X className="mr-2 h-4 w-4" /> Cancel
+                  </Button>
                   <Button onClick={() => updateItem.mutate()} disabled={!form.name.trim() || updateItem.isPending}>
                     <Save className="mr-2 h-4 w-4" /> Save
                   </Button>
                 </>
               ) : (
-                <Button variant="outline" onClick={() => setIsEditing(true)}><Pencil className="mr-2 h-4 w-4" /> Edit</Button>
+                <Button variant="outline" onClick={() => setIsEditing(true)}>
+                  <Pencil className="mr-2 h-4 w-4" /> Edit
+                </Button>
               )}
             </div>
           )}
@@ -178,7 +196,9 @@ export default function ItemDetail() {
 
         {/* Item Info */}
         <Card>
-          <CardHeader><CardTitle>Item Information</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Item Information</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -196,10 +216,19 @@ export default function ItemDetail() {
               <div className="space-y-2">
                 <Label>Category</Label>
                 {isEditing ? (
-                  <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v, subcategory_id: "" })}>
-                    <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                  <Select
+                    value={form.category_id}
+                    onValueChange={(v) => setForm({ ...form, category_id: v, subcategory_id: "" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
                     <SelectContent>
-                      {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                      {categories.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 ) : (
@@ -210,9 +239,15 @@ export default function ItemDetail() {
                 <Label>Subcategory</Label>
                 {isEditing ? (
                   <Select value={form.subcategory_id} onValueChange={(v) => setForm({ ...form, subcategory_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select subcategory" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select subcategory" />
+                    </SelectTrigger>
                     <SelectContent>
-                      {subcategories.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                      {subcategories.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 ) : (
@@ -227,7 +262,10 @@ export default function ItemDetail() {
             <div className="space-y-2">
               <Label>Description</Label>
               {isEditing ? (
-                <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+                <Textarea
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                />
               ) : (
                 <p className="text-foreground">{item.description || "—"}</p>
               )}
@@ -237,7 +275,9 @@ export default function ItemDetail() {
 
         {/* Cost Summary */}
         <Card>
-          <CardHeader><CardTitle>Cost Summary (FIFO)</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Cost Summary (FIFO)</CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1">
@@ -258,7 +298,9 @@ export default function ItemDetail() {
 
         {/* Stock Breakdown */}
         <Card>
-          <CardHeader><CardTitle>Stock Breakdown</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Stock Breakdown</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1">
@@ -292,7 +334,9 @@ export default function ItemDetail() {
 
         {/* Purchase Batches (FIFO) */}
         <Card>
-          <CardHeader><CardTitle>Purchase Batches (FIFO)</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Purchase Batches (FIFO)</CardTitle>
+          </CardHeader>
           <CardContent>
             {purchaseBatches.length === 0 ? (
               <p className="text-muted-foreground">No purchase history.</p>
@@ -310,23 +354,28 @@ export default function ItemDetail() {
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-foreground">{pi.purchase?.purchase_order_number || "—"}</span>
                         {pi.active_item ? (
-                          <Badge variant="secondary" className="text-xs">Active</Badge>
+                          <Badge variant="secondary" className="text-xs">
+                            Active
+                          </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-xs">Depleted</Badge>
+                          <Badge variant="outline" className="text-xs">
+                            Depleted
+                          </Badge>
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Ordered: {pi.quantity_ordered} | Received: {pi.quantity_received || 0} | Remaining: {pi.quantity_remaining || 0}
+                        Ordered: {pi.quantity_ordered} | Received: {pi.quantity_received || 0} | Remaining:{" "}
+                        {pi.quantity_remaining || 0}
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm text-foreground">${Number(pi.unit_cost).toFixed(3)}/unit</p>
-                      {(pi.landed_unit_cost || 0) > 0 && (
-                        <p className="text-xs text-muted-foreground">Landed: ${Number(pi.landed_unit_cost).toFixed(3)}</p>
+                      {(pi.final_unit_cost || 0) > 0 && (
+                        <p className="text-xs text-muted-foreground">Final: ${Number(pi.final_unit_cost).toFixed(3)}</p>
                       )}
                       {pi.active_item && (pi.quantity_remaining || 0) > 0 && (
                         <p className="text-xs font-medium text-primary">
-                          Batch Value: ${((pi.quantity_remaining || 0) * (pi.landed_unit_cost || 0)).toFixed(2)}
+                          Batch Value: ${((pi.quantity_remaining || 0) * (pi.final_unit_cost || 0)).toFixed(2)}
                         </p>
                       )}
                     </div>
