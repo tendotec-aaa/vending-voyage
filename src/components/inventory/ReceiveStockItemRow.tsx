@@ -100,9 +100,11 @@ export function ReceiveStockItemRow({
         <Input
           type="number"
           min={0}
-          max={quantityRemaining}
           value={quantityReceived}
-          onChange={(e) => onQuantityReceivedChange(Math.max(0, parseInt(e.target.value) || 0))}
+          onChange={(e) => {
+            const val = Math.max(0, parseInt(e.target.value) || 0);
+            onQuantityReceivedChange(val);
+          }}
           className="w-32"
         />
         {hasDiscrepancy && (

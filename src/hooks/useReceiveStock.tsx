@@ -100,7 +100,7 @@ export function useReceiveStock() {
           .from("purchase_items")
           .update({
             quantity_received: item.quantityReceived,
-            quantity_remaining: 0,
+            quantity_remaining: item.quantityReceived,
           })
           .eq("id", item.purchaseItemId);
 
@@ -108,7 +108,6 @@ export function useReceiveStock() {
 
         // 2. Create receiving_allocations and update inventory for each warehouse
         for (const alloc of item.allocations) {
-          // Insert allocation record
           const { error: allocError } = await supabase
             .from("receiving_allocations")
             .insert({
@@ -120,13 +119,11 @@ export function useReceiveStock() {
 
           if (allocError) throw allocError;
 
-          // Upsert inventory
           await upsertInventory(item.itemDetailId, alloc.warehouseId, alloc.quantity);
         }
 
         // 3. Handle discrepancy
         if (difference > 0) {
-          // Create receiving note
           const { error: noteError } = await supabase
             .from("receiving_notes")
             .insert({
@@ -140,11 +137,9 @@ export function useReceiveStock() {
 
           if (noteError) throw noteError;
 
-          // Send missing stock to Unaccounted Inventory
           if (systemWarehouseId) {
             await upsertInventory(item.itemDetailId, systemWarehouseId, difference);
 
-            // Also create allocation record for audit
             const { error: unaccountedAllocError } = await supabase
               .from("receiving_allocations")
               .insert({

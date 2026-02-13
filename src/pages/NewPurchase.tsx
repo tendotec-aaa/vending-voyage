@@ -271,8 +271,10 @@ export default function NewPurchase() {
           unit_cost: item.unit_cost,
           cbm: item.cbm,
           item_detail_id: item.item_detail_id,
+          category_id: item.category_id,
+          subcategory_id: item.subcategory_id,
           fees: item.fees,
-        })),
+        } as any)),
         global_fees: globalFees,
         total_amount: summary.total,
       },
@@ -690,26 +692,26 @@ export default function NewPurchase() {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Items Subtotal</span>
-                <span>{summary.itemsSubtotal.toLocaleString()} {currency}</span>
+                <span>${summary.itemsSubtotal.toFixed(2)} {currency}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Item Fees</span>
-                <span>{summary.itemFeesTotal.toLocaleString()} {currency}</span>
+                <span>${summary.itemFeesTotal.toFixed(2)} {currency}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Global Fees</span>
-                <span>{summary.globalFeesTotal.toLocaleString()} {currency}</span>
+                <span>${summary.globalFeesTotal.toFixed(2)} {currency}</span>
               </div>
               {orderType === "local" && localTaxRate > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Tax ({localTaxRate}%)</span>
-                  <span>{summary.taxAmount.toLocaleString()} {currency}</span>
+                  <span>${summary.taxAmount.toFixed(2)} {currency}</span>
                 </div>
               )}
               <Separator />
               <div className="flex justify-between font-semibold text-lg">
                 <span>Total</span>
-                <span>{summary.total.toLocaleString()} {currency}</span>
+                <span>${summary.total.toFixed(2)} {currency}</span>
               </div>
             </div>
 
@@ -724,7 +726,7 @@ export default function NewPurchase() {
                         <div key={index} className="flex justify-between text-sm">
                           <span className="text-muted-foreground">{lc.item_name}</span>
                           <span>
-                            {lc.per_unit_landed.toFixed(2)} {currency}/unit
+                            ${lc.per_unit_landed.toFixed(3)} {currency}/unit
                           </span>
                         </div>
                       )

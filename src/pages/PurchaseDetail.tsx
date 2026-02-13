@@ -26,7 +26,8 @@ const statusColors: Record<PurchaseStatus, string> = {
   cancelled: "bg-destructive/20 text-destructive",
 };
 
-const fmt = (n: number) => n.toFixed(2);
+const fmt2 = (n: number) => n.toFixed(2);
+const fmt3 = (n: number) => n.toFixed(3);
 
 export default function PurchaseDetail() {
   const { id } = useParams<{ id: string }>();
@@ -97,14 +98,11 @@ export default function PurchaseDetail() {
       const itemsSubtotal = items.reduce((sum: number, i: any) => sum + i.quantity_ordered * i.unit_cost, 0);
       const totalQuantity = items.reduce((sum: number, i: any) => sum + i.quantity_ordered, 0);
       const totalCbm = items.reduce((sum: number, i: any) => sum + (i.cbm || 0), 0);
-      const globalFeesTotal = currentGlobalFees.reduce((sum, f) => sum + (f.amount || 0), 0);
 
-      // Calculate line fees total per item
       for (const item of items) {
         const itemLineFees = currentLineFees.filter((f) => f.purchase_line_id === item.id);
         const lineFeesTotal = itemLineFees.reduce((sum, f) => sum + (f.amount || 0), 0);
 
-        // Distribute global fees
         const itemValue = item.quantity_ordered * item.unit_cost;
         let distributedGlobalFees = 0;
         for (const gf of currentGlobalFees) {
@@ -126,26 +124,27 @@ export default function PurchaseDetail() {
         const totalItemCost = itemValue + lineFeesTotal + distributedGlobalFees + taxAllocated;
         const landedUnitCost = item.quantity_ordered > 0 ? totalItemCost / item.quantity_ordered : 0;
 
+        // Round to 3 decimal places for storage
         await supabase
           .from("purchase_items")
           .update({
-            line_fees_total: lineFeesTotal,
-            global_fees_allocated: distributedGlobalFees,
-            tax_allocated: taxAllocated,
-            landed_unit_cost: landedUnitCost,
+            line_fees_total: Math.round(lineFeesTotal * 1000) / 1000,
+            global_fees_allocated: Math.round(distributedGlobalFees * 1000) / 1000,
+            tax_allocated: Math.round(taxAllocated * 1000) / 1000,
+            landed_unit_cost: Math.round(landedUnitCost * 1000) / 1000,
           })
           .eq("id", item.id);
       }
 
-      // Calculate total for all line fees
       const allLineFeesTotal = currentLineFees.reduce((sum, f) => sum + (f.amount || 0), 0);
+      const globalFeesTotal = currentGlobalFees.reduce((sum, f) => sum + (f.amount || 0), 0);
       const subtotalBeforeTax = itemsSubtotal + allLineFeesTotal + globalFeesTotal;
       const taxAmount = purchase.type === "local" && purchase.local_tax_rate ? subtotalBeforeTax * (purchase.local_tax_rate / 100) : 0;
       const total = subtotalBeforeTax + taxAmount;
 
       await supabase
         .from("purchases")
-        .update({ total_amount: total })
+        .update({ total_amount: Math.round(total * 100) / 100 })
         .eq("id", id!);
     },
     onSuccess: () => {
@@ -183,7 +182,6 @@ export default function PurchaseDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["purchase-global-fees", id] });
-      // Trigger recalculation after a brief delay for the query to refetch
       setTimeout(() => recalculateMutation.mutate(), 500);
     },
   });
@@ -210,7 +208,6 @@ export default function PurchaseDetail() {
     },
   });
 
-  // Add line fee
   const addLineFee = useMutation({
     mutationFn: async (purchaseLineId: string) => {
       const { error } = await supabase.from("purchase_line_fees").insert({
@@ -251,9 +248,7 @@ export default function PurchaseDetail() {
   if (isLoading) return <AppLayout><div className="text-muted-foreground">Loading...</div></AppLayout>;
   if (!purchase) return <AppLayout><div className="text-muted-foreground">Purchase not found</div></AppLayout>;
 
-  // Editable until status is "received"
   const isEditable = purchase.status !== "received" && purchase.status !== "cancelled";
-  // Fees can be added/edited for in_transit, arrived, and earlier statuses
   const isFeesEditable = isEditable;
   const currentStatusIndex = statusFlow.indexOf(purchase.status as PurchaseStatus);
   const nextStatus = currentStatusIndex >= 0 && currentStatusIndex < statusFlow.length - 1 ? statusFlow[currentStatusIndex + 1] : null;
@@ -316,32 +311,80 @@ export default function PurchaseDetail() {
             {items.length === 0 ? (
               <p className="text-muted-foreground">No items in this order.</p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {items.map((item: any) => {
                   const itemLineFees = lineFees.filter((f) => f.purchase_line_id === item.id);
+                  const itemLineFeesTotal = itemLineFees.reduce((sum, f) => sum + (f.amount || 0), 0);
+                  const itemTotal = item.quantity_ordered * item.unit_cost;
+                  const globalAllocated = item.global_fees_allocated || 0;
+                  const numLineFees = itemLineFees.length;
+                  const numGlobalFees = globalFees.length;
+                  const feePerUnitLine = item.quantity_ordered > 0 ? itemLineFeesTotal / item.quantity_ordered : 0;
+                  const feePerUnitGlobal = item.quantity_ordered > 0 ? globalAllocated / item.quantity_ordered : 0;
+
                   return (
-                    <div key={item.id} className="p-4 border border-border rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
+                    <div key={item.id} className="p-4 border border-border rounded-lg space-y-2">
+                      {/* Item header */}
+                      <div className="flex items-center justify-between">
                         <div>
-                          <p className="font-medium text-foreground">{item.item_detail?.name || item.item_name || "Unnamed Item"}</p>
-                          <p className="text-xs text-muted-foreground">{item.item_detail?.sku || "No SKU"}</p>
+                          <p className="font-medium text-foreground">{item.item_detail?.name || "Unnamed Item"}</p>
+                          <p className="text-xs text-muted-foreground font-mono">{item.item_detail?.sku || "No SKU"}</p>
                         </div>
                         <Badge variant="outline">
                           {item.quantity_received || 0}/{item.quantity_ordered} received
                         </Badge>
                       </div>
-                      <div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-sm">
-                        <div><span className="text-muted-foreground">Qty: </span>{item.quantity_ordered}</div>
-                        <div><span className="text-muted-foreground">Unit Cost: </span>${fmt(item.unit_cost)}</div>
-                        <div><span className="text-muted-foreground">CBM: </span>{item.cbm || 0}</div>
-                        <div><span className="text-muted-foreground">Line Fees: </span>${fmt(item.line_fees_total || 0)}</div>
+
+                      {/* Cost breakdown rows */}
+                      <div className="bg-muted/30 rounded-md p-3 space-y-1.5 text-sm">
+                        {/* Row 1: Base cost */}
+                        <div className="flex flex-wrap gap-x-6 gap-y-1 text-foreground">
+                          <span><span className="text-muted-foreground">Qty:</span> {item.quantity_ordered.toLocaleString()}</span>
+                          <span><span className="text-muted-foreground">Unit Cost:</span> ${fmt3(item.unit_cost)}</span>
+                          <span><span className="text-muted-foreground">CBM:</span> {item.cbm || 0}</span>
+                          <span className="ml-auto font-medium"><span className="text-muted-foreground">Subtotal:</span> ${fmt2(itemTotal)}</span>
+                        </div>
+
+                        {/* Row 2: Line fees summary */}
+                        {(numLineFees > 0 || showLandedCost) && (
+                          <div className="flex flex-wrap gap-x-6 gap-y-1 text-foreground">
+                            <span><span className="text-muted-foreground">Line Fees:</span> {numLineFees}</span>
+                            <span><span className="text-muted-foreground">Fee/Unit:</span> ${fmt3(feePerUnitLine)}</span>
+                            <span className="ml-auto font-medium"><span className="text-muted-foreground">Total Line Fees:</span> ${fmt2(itemLineFeesTotal)}</span>
+                          </div>
+                        )}
+
+                        {/* Row 3: Global fees allocated summary */}
                         {showLandedCost && (
-                          <div><span className="text-muted-foreground">Landed/Unit: </span>${fmt(item.landed_unit_cost || 0)}</div>
+                          <div className="flex flex-wrap gap-x-6 gap-y-1 text-foreground">
+                            <span><span className="text-muted-foreground">Global Fees:</span> {numGlobalFees}</span>
+                            <span><span className="text-muted-foreground">Fee/Unit:</span> ${fmt3(feePerUnitGlobal)}</span>
+                            <span className="ml-auto font-medium"><span className="text-muted-foreground">Total Global Fees:</span> ${fmt2(globalAllocated)}</span>
+                          </div>
+                        )}
+
+                        {/* Row 4: Tax if applicable */}
+                        {showLandedCost && (item.tax_allocated || 0) > 0 && (
+                          <div className="flex flex-wrap gap-x-6 gap-y-1 text-foreground">
+                            <span><span className="text-muted-foreground">Tax Allocated:</span> ${fmt2(item.tax_allocated || 0)}</span>
+                          </div>
+                        )}
+
+                        {/* Row 5: Landed unit cost */}
+                        {showLandedCost && (
+                          <>
+                            <Separator className="my-1" />
+                            <div className="flex justify-between font-semibold text-foreground">
+                              <span>Landed Unit Cost</span>
+                              <span>${fmt3(item.landed_unit_cost || 0)}</span>
+                            </div>
+                          </>
                         )}
                       </div>
-                      {/* Line item fees */}
+
+                      {/* Line item fees detail */}
                       {itemLineFees.length > 0 && (
-                        <div className="mt-2 pl-4 border-l-2 border-border space-y-1">
+                        <div className="pl-4 border-l-2 border-border space-y-1">
                           {itemLineFees.map((fee) => (
                             <div key={fee.id} className="flex items-center gap-2 text-sm text-muted-foreground">
                               {isFeesEditable ? (
@@ -364,7 +407,7 @@ export default function PurchaseDetail() {
                               ) : (
                                 <>
                                   <span>{fee.fee_name}</span>
-                                  <span className="ml-auto">${fmt(fee.amount)}</span>
+                                  <span className="ml-auto">${fmt2(fee.amount)}</span>
                                 </>
                               )}
                             </div>
@@ -372,7 +415,7 @@ export default function PurchaseDetail() {
                         </div>
                       )}
                       {isFeesEditable && (
-                        <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={() => addLineFee.mutate(item.id)}>
+                        <Button variant="ghost" size="sm" className="text-xs" onClick={() => addLineFee.mutate(item.id)}>
                           <Plus className="mr-1 h-3 w-3" /> Add Line Fee
                         </Button>
                       )}
@@ -442,12 +485,12 @@ export default function PurchaseDetail() {
         <Card>
           <CardHeader><CardTitle>Cost Summary</CardTitle></CardHeader>
           <CardContent className="space-y-2">
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Items Subtotal</span><span>${fmt(itemsSubtotal)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Line Item Fees</span><span>${fmt(lineFeesTotal)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Global Fees</span><span>${fmt(globalFeesTotal)}</span></div>
-            {taxAmount > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Tax ({purchase.local_tax_rate}%)</span><span>${fmt(taxAmount)}</span></div>}
+            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Items Subtotal</span><span className="text-foreground">${fmt2(itemsSubtotal)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Line Item Fees</span><span className="text-foreground">${fmt2(lineFeesTotal)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Global Fees</span><span className="text-foreground">${fmt2(globalFeesTotal)}</span></div>
+            {taxAmount > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Tax ({purchase.local_tax_rate}%)</span><span className="text-foreground">${fmt2(taxAmount)}</span></div>}
             <Separator />
-            <div className="flex justify-between font-semibold text-lg"><span>Total</span><span>${fmt(total)}</span></div>
+            <div className="flex justify-between font-semibold text-lg"><span className="text-foreground">Total</span><span className="text-foreground">${fmt2(total)}</span></div>
           </CardContent>
         </Card>
       </div>
