@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -19,6 +21,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   ArrowLeft, 
   Camera, 
@@ -26,14 +38,16 @@ import {
   Save, 
   CalendarIcon,
   AlertTriangle,
-  ImagePlus
+  ImagePlus,
+  Clock
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/useAuth";
 import type { Database } from "@/integrations/supabase/types";
 
 type Location = Database["public"]["Tables"]["locations"]["Row"];
@@ -73,6 +87,24 @@ const severityOptions = [
   { id: "high", name: "High" },
 ];
 
+// Position labels for setup types
+const getPositionLabel = (position: number, setupType: string | null, totalMachines: number): string => {
+  if (totalMachines === 1) return "";
+  if (setupType === "double") return position === 1 ? "Left" : "Right";
+  if (setupType === "triple") {
+    if (position === 1) return "Left";
+    if (position === 2) return "Center";
+    return "Right";
+  }
+  if (setupType === "quad") {
+    if (position === 1) return "Top-Left";
+    if (position === 2) return "Top-Right";
+    if (position === 3) return "Bottom-Left";
+    return "Bottom-Right";
+  }
+  return `Position ${position}`;
+};
+
 interface SlotEntry {
   id: string;
   machineId: string;
@@ -95,7 +127,6 @@ interface SlotEntry {
   reportIssue: boolean;
   issueDescription: string;
   severity: string;
-  // Installation specific
   toyCapacity: number;
   cashCollected: number;
 }
@@ -103,6 +134,7 @@ interface SlotEntry {
 export default function NewVisitReport() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   
   // Location Details state
   const [selectedLocation, setSelectedLocation] = useState("");
@@ -123,6 +155,9 @@ export default function NewVisitReport() {
   // Photo & Sign Off state
   const [confirmAccurate, setConfirmAccurate] = useState(false);
 
+  // 30-day warning dialog state
+  const [show30DayWarning, setShow30DayWarning] = useState(false);
+
   // Fetch locations
   const { data: locations = [] } = useQuery({
     queryKey: ['locations'],
@@ -136,7 +171,7 @@ export default function NewVisitReport() {
     },
   });
 
-  // Fetch spots for selected location (from 'spots' table, NOT 'location_spots')
+  // Fetch spots for selected location
   const { data: spots = [] } = useQuery({
     queryKey: ['spots', selectedLocation],
     queryFn: async () => {
@@ -163,7 +198,7 @@ export default function NewVisitReport() {
         .select('*')
         .eq('spot_id', selectedSpot)
         .single();
-      if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows
+      if (error && error.code !== 'PGRST116') throw error;
       return data;
     },
     enabled: !!selectedSpot,
@@ -201,6 +236,24 @@ export default function NewVisitReport() {
     enabled: machines.length > 0,
   });
 
+  // Fetch last visit for selected spot
+  const { data: lastVisit } = useQuery({
+    queryKey: ['last-visit', selectedSpot],
+    queryFn: async () => {
+      if (!selectedSpot) return null;
+      const { data, error } = await supabase
+        .from('spot_visits')
+        .select('visit_date')
+        .eq('spot_id', selectedSpot)
+        .order('visit_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!selectedSpot,
+  });
+
   // Fetch products (merchandise type items)
   const { data: products = [] } = useQuery({
     queryKey: ['products'],
@@ -214,6 +267,37 @@ export default function NewVisitReport() {
       return (data || []) as ItemDetailBasic[];
     },
   });
+
+  // Calculate days since last visit
+  const daysSinceLastVisit = useMemo(() => {
+    if (visitType === 'installation') return 0;
+    if (!lastVisit?.visit_date) return null;
+    return differenceInDays(new Date(), new Date(lastVisit.visit_date));
+  }, [lastVisit, visitType]);
+
+  const getDaysSinceColor = (days: number | null) => {
+    if (days === null) return "bg-muted text-muted-foreground";
+    if (days < 15) return "bg-green-500/20 text-green-700 dark:text-green-400";
+    if (days <= 30) return "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400";
+    return "bg-red-500/20 text-red-700 dark:text-red-400";
+  };
+
+  // Auto-detect installation visit
+  useEffect(() => {
+    if (machineSlots.length > 0 && selectedSpot) {
+      const allEmpty = machineSlots.every(
+        slot => !slot.current_product_id && (slot.current_stock === 0 || slot.current_stock === null)
+      );
+      if (allEmpty) {
+        setVisitType('installation');
+        // Set visit date to contract start date
+        const location = locations.find(l => l.id === selectedLocation);
+        if (location?.contract_start_date) {
+          setVisitDate(new Date(location.contract_start_date));
+        }
+      }
+    }
+  }, [machineSlots, selectedSpot, selectedLocation, locations]);
 
   // Generate slots based on actual machine_slots from database
   useEffect(() => {
@@ -231,7 +315,7 @@ export default function NewVisitReport() {
           toyName: product?.name || "Unassigned",
           toyId: slot.current_product_id || "",
           replaceAllToys: false,
-          lastStock: slot.current_stock || 0, // From database
+          lastStock: slot.current_stock || 0,
           unitsSold: 0,
           unitsRefilled: 0,
           unitsRemoved: 0,
@@ -293,7 +377,7 @@ export default function NewVisitReport() {
     mutationFn: async () => {
       const visitTypeData = visitTypes.find(t => t.id === visitType);
       
-      // Create spot_visit record
+      // Create spot_visit record with operator_id and visit_type
       const { data: visitData, error: visitError } = await supabase
         .from('spot_visits')
         .insert({
@@ -302,7 +386,9 @@ export default function NewVisitReport() {
           total_cash_collected: totals.totalCashCollected,
           notes: hasObservationIssue ? `${observationSeverity}: ${observationIssueLog}` : null,
           status: hasObservationIssue ? 'flagged' : 'completed',
-        })
+          operator_id: user?.id,
+          visit_type: visitType,
+        } as any)
         .select()
         .single();
       
@@ -327,11 +413,17 @@ export default function NewVisitReport() {
       
       if (lineItemsError) throw lineItemsError;
       
-      // Update machine_slots with new current_stock values
+      // Update machine_slots with current_product_id, current_stock, and installation fields
       for (const slot of slots) {
+        const updateData: Record<string, any> = { current_stock: slot.currentStock };
+        if (slot.toyId) updateData.current_product_id = slot.toyId;
+        if (visitType === 'installation') {
+          updateData.capacity = slot.capacity;
+          updateData.coin_acceptor = slot.pricePerUnit;
+        }
         await supabase
           .from('machine_slots')
-          .update({ current_stock: slot.currentStock })
+          .update(updateData)
           .eq('id', slot.slotId);
       }
       
@@ -366,6 +458,12 @@ export default function NewVisitReport() {
       return;
     }
     
+    // Check if 30+ days since last visit
+    if (daysSinceLastVisit !== null && daysSinceLastVisit > 30) {
+      setShow30DayWarning(true);
+      return;
+    }
+    
     submitVisitReport.mutate();
   };
 
@@ -373,9 +471,43 @@ export default function NewVisitReport() {
     toast.success("Draft saved successfully!");
   };
 
-  const getCapacityDisplay = (slot: SlotEntry) => {
-    const percentage = slot.capacity > 0 ? Math.round((slot.currentStock / slot.capacity) * 100) : 0;
-    return `${slot.capacity} / ${percentage}% full`;
+  const getCapacityPercentage = (slot: SlotEntry) => {
+    return slot.capacity > 0 ? Math.round((slot.currentStock / slot.capacity) * 100) : 0;
+  };
+
+  const getCapacityColor = (percentage: number) => {
+    if (percentage <= 25) return "bg-red-500";
+    if (percentage <= 50) return "bg-yellow-500";
+    if (percentage <= 75) return "bg-blue-500";
+    return "bg-green-500";
+  };
+
+  const getCapacityTextColor = (percentage: number) => {
+    if (percentage <= 25) return "text-red-600 dark:text-red-400";
+    if (percentage <= 50) return "text-yellow-600 dark:text-yellow-400";
+    if (percentage <= 75) return "text-blue-600 dark:text-blue-400";
+    return "text-green-600 dark:text-green-400";
+  };
+
+  const renderCapacityIndicator = (slot: SlotEntry) => {
+    const percentage = getCapacityPercentage(slot);
+    const colorClass = getCapacityColor(percentage);
+    const textColorClass = getCapacityTextColor(percentage);
+    
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">{slot.currentStock} / {slot.capacity}</span>
+          <span className={cn("font-semibold", textColorClass)}>{percentage}%</span>
+        </div>
+        <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-secondary">
+          <div
+            className={cn("h-full rounded-full transition-all", colorClass)}
+            style={{ width: `${Math.min(percentage, 100)}%` }}
+          />
+        </div>
+      </div>
+    );
   };
 
   const renderSlotCard = (slot: SlotEntry, index: number) => {
@@ -465,9 +597,7 @@ export default function NewVisitReport() {
               </div>
               <div className="space-y-2">
                 <Label>Capacity</Label>
-                <div className="p-2 bg-muted rounded-md text-foreground font-medium">
-                  {getCapacityDisplay(slot)}
-                </div>
+                {renderCapacityIndicator(slot)}
               </div>
             </div>
           )}
@@ -563,11 +693,9 @@ export default function NewVisitReport() {
                 </div>
               </div>
               
-              <div className="mt-2">
+              <div className="mt-2 space-y-2">
                 <Label>Capacity</Label>
-                <div className="p-2 bg-muted rounded-md text-foreground font-medium w-fit">
-                  {getCapacityDisplay(slot)}
-                </div>
+                {renderCapacityIndicator(slot)}
               </div>
 
               {/* Issue Reporting */}
@@ -742,9 +870,7 @@ export default function NewVisitReport() {
                 </div>
                 <div className="space-y-2">
                   <Label>Capacity</Label>
-                  <div className="p-2 bg-muted rounded-md text-foreground font-medium">
-                    {getCapacityDisplay(slot)}
-                  </div>
+                  {renderCapacityIndicator(slot)}
                 </div>
               </div>
 
@@ -855,6 +981,34 @@ export default function NewVisitReport() {
               </Select>
             </div>
           </div>
+
+          {/* Setup Info Display */}
+          {selectedSpot && spotSetup && (
+            <div className="mt-4 p-4 bg-muted/50 rounded-lg border border-border">
+              <div className="flex items-center gap-3 mb-3">
+                <h4 className="font-medium text-foreground">Setup: {spotSetup.name || "Unnamed"}</h4>
+                <Badge variant="secondary" className="capitalize">
+                  {spotSetup.type || "single"}
+                </Badge>
+              </div>
+              {machines.length > 0 && (
+                <div className="space-y-1.5">
+                  {machines.map((machine) => (
+                    <div key={machine.id} className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">
+                        {getPositionLabel(machine.position_on_setup || 1, spotSetup.type, machines.length)}
+                      </span>
+                      {getPositionLabel(machine.position_on_setup || 1, spotSetup.type, machines.length) && (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                      <span>S/N: {machine.serial_number}</span>
+                      {machine.model_type && <span className="text-xs">({machine.model_type})</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </Card>
 
         {/* Visit Details */}
@@ -901,6 +1055,26 @@ export default function NewVisitReport() {
                 </PopoverContent>
               </Popover>
             </div>
+
+            {/* Days Since Last Visit */}
+            {selectedSpot && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" />
+                  Days Since Last Visit
+                </Label>
+                <div className={cn(
+                  "p-3 rounded-md font-semibold text-lg flex items-center gap-2",
+                  getDaysSinceColor(daysSinceLastVisit)
+                )}>
+                  {daysSinceLastVisit !== null ? daysSinceLastVisit : "—"}
+                  <span className="text-sm font-normal">
+                    {daysSinceLastVisit === 0 ? "days (first visit)" : daysSinceLastVisit !== null ? "days" : "No data"}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Total Cash Collected</Label>
               <div className="p-3 bg-muted rounded-md text-foreground font-semibold text-lg">
@@ -1044,6 +1218,27 @@ export default function NewVisitReport() {
           </Button>
         </div>
       </div>
+
+      {/* 30-Day Warning Dialog */}
+      <AlertDialog open={show30DayWarning} onOpenChange={setShow30DayWarning}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              Over 30 Days Since Last Visit
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              It has been over 30 days since the last visit to this spot. Are you sure the selected date is correct, or do you need to change it?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Change Date</AlertDialogCancel>
+            <AlertDialogAction onClick={() => submitVisitReport.mutate()}>
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

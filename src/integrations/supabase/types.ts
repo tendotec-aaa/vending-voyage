@@ -847,6 +847,7 @@ export type Database = {
           total_cash_collected: number | null
           verification_photo_url: string | null
           visit_date: string | null
+          visit_type: string | null
         }
         Insert: {
           created_at?: string | null
@@ -858,6 +859,7 @@ export type Database = {
           total_cash_collected?: number | null
           verification_photo_url?: string | null
           visit_date?: string | null
+          visit_type?: string | null
         }
         Update: {
           created_at?: string | null
@@ -869,6 +871,7 @@ export type Database = {
           total_cash_collected?: number | null
           verification_photo_url?: string | null
           visit_date?: string | null
+          visit_type?: string | null
         }
         Relationships: [
           {

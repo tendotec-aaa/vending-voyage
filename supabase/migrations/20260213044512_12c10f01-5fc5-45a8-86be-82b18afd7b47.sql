@@ -1,0 +1,1 @@
+ALTER TABLE spot_visits ADD COLUMN IF NOT EXISTS visit_type text;
