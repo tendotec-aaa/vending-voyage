@@ -1,242 +1,147 @@
-# Plan: Setup Auto-Naming, Machine Slots Display, Drag-and-Drop, Machines Enhancements, and Machine Detail Page
 
-This plan covers 7 interconnected changes across the application.
+# Plan: New Visit Report Enhancements
 
----
-
-## 1. Auto-Generate Setup Names from Machine Serial Numbers
-
-**Current**: User manually types a setup name.
-**Target**: Setup name is auto-generated based on the serial numbers of assigned machines.
-
-### Naming Logic
-
-Given machines with serials like `AA-001`, `BB-010`, `DD-009`:
-
-- Extract the prefix (letters before the dash) from each machine: `AA`, `BB`, `DD`
-- Extract the numeric suffix from each machine: `001`, `010`, `009`
-- Concatenate prefixes: `AABBDD`
-- Concatenate suffixes: `001010009`
-- Final name: `AABBDD-001010009`
-
-For a single machine `AA-001`: name = `AA-001` (kept as-is since there is only one).
-
-### Changes
-
-- `**src/pages/Setups.tsx**`:
-  - Remove the manual "Name" input field from the Create Setup dialog
-  - Add a `generateSetupName(machineSerials: string[])` utility function
-  - Auto-compute the setup name from selected machines before insert
-  - Show a preview of the generated name in the dialog
-  - When machines change in "Manage Machines" dialog, optionally update the setup name
+## Summary
+Fix critical data-saving bugs and enhance the New Visit Report page with setup info display, auto-detection of installation visits, days-since-last-visit indicator, capacity color coding, and a 30-day confirmation dialog.
 
 ---
 
-## 2. Show Machine Slots on Location, Spot, Location Detail, and Spot Detail Pages
+## 1. Show Setup Info After Spot Selection
 
-**Current**: These pages show machines but not their individual slots (what product is loaded, stock qty, capacity).
-**Target**: Under each machine, show its slots with product name, current stock, and capacity.
+In the **Location Details** card, after the user selects a spot, display the setup assigned to that spot:
+- Setup name, setup type badge (Single/Double/Triple/Quad/Custom)
+- List of machines with serial numbers and their position labels
 
-### Data Fetching
+This uses the already-fetched `spotSetup` and `machines` queries.
 
-Query `machine_slots` joined with `item_details` (via `current_product_id`) for each machine:
+---
 
+## 2. Auto-Detect Installation Visit
+
+After spot is selected and machine slots are loaded, check if **all slots** have no product assigned (`current_product_id === null`) and no stock (`current_stock === 0`).
+
+If true (first day):
+- Auto-select "Installation" as the visit type
+- Auto-set the visit date to the location's `contract_start_date`
+- Fetch the selected location's `contract_start_date` (already available from the `locations` query)
+
+---
+
+## 3. Days Since Last Visit Indicator
+
+Add a "Days Since Last Visit" indicator to the **Visit Details** card:
+- Query the most recent `spot_visits` record for the selected spot (ordered by `visit_date` desc, limit 1)
+- Calculate days between today and the last visit date
+- If installation (no prior visits): show "0" in green
+- Color coding:
+  - Less than 15 days: green background
+  - 15-30 days: yellow/amber background
+  - Greater than 30 days: red background
+
+### 30-Day Warning Dialog
+On submit, if days since last visit > 30, show an `AlertDialog` asking: "It has been over 30 days since the last visit to this spot. Are you sure the selected date is correct, or do you need to change it?"
+- "Continue" proceeds with submission
+- "Change Date" closes the dialog so the user can adjust
+
+---
+
+## 4. Capacity Indicator Color Coding
+
+Replace the plain text capacity display with a colored progress-style indicator:
+- **0-25% full**: Red (critically low)
+- **26-50% full**: Yellow/amber (low)
+- **51-75% full**: Blue (moderate)
+- **76-100% full**: Green (healthy)
+
+Show a small progress bar or colored badge alongside the percentage text.
+
+---
+
+## 5. Fix: Save `operator_id` in `spot_visits`
+
+**Bug**: The insert into `spot_visits` does not include `operator_id`.
+
+**Fix**: Get the current user's ID from `supabase.auth.getUser()` (or the `useAuth` hook) and include it in the insert:
 ```
-machine_slots: id, slot_number, current_stock, capacity, current_product_id
-  -> item_details: name (via current_product_id)
+operator_id: user?.id
 ```
 
-### Changes
-
-- `**src/pages/SpotDetail.tsx**`:
-  - Fetch `machine_slots` for all machines in the spot's setup(s)
-  - Under each machine row, show a sub-list of slots: Slot #, Product Name, Stock/Capacity (e.g., "45/150")
-- `**src/pages/LocationDetail.tsx**`:
-  - Add a section showing spots with their setups, machines, and machine slots
-  - Fetch setups by `spot_id` for each spot, then machines by `setup_id`, then slots by `machine_id`
-- `**src/pages/Locations.tsx**` (accordion rows):
-  - In the expanded spot rows, optionally show a condensed view of machines and slot counts
+Import and use the `useAuth` hook already available in the project.
 
 ---
 
-## 3. Drag-and-Drop Machine Position in Manage Machines Dialog
+## 6. Fix: Save Visit Type in `visit_line_items`
 
-**Current**: Manage Machines dialog shows machines listed by position with add/remove buttons but no reordering.
-**Target**: Allow drag-and-drop to reorder machines, updating `position_on_setup` in the database.
+**Current behavior**: The `action_type` field maps visit types to enum values via `visitTypeData?.actionType`, but installation maps to `restock`, routine service maps to `collection`, etc. This is correct per the enum, but the specific visit type (installation vs routine_service) is lost.
 
-### Approach
+**Fix**: Add a `visit_type` text field to the `spot_visits` table (not `visit_line_items`) to store the selected visit type string (e.g., "installation", "routine_service"). This preserves the operational context without changing the `visit_action_type` enum. The `action_type` on `visit_line_items` remains the correct enum value for each line item's action.
 
-Use native HTML5 drag-and-drop (no additional library needed) since the list is small (1-4 items typically, max ~10 for custom).
-
-### Changes
-
-- `**src/pages/Setups.tsx**` (Manage Machines dialog):
-  - Add `draggable` attribute to each machine row
-  - Handle `onDragStart`, `onDragOver`, `onDrop` events
-  - On drop, reorder the machines array and update `position_on_setup` for all affected machines via a batch update mutation
-  - Show a drag handle icon (GripVertical from lucide) on each row
-  - Show position labels (Left/Center/Right for triple, Position N for others)
+**Database migration**: Add column `visit_type text` to `spot_visits`.
 
 ---
 
-## 4. Machines Page: Add Start Date Column
+## 7. Fix: Update `machine_slots` with `current_product_id` and `current_stock`
 
-**Current**: Machines table shows Serial Number, Model, Setup/Location, Status, Slots.
-**Target**: Add a "Start Date" column showing when the machine was purchased from the original purchase order date of arrival.
+**Current behavior**: The submit mutation updates `current_stock` but does NOT update `current_product_id`.
 
-### Changes
+**Fix**: Update the machine_slots update loop to also set:
+- `current_product_id`: the `toyId` selected by the operator (especially critical for installation visits)
+- `current_stock`: the calculated `currentStock` value
+- `capacity`: the `capacity` value (for installation where operator sets it)
+- `coin_acceptor`: the `pricePerUnit` value (for installation where operator sets it)
 
-- `**src/pages/Machines.tsx**`:
-  - Add "Start Date" column header after "Slots"
-  - Display the purchases.recieved_at date (make sure that this date is being properly accounted for and inserted by user in the recieving stock workflow) formatted as a date (e.g., `Jan 15, 2025`)
-
----
-
-## 5. Inventory Page: Rename "In Machines" to "Deployed"
-
-**Current**: Column header says "In Machines".
-**Target**: Rename to "Deployed".
-
-### Changes
-
-- `**src/pages/Inventory.tsx**`:
-  - Change `<TableHead>` text from "In Machines" to "Deployed"
-  - Update summary card label from "In Machines" to "Deployed"
-
----
-
-## 6. Machines Page: Dual Status Badges + Sorting + Clickable Navigation
-
-**Current**: Single status badge showing the `machine_status` enum value (in_warehouse, deployed, maintenance, retired).
-**Target**: Two separate badges per machine:
-
-### Badge 1: Assignment Status
-
-
-| Condition                                            | Badge                   | Link                 |
-| ---------------------------------------------------- | ----------------------- | -------------------- |
-| `setup_id` is not null and `status` is not `retired` | **Assigned** (green)    | Links to Setups page |
-| `setup_id` is null and `status` is not `retired`     | **Unassigned** (yellow) | No link              |
-| `status` is `retired`                                | **Retired** (gray)      | No link              |
-
-
-### Badge 2: Location Status
-
-
-| Condition                                                                | Badge                   | Link                                                 |
-| ------------------------------------------------------------------------ | ----------------------- | ---------------------------------------------------- |
-| `setup_id` is not null and setup has a `spot_id`                         | **Deployed** (green)    | Links to Spot Detail page                            |
-| `setup_id` is null or setup has no `spot_id` and status is not `retired` | **In Warehouse** (blue) | Links to Warehouse page (future: specific warehouse) |
-| `status` is `retired`                                                    | **Discarded** (gray)    | No link                                              |
-
-
-### Sorting
-
-Machines should be sorted in this priority order:
-
-1. Unassigned machines first (need attention)
-2. Assigned but not deployed (in warehouse with a setup)
-3. Deployed machines
-4. Retired/Discarded machines last
-
-### Changes
-
-- `**src/pages/Machines.tsx**`:
-  - Replace single "Status" column with two badge columns or a combined cell with two badges
-  - Fetch setups data to determine if a setup has a `spot_id` (already fetched)
-  - Make badges clickable with `onClick` navigation
-  - Sort `filteredMachines` by the priority order above
-  - Make entire row clickable to navigate to Machine Detail page
+Updated mutation code for the slots update:
+```typescript
+for (const slot of slots) {
+  const updateData: any = { current_stock: slot.currentStock };
+  if (slot.toyId) updateData.current_product_id = slot.toyId;
+  if (visitType === 'installation') {
+    updateData.capacity = slot.capacity;
+    updateData.coin_acceptor = slot.pricePerUnit;
+  }
+  await supabase
+    .from('machine_slots')
+    .update(updateData)
+    .eq('id', slot.slotId);
+}
+```
 
 ---
 
-## 7. Machine Detail Page (New)
+## Database Migration
 
-**New file**: `src/pages/MachineDetail.tsx`
-**Route**: `/machines/:id`
+Add one column to `spot_visits`:
 
-### Content
+```sql
+ALTER TABLE spot_visits ADD COLUMN IF NOT EXISTS visit_type text;
+```
 
-- **Header**: Serial number, item name, status badges (same dual badges as list)
-- **Machine Info Card** (admin editable):
-  - Serial Number (read-only)
-  - Serial Generation (read-only)
-  - Item Name / Model (editable via dropdown)
-  - Number of Slots (read-only after creation)
-  - Cash Key, Toy Key (editable)
-  - Start Date (created_at, read-only)
-- **Current Assignment Card**:
-  - Setup name (linked), position in setup
-  - Spot name (linked), Location name (linked)
-  - Or "Unassigned" / "In Warehouse" if not deployed
-- **Machine Slots Card**:
-  - List of all slots with: Slot #, Current Product, Stock, Capacity, Coin Acceptor value
-  - Admin can update slot product assignment and capacity
-- **Maintenance History Card**:
-  - Fetch `maintenance_tickets` where `machine_id = this machine`
-  - Show list of tickets: date, issue type, priority, status, description
-  - Link to maintenance page or ticket detail
-- **Status Actions** (admin):
-  - Buttons to change status (Deploy, Return to Warehouse, Set to Maintenance, Retire)
-
-### Changes
-
-- `**src/pages/MachineDetail.tsx**`: New file with all the above
-- `**src/App.tsx**`: Add route `/machines/:id`
-- `**src/pages/Machines.tsx**`: Make rows clickable to navigate to `/machines/:id`
-
----
-
-## 8. Setups Page: Accordion Cards with Location/Spot Info
-
-**Current**: Setup cards show machines and manage/delete buttons but no location/spot info.
-**Target**: Add accordion expand/collapse to each card, and show the location and spot where the setup is deployed.
-
-### Changes
-
-- `**src/pages/Setups.tsx**`:
-  - Fetch spots and locations data to resolve setup -> spot -> location chain
-  - In the card header, show a compact summary: setup name, type badge, machine count
-  - Add a collapsible section (using Collapsible component) that shows:
-    - Deployed location and spot (with links) or "Not deployed"
-    - Machine list with positions and serial numbers
-    - Manage Machines and Delete buttons move inside the collapsible area
+This stores the visit type string (installation, routine_service, inventory_audit, maintenance, emergency) for reporting context.
 
 ---
 
 ## Files Summary
 
-### New Files
-
-
-| File                          | Purpose                                                                |
-| ----------------------------- | ---------------------------------------------------------------------- |
-| `src/pages/MachineDetail.tsx` | Machine detail page with slots, maintenance history, status management |
-
-
 ### Modified Files
 
+| File | Changes |
+|------|---------|
+| `src/pages/NewVisitReport.tsx` | All 7 changes: setup info display, auto-installation detection, days-since-last-visit indicator with color coding and 30-day warning dialog, capacity color indicators, operator_id fix, visit_type saving, machine_slots product/stock fix |
+| `src/integrations/supabase/types.ts` | Auto-updated after migration |
 
-| File                           | Changes                                                                               |
-| ------------------------------ | ------------------------------------------------------------------------------------- |
-| `src/pages/Setups.tsx`         | Auto-generate setup name, drag-and-drop positions, accordion cards with location info |
-| `src/pages/Machines.tsx`       | Dual status badges, sorting, Start Date column, clickable rows to detail page         |
-| `src/pages/Inventory.tsx`      | Rename "In Machines" to "Deployed"                                                    |
-| `src/pages/SpotDetail.tsx`     | Show machine slots (product, stock, capacity) under each machine                      |
-| `src/pages/LocationDetail.tsx` | Show spots with setups, machines, and slots breakdown                                 |
-| `src/pages/Locations.tsx`      | Optionally show condensed slot info in accordion spot rows                            |
-| `src/App.tsx`                  | Add `/machines/:id` route                                                             |
-
+### Database
+- Add `visit_type` text column to `spot_visits`
 
 ---
 
 ## Implementation Order
 
-1. Auto-generate setup names (Setups.tsx)
-2. Inventory column rename (quick change)
-3. Machines page: dual badges, sorting, Start Date column
-4. Machine Detail page (new)
-5. Drag-and-drop in Manage Machines dialog
-6. Machine slots display on Spot Detail and Location Detail pages
-7. Setups page accordion with location/spot info
-8. Route registration in App.tsx
+1. Database migration (add `visit_type` to `spot_visits`)
+2. Import `useAuth` hook and fix `operator_id` saving
+3. Fix `machine_slots` update to include `current_product_id`, `capacity`, `coin_acceptor`
+4. Save `visit_type` in `spot_visits` insert
+5. Add setup info display after spot selection
+6. Add last visit query and days-since-last-visit indicator with colors
+7. Add 30-day warning AlertDialog on submit
+8. Add capacity color coding to slot cards
+9. Auto-detect installation and set contract start date
