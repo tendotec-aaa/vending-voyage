@@ -370,8 +370,10 @@ export default function ItemDetail() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm text-foreground">${Number(pi.unit_cost).toFixed(3)}/unit</p>
-                      {(pi.final_unit_cost || 0) > 0 && (
-                        <p className="text-xs text-muted-foreground">Final: ${Number(pi.final_unit_cost).toFixed(3)}</p>
+                      {(pi.landed_unit_cost || 0) > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          Landed: ${Number(pi.landed_unit_cost).toFixed(3)}
+                        </p>
                       )}
                       {pi.active_item && (pi.quantity_remaining || 0) > 0 && (
                         <p className="text-xs font-medium text-primary">
