@@ -88,7 +88,7 @@ export default function ItemDetail() {
         .select(
           `
           id, quantity_ordered, quantity_received, quantity_remaining,
-          unit_cost, landed_unit_cost, active_item, arrival_order,
+          unit_cost, landed_unit_cost, active_item, arrival_order, final_unit_cost,
           purchase:purchases(id, purchase_order_number, status, created_at, received_at)
         `,
         )
@@ -157,7 +157,7 @@ export default function ItemDetail() {
   // FIFO cost calculations
   const activeBatches = purchaseBatches.filter((b: any) => b.active_item && (b.quantity_remaining || 0) > 0);
   const totalInventoryCost = activeBatches.reduce((sum: number, b: any) => {
-    return sum + (b.quantity_remaining || 0) * (b.landed_unit_cost || 0);
+    return sum + (b.quantity_remaining || 0) * (b.final_unit_cost || 0);
   }, 0);
   const weightedAvgCost = totalStock > 0 ? totalInventoryCost / totalStock : 0;
 
@@ -369,7 +369,7 @@ export default function ItemDetail() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm text-foreground">${Number(pi.unit_cost).toFixed(3)}/unit</p>
+                      <p className="text-sm text-foreground">${Number(pi.final_unit_cost).toFixed(3)}/unit</p>
                       {(pi.final_unit_cost || 0) > 0 && (
                         <p className="text-xs text-muted-foreground">Final: ${Number(pi.final_unit_cost).toFixed(3)}</p>
                       )}
