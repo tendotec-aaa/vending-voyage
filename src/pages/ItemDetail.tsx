@@ -26,7 +26,6 @@ export default function ItemDetail() {
   const [form, setForm] = useState({
     name: "",
     description: "",
-    cost_price: "",
     category_id: "",
     subcategory_id: "",
   });
@@ -78,19 +77,19 @@ export default function ItemDetail() {
     enabled: !!id,
   });
 
-  // Purchase history
-  const { data: purchaseHistory = [] } = useQuery({
-    queryKey: ["item-purchase-history", id],
+  // Purchase batches (FIFO) - all batches, not just active
+  const { data: purchaseBatches = [] } = useQuery({
+    queryKey: ["item-purchase-batches", id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("purchase_items")
         .select(`
-          id, quantity_ordered, quantity_received, unit_cost, landed_unit_cost,
-          purchase:purchases(id, purchase_order_number, status, created_at)
+          id, quantity_ordered, quantity_received, quantity_remaining,
+          unit_cost, landed_unit_cost, active_item, arrival_order,
+          purchase:purchases(id, purchase_order_number, status, created_at, received_at)
         `)
         .eq("item_detail_id", id!)
-        .order("created_at", { ascending: false })
-        .limit(10);
+        .order("arrival_order", { ascending: true });
       if (error) throw error;
       return data;
     },
@@ -102,7 +101,6 @@ export default function ItemDetail() {
       setForm({
         name: item.name,
         description: item.description || "",
-        cost_price: String(item.cost_price || 0),
         category_id: item.category_id || "",
         subcategory_id: item.subcategory_id || "",
       });
@@ -118,7 +116,6 @@ export default function ItemDetail() {
         .update({
           name: form.name.trim(),
           description: form.description.trim() || null,
-          cost_price: parseFloat(form.cost_price) || 0,
           category_id: form.category_id || null,
           subcategory_id: form.subcategory_id || null,
         })
@@ -128,7 +125,6 @@ export default function ItemDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["item-detail", id] });
       queryClient.invalidateQueries({ queryKey: ["consolidated-inventory"] });
-      queryClient.invalidateQueries({ queryKey: ["warehouse-inventory"] });
       setIsEditing(false);
       toast({ title: "Item updated successfully" });
     },
@@ -142,12 +138,14 @@ export default function ItemDetail() {
 
   const totalWarehouse = warehouseStock.reduce((s, i) => s + (i.quantity_on_hand || 0), 0);
   const totalMachine = machineStock.reduce((s, i) => s + (i.current_stock || 0), 0);
+  const totalStock = totalWarehouse + totalMachine;
 
-  // Calculate average landed cost from purchases
-  const purchasesWithLanded = purchaseHistory.filter((p: any) => p.landed_unit_cost > 0);
-  const avgLandedCost = purchasesWithLanded.length > 0
-    ? purchasesWithLanded.reduce((s: number, p: any) => s + p.landed_unit_cost, 0) / purchasesWithLanded.length
-    : null;
+  // FIFO cost calculations
+  const activeBatches = purchaseBatches.filter((b: any) => b.active_item && (b.quantity_remaining || 0) > 0);
+  const totalInventoryCost = activeBatches.reduce((sum: number, b: any) => {
+    return sum + ((b.quantity_remaining || 0) * (b.landed_unit_cost || 0));
+  }, 0);
+  const weightedAvgCost = totalStock > 0 ? totalInventoryCost / totalStock : 0;
 
   return (
     <AppLayout>
@@ -225,14 +223,6 @@ export default function ItemDetail() {
                 <Label>Type</Label>
                 <Badge variant="secondary">{item.type}</Badge>
               </div>
-              <div className="space-y-2">
-                <Label>Catalog Cost</Label>
-                {isEditing ? (
-                  <Input type="number" step="0.01" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} />
-                ) : (
-                  <p className="text-foreground">{item.cost_price ? `$${Number(item.cost_price).toFixed(2)}` : "N/A"}</p>
-                )}
-              </div>
             </div>
             <div className="space-y-2">
               <Label>Description</Label>
@@ -245,18 +235,22 @@ export default function ItemDetail() {
           </CardContent>
         </Card>
 
-        {/* Cost */}
+        {/* Cost Summary */}
         <Card>
-          <CardHeader><CardTitle>Cost Information</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Cost Summary (FIFO)</CardTitle></CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Catalog Cost</p>
-                <p className="text-lg font-semibold text-foreground">{item.cost_price ? `$${Number(item.cost_price).toFixed(2)}` : "N/A"}</p>
+                <p className="text-sm text-muted-foreground">Total Inventory Cost</p>
+                <p className="text-lg font-semibold text-foreground">${totalInventoryCost.toFixed(2)}</p>
               </div>
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Avg Landed Cost (from purchases)</p>
-                <p className="text-lg font-semibold text-foreground">{avgLandedCost ? `$${avgLandedCost.toFixed(2)}` : "N/A"}</p>
+                <p className="text-sm text-muted-foreground">Weighted Avg Cost/Unit</p>
+                <p className="text-lg font-semibold text-foreground">${weightedAvgCost.toFixed(3)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Active Batches</p>
+                <p className="text-lg font-semibold text-foreground">{activeBatches.length}</p>
               </div>
             </div>
           </CardContent>
@@ -272,12 +266,12 @@ export default function ItemDetail() {
                 <p className="text-lg font-semibold text-foreground">{totalWarehouse.toLocaleString()}</p>
               </div>
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">In Machines</p>
+                <p className="text-sm text-muted-foreground">Deployed</p>
                 <p className="text-lg font-semibold text-foreground">{totalMachine.toLocaleString()}</p>
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Total</p>
-                <p className="text-lg font-semibold text-foreground">{(totalWarehouse + totalMachine).toLocaleString()}</p>
+                <p className="text-lg font-semibold text-foreground">{totalStock.toLocaleString()}</p>
               </div>
             </div>
             {warehouseStock.length > 0 && (
@@ -296,30 +290,44 @@ export default function ItemDetail() {
           </CardContent>
         </Card>
 
-        {/* Purchase History */}
+        {/* Purchase Batches (FIFO) */}
         <Card>
-          <CardHeader><CardTitle>Purchase History</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Purchase Batches (FIFO)</CardTitle></CardHeader>
           <CardContent>
-            {purchaseHistory.length === 0 ? (
+            {purchaseBatches.length === 0 ? (
               <p className="text-muted-foreground">No purchase history.</p>
             ) : (
               <div className="space-y-2">
-                {purchaseHistory.map((pi: any) => (
+                {purchaseBatches.map((pi: any) => (
                   <div
                     key={pi.id}
-                    className="flex items-center justify-between p-3 bg-muted/50 rounded-lg cursor-pointer hover:bg-muted"
+                    className={`flex items-center justify-between p-3 rounded-lg cursor-pointer hover:bg-muted ${
+                      pi.active_item ? "bg-muted/50" : "bg-muted/20 opacity-60"
+                    }`}
                     onClick={() => pi.purchase && navigate(`/purchases/${pi.purchase.id}`)}
                   >
                     <div>
-                      <span className="font-medium text-foreground">{pi.purchase?.purchase_order_number || "—"}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-foreground">{pi.purchase?.purchase_order_number || "—"}</span>
+                        {pi.active_item ? (
+                          <Badge variant="secondary" className="text-xs">Active</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">Depleted</Badge>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">
-                        Ordered: {pi.quantity_ordered} | Received: {pi.quantity_received || 0}
+                        Ordered: {pi.quantity_ordered} | Received: {pi.quantity_received || 0} | Remaining: {pi.quantity_remaining || 0}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm text-foreground">${Number(pi.unit_cost).toFixed(2)}/unit</p>
-                      {pi.landed_unit_cost > 0 && (
-                        <p className="text-xs text-muted-foreground">Landed: ${Number(pi.landed_unit_cost).toFixed(2)}</p>
+                      <p className="text-sm text-foreground">${Number(pi.unit_cost).toFixed(3)}/unit</p>
+                      {(pi.landed_unit_cost || 0) > 0 && (
+                        <p className="text-xs text-muted-foreground">Landed: ${Number(pi.landed_unit_cost).toFixed(3)}</p>
+                      )}
+                      {pi.active_item && (pi.quantity_remaining || 0) > 0 && (
+                        <p className="text-xs font-medium text-primary">
+                          Batch Value: ${((pi.quantity_remaining || 0) * (pi.landed_unit_cost || 0)).toFixed(2)}
+                        </p>
                       )}
                     </div>
                   </div>

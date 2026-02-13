@@ -20,7 +20,7 @@ interface InventoryItem {
   warehouseQty: number;
   inMachinesQty: number;
   total: number;
-  costPrice: number;
+  totalInventoryCost: number;
 }
 
 function useConsolidatedInventory() {
@@ -29,7 +29,7 @@ function useConsolidatedInventory() {
     queryFn: async (): Promise<InventoryItem[]> => {
       const { data: items, error: itemsError } = await supabase
         .from("item_details")
-        .select(`id, sku, name, cost_price, type, categories (name)`)
+        .select(`id, sku, name, cost_price, type, category_id, categories (name)`)
         .eq("type", "merchandise");
       if (itemsError) throw itemsError;
 
@@ -43,6 +43,13 @@ function useConsolidatedInventory() {
         .select("current_product_id, current_stock");
       if (slotsError) throw slotsError;
 
+      // Fetch active purchase batches for FIFO cost calculation
+      const { data: purchaseBatches, error: batchError } = await supabase
+        .from("purchase_items")
+        .select("item_detail_id, quantity_remaining, landed_unit_cost, active_item")
+        .eq("active_item", true);
+      if (batchError) throw batchError;
+
       return (items || []).map((item: any) => {
         const warehouseQty = (inventory || [])
           .filter((inv: any) => inv.item_detail_id === item.id && inv.warehouse_id)
@@ -52,6 +59,14 @@ function useConsolidatedInventory() {
           .filter((slot: any) => slot.current_product_id === item.id)
           .reduce((sum: number, slot: any) => sum + (slot.current_stock || 0), 0);
 
+        const totalQty = warehouseQty + inMachinesQty;
+
+        // Calculate total inventory cost from active FIFO batches
+        const itemBatches = (purchaseBatches || []).filter((b: any) => b.item_detail_id === item.id);
+        const totalInventoryCost = itemBatches.reduce((sum: number, b: any) => {
+          return sum + ((b.quantity_remaining || 0) * (b.landed_unit_cost || 0));
+        }, 0);
+
         return {
           id: item.id,
           sku: item.sku,
@@ -59,8 +74,8 @@ function useConsolidatedInventory() {
           category: item.categories?.name || "Uncategorized",
           warehouseQty,
           inMachinesQty,
-          total: warehouseQty + inMachinesQty,
-          costPrice: item.cost_price || 0,
+          total: totalQty,
+          totalInventoryCost,
         };
       });
     },
@@ -85,11 +100,12 @@ export default function InventoryPage() {
   }, [inventory, searchQuery]);
 
   const stats = useMemo(() => {
-    if (!inventory) return { totalSKUs: 0, warehouseStock: 0, inMachines: 0 };
+    if (!inventory) return { totalSKUs: 0, warehouseStock: 0, deployed: 0, totalCost: 0 };
     return {
       totalSKUs: inventory.length,
       warehouseStock: inventory.reduce((sum, item) => sum + item.warehouseQty, 0),
-      inMachines: inventory.reduce((sum, item) => sum + item.inMachinesQty, 0),
+      deployed: inventory.reduce((sum, item) => sum + item.inMachinesQty, 0),
+      totalCost: inventory.reduce((sum, item) => sum + item.totalInventoryCost, 0),
     };
   }, [inventory]);
 
@@ -105,7 +121,7 @@ export default function InventoryPage() {
       }
     >
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <Card className="p-4">
           <p className="text-sm text-muted-foreground">Total SKUs</p>
           <p className="text-2xl font-bold text-foreground">{stats.totalSKUs}</p>
@@ -116,7 +132,11 @@ export default function InventoryPage() {
         </Card>
         <Card className="p-4">
           <p className="text-sm text-muted-foreground">Deployed</p>
-          <p className="text-2xl font-bold text-foreground">{stats.inMachines.toLocaleString()}</p>
+          <p className="text-2xl font-bold text-foreground">{stats.deployed.toLocaleString()}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-sm text-muted-foreground">Total Inventory Cost</p>
+          <p className="text-2xl font-bold text-foreground">${stats.totalCost.toFixed(2)}</p>
         </Card>
       </div>
 
@@ -154,8 +174,8 @@ export default function InventoryPage() {
                 <TableHead>Category</TableHead>
                 <TableHead className="text-right">Warehouse</TableHead>
                 <TableHead className="text-right">Deployed</TableHead>
-                <TableHead className="text-right">Cost</TableHead>
                 <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Inventory Cost</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -170,11 +190,11 @@ export default function InventoryPage() {
                   <TableCell className="text-muted-foreground">{item.category}</TableCell>
                   <TableCell className="text-right text-foreground">{item.warehouseQty.toLocaleString()}</TableCell>
                   <TableCell className="text-right text-foreground">{item.inMachinesQty.toLocaleString()}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    {item.costPrice > 0 ? `$${item.costPrice.toFixed(2)}` : "N/A"}
-                  </TableCell>
                   <TableCell className="text-right font-medium text-foreground">
                     {item.total.toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-right text-foreground">
+                    ${item.totalInventoryCost.toFixed(2)}
                   </TableCell>
                 </TableRow>
               ))}

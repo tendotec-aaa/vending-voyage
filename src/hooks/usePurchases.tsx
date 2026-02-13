@@ -158,15 +158,20 @@ export function usePurchases() {
         for (const item of purchaseData.line_items) {
           let itemDetailId = item.item_detail_id || null;
 
-          // If no existing item_detail linked, create a new one
+          // If no existing item_detail linked, create a new one with category/subcategory
           if (!itemDetailId && item.item_name) {
+            const insertData: Record<string, any> = {
+              name: item.item_name,
+              sku: item.sku || `SKU-${Date.now().toString(36).toUpperCase()}`,
+              type: "merchandise" as const,
+            };
+            // Include category and subcategory if provided
+            if ((item as any).category_id) insertData.category_id = (item as any).category_id;
+            if ((item as any).subcategory_id) insertData.subcategory_id = (item as any).subcategory_id;
+
             const { data: newItem, error: newItemError } = await supabase
               .from("item_details")
-              .insert({
-                name: item.item_name,
-                sku: item.sku || `SKU-${Date.now().toString(36).toUpperCase()}`,
-                type: "merchandise" as const,
-              })
+              .insert(insertData as any)
               .select()
               .single();
 
