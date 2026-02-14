@@ -13,6 +13,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Plus, Layers, Truck, X, Search, GripVertical, ChevronDown, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+import { format } from "date-fns";
 import type { Database } from "@/integrations/supabase/types";
 
 type Setup = Database["public"]["Tables"]["setups"]["Row"];
@@ -20,19 +21,11 @@ type Machine = Database["public"]["Tables"]["machines"]["Row"];
 type SetupType = Database["public"]["Enums"]["setup_type"];
 
 const setupTypeLabels: Record<SetupType, string> = {
-  single: "Single",
-  double: "Double",
-  triple: "Triple",
-  quad: "Quad",
-  custom: "Custom",
+  single: "Single", double: "Double", triple: "Triple", quad: "Quad", custom: "Custom",
 };
 
 const setupTypeMachineCount: Record<SetupType, number> = {
-  single: 1,
-  double: 2,
-  triple: 3,
-  quad: 4,
-  custom: 0,
+  single: 1, double: 2, triple: 3, quad: 4, custom: 0,
 };
 
 function getPositionLabel(type: SetupType, position: number, total: number): string {
@@ -62,6 +55,8 @@ function generateSetupName(serials: string[]): string {
 export default function Setups() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterLocation, setFilterLocation] = useState<string>("all");
+  const [filterType, setFilterType] = useState<string>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newSetupType, setNewSetupType] = useState<SetupType>("single");
   const [customMachineCount, setCustomMachineCount] = useState("2");
@@ -80,10 +75,7 @@ export default function Setups() {
   const { data: setups = [], isLoading: setupsLoading } = useQuery({
     queryKey: ["setups"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("setups")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("setups").select("*").order("created_at", { ascending: false });
       if (error) throw error;
       return data;
     },
@@ -92,10 +84,7 @@ export default function Setups() {
   const { data: machines = [] } = useQuery({
     queryKey: ["machines"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("machines")
-        .select("*")
-        .order("serial_number");
+      const { data, error } = await supabase.from("machines").select("*").order("serial_number");
       if (error) throw error;
       return data;
     },
@@ -119,7 +108,6 @@ export default function Setups() {
     },
   });
 
-  // Compute auto-generated name from selected machines
   const autoName = useMemo(() => {
     const serials = Object.entries(selectedMachines)
       .sort(([a], [b]) => parseInt(a) - parseInt(b))
@@ -131,17 +119,11 @@ export default function Setups() {
   const createSetup = useMutation({
     mutationFn: async () => {
       const name = autoName || "Unnamed Setup";
-      const { data: setup, error } = await supabase
-        .from("setups")
-        .insert({ name, type: newSetupType })
-        .select()
-        .single();
+      const { data: setup, error } = await supabase.from("setups").insert({ name, type: newSetupType }).select().single();
       if (error) throw error;
-
       const machineAssignments = Object.entries(selectedMachines)
         .filter(([_, machineId]) => machineId)
         .map(([posStr, machineId]) => ({ machineId, position: parseInt(posStr) }));
-
       for (const { machineId, position } of machineAssignments) {
         const { error: assignError } = await supabase
           .from("machines")
@@ -165,10 +147,7 @@ export default function Setups() {
 
   const deleteSetup = useMutation({
     mutationFn: async (setupId: string) => {
-      await supabase
-        .from("machines")
-        .update({ setup_id: null, position_on_setup: null, status: "in_warehouse" as const })
-        .eq("setup_id", setupId);
+      await supabase.from("machines").update({ setup_id: null, position_on_setup: null, status: "in_warehouse" as const }).eq("setup_id", setupId);
       const { error } = await supabase.from("setups").delete().eq("id", setupId);
       if (error) throw error;
     },
@@ -186,10 +165,7 @@ export default function Setups() {
     mutationFn: async ({ machineId, setupId }: { machineId: string; setupId: string }) => {
       const currentMachines = machines.filter((m) => m.setup_id === setupId);
       const maxPosition = currentMachines.reduce((max, m) => Math.max(max, m.position_on_setup || 0), 0);
-      const { error } = await supabase
-        .from("machines")
-        .update({ setup_id: setupId, position_on_setup: maxPosition + 1, status: "deployed" as const })
-        .eq("id", machineId);
+      const { error } = await supabase.from("machines").update({ setup_id: setupId, position_on_setup: maxPosition + 1, status: "deployed" as const }).eq("id", machineId);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -204,10 +180,7 @@ export default function Setups() {
 
   const removeMachineFromSetup = useMutation({
     mutationFn: async (machineId: string) => {
-      const { error } = await supabase
-        .from("machines")
-        .update({ setup_id: null, position_on_setup: null, status: "in_warehouse" as const })
-        .eq("id", machineId);
+      const { error } = await supabase.from("machines").update({ setup_id: null, position_on_setup: null, status: "in_warehouse" as const }).eq("id", machineId);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -230,20 +203,13 @@ export default function Setups() {
     },
   });
 
-  // Drag-and-drop reorder
   const reorderMachines = useMutation({
     mutationFn: async ({ setupId, orderedIds }: { setupId: string; orderedIds: string[] }) => {
       for (let i = 0; i < orderedIds.length; i++) {
-        const { error } = await supabase
-          .from("machines")
-          .update({ position_on_setup: i + 1 })
-          .eq("id", orderedIds[i]);
+        const { error } = await supabase.from("machines").update({ position_on_setup: i + 1 }).eq("id", orderedIds[i]);
         if (error) throw error;
       }
-      // Regenerate setup name
-      const serials = orderedIds
-        .map((id) => machines.find((m) => m.id === id)?.serial_number)
-        .filter(Boolean) as string[];
+      const serials = orderedIds.map((id) => machines.find((m) => m.id === id)?.serial_number).filter(Boolean) as string[];
       const newName = generateSetupName(serials);
       if (newName) {
         await supabase.from("setups").update({ name: newName }).eq("id", setupId);
@@ -276,14 +242,24 @@ export default function Setups() {
     });
   };
 
-  const filteredSetups = setups.filter((setup) =>
-    setup.name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredSetups = useMemo(() => {
+    return setups.filter((setup) => {
+      const matchesSearch = setup.name?.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesType = filterType === "all" || setup.type === filterType;
+      let matchesLocation = filterLocation === "all";
+      if (!matchesLocation && setup.spot_id) {
+        const spot = spots.find((s) => s.id === setup.spot_id);
+        matchesLocation = spot?.location_id === filterLocation;
+      }
+      if (!matchesLocation && filterLocation === "undeployed") {
+        matchesLocation = !setup.spot_id;
+      }
+      return matchesSearch && matchesType && matchesLocation;
+    });
+  }, [setups, searchQuery, filterType, filterLocation, spots]);
 
   const getMachinesForSetup = (setupId: string) =>
-    machines
-      .filter((m) => m.setup_id === setupId)
-      .sort((a, b) => (a.position_on_setup || 0) - (b.position_on_setup || 0));
+    machines.filter((m) => m.setup_id === setupId).sort((a, b) => (a.position_on_setup || 0) - (b.position_on_setup || 0));
 
   const getAvailableMachinesForManage = () =>
     machines.filter((m) => m.setup_id === null && m.status === "in_warehouse");
@@ -307,7 +283,6 @@ export default function Setups() {
     });
   };
 
-  // Drag handlers for manage machines
   const handleDragStart = useCallback((index: number) => {
     setDragIndex(index);
   }, []);
@@ -354,14 +329,12 @@ export default function Setups() {
                     </SelectContent>
                   </Select>
                 </div>
-
                 {newSetupType === "custom" && (
                   <div className="space-y-2">
                     <Label>Number of Machines</Label>
                     <Input type="number" min="1" max="10" value={customMachineCount} onChange={(e) => { setCustomMachineCount(e.target.value); setSelectedMachines({}); }} />
                   </div>
                 )}
-
                 {machineCount > 0 && (
                   <div className="space-y-3">
                     <Label className="text-sm font-medium">Assign Machines</Label>
@@ -370,19 +343,14 @@ export default function Setups() {
                       const label = getPositionLabel(newSetupType, position, machineCount);
                       const selectedId = selectedMachines[position] || "";
                       const otherSelected = new Set(
-                        Object.entries(selectedMachines)
-                          .filter(([p]) => parseInt(p) !== position)
-                          .map(([_, id]) => id)
+                        Object.entries(selectedMachines).filter(([p]) => parseInt(p) !== position).map(([_, id]) => id)
                       );
                       const options = machines.filter(
                         (m) => (m.setup_id === null && m.status === "in_warehouse") || m.id === selectedId
                       ).filter((m) => !otherSelected.has(m.id));
-
                       return (
                         <div key={position} className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">
-                            {label || `Machine ${position}`}
-                          </Label>
+                          <Label className="text-xs text-muted-foreground">{label || `Machine ${position}`}</Label>
                           <Select value={selectedId || "none"} onValueChange={(v) => handleMachineSelect(position, v)}>
                             <SelectTrigger><SelectValue placeholder="Select a machine" /></SelectTrigger>
                             <SelectContent>
@@ -396,12 +364,10 @@ export default function Setups() {
                       );
                     })}
                     {machines.filter((m) => m.setup_id === null && m.status === "in_warehouse").length === 0 && (
-                      <p className="text-sm text-muted-foreground">No machines available in warehouse. Register machines first.</p>
+                      <p className="text-sm text-muted-foreground">No machines available in warehouse.</p>
                     )}
                   </div>
                 )}
-
-                {/* Auto-generated name preview */}
                 {autoName && (
                   <div className="p-3 bg-muted rounded-md">
                     <Label className="text-xs text-muted-foreground">Setup Name (auto-generated)</Label>
@@ -419,9 +385,31 @@ export default function Setups() {
           </Dialog>
         </div>
 
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search setups..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
+        {/* Search + Filters */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input placeholder="Search setups..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
+          </div>
+          <Select value={filterLocation} onValueChange={setFilterLocation}>
+            <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Location" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              <SelectItem value="undeployed">Undeployed</SelectItem>
+              {locations.map((l) => (
+                <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              {Object.entries(setupTypeLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {setupsLoading ? (
@@ -442,6 +430,7 @@ export default function Setups() {
               const isExpanded = expandedSetups.has(setup.id);
               const spot = getSpotForSetup(setup.spot_id);
               const location = spot ? getLocationForSpot(spot.location_id) : null;
+              const createdDate = setup.created_at ? format(new Date(setup.created_at), "MMM yyyy") : null;
 
               return (
                 <Card key={setup.id}>
@@ -450,9 +439,12 @@ export default function Setups() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
                           <CardTitle className="text-lg truncate">{setup.name || "Unnamed Setup"}</CardTitle>
-                          <div className="flex items-center gap-2 mt-1">
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
                             <Badge variant="secondary">{setupTypeLabels[setupType]}</Badge>
                             <Badge variant="outline">{setupMachines.length} machines</Badge>
+                            {createdDate && (
+                              <Badge variant="outline" className="text-xs font-normal text-muted-foreground">{createdDate}</Badge>
+                            )}
                           </div>
                           {spot ? (
                             <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
@@ -515,7 +507,7 @@ export default function Setups() {
           </div>
         )}
 
-        {/* Manage Machines Dialog with Drag-and-Drop */}
+        {/* Manage Machines Dialog */}
         <Dialog open={isManageMachinesOpen} onOpenChange={setIsManageMachinesOpen}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
