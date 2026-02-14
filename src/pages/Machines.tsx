@@ -17,7 +17,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Plus, Search, Filter, MoreVertical, Wrench } from "lucide-react";
+import { Plus, Search, MoreVertical, Wrench } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -40,6 +40,8 @@ interface ItemDetailBasic {
 export default function MachinesPage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterAssignment, setFilterAssignment] = useState<string>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [serialGeneration, setSerialGeneration] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
@@ -196,20 +198,26 @@ export default function MachinesPage() {
 
   // Sorting priority & badge logic
   const sortedMachines = useMemo(() => {
-    const filtered = machines.filter(
-      (m) => m.serial_number.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filtered = machines.filter((m) => {
+      const matchesSearch = m.serial_number.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesStatus = filterStatus === "all" || m.status === filterStatus;
+      let matchesAssignment = filterAssignment === "all";
+      if (filterAssignment === "assigned") matchesAssignment = !!m.setup_id;
+      if (filterAssignment === "unassigned") matchesAssignment = !m.setup_id && m.status !== "retired";
+      if (filterAssignment === "retired") matchesAssignment = m.status === "retired";
+      return matchesSearch && matchesStatus && matchesAssignment;
+    });
 
     const getPriority = (m: Machine) => {
       if (m.status === "retired") return 4;
       const setup = setups.find((s) => s.id === m.setup_id);
-      if (!m.setup_id) return 1; // Unassigned
-      if (setup && !setup.spot_id) return 2; // Assigned but in warehouse
-      return 3; // Deployed
+      if (!m.setup_id) return 1;
+      if (setup && !setup.spot_id) return 2;
+      return 3;
     };
 
     return [...filtered].sort((a, b) => getPriority(a) - getPriority(b));
-  }, [machines, searchQuery, setups]);
+  }, [machines, searchQuery, filterStatus, filterAssignment, setups]);
 
   const getAssignmentBadge = (machine: Machine) => {
     if (machine.status === "retired") return { label: "Retired", variant: "outline" as const, link: null };
@@ -316,7 +324,25 @@ export default function MachinesPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input placeholder="Search by serial number..." className="pl-10 bg-background" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           </div>
-          <Button variant="outline" className="gap-2"><Filter className="w-4 h-4" /> Filters</Button>
+          <Select value={filterAssignment} onValueChange={setFilterAssignment}>
+            <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Assignment" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Assignment</SelectItem>
+              <SelectItem value="assigned">Assigned</SelectItem>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              <SelectItem value="retired">Retired</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="in_warehouse">In Warehouse</SelectItem>
+              <SelectItem value="deployed">Deployed</SelectItem>
+              <SelectItem value="maintenance">Maintenance</SelectItem>
+              <SelectItem value="retired">Retired</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </Card>
 
@@ -336,7 +362,7 @@ export default function MachinesPage() {
                 <TableHead className="text-muted-foreground">Slots</TableHead>
                 <TableHead className="text-muted-foreground">Assignment</TableHead>
                 <TableHead className="text-muted-foreground">Location</TableHead>
-                <TableHead className="text-muted-foreground">Start Date</TableHead>
+                <TableHead className="text-muted-foreground">Start Work</TableHead>
                 <TableHead className="text-muted-foreground w-10"></TableHead>
               </TableRow>
             </TableHeader>
