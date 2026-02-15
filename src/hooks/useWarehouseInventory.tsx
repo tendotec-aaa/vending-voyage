@@ -190,7 +190,7 @@ export function useWarehouseInventory(warehouseFilter?: string) {
       categoryId?: string;
       subcategoryId?: string;
     }) => {
-      const sku = `SKU-${Date.now().toString(36).toUpperCase()}`;
+      const sku = Date.now().toString(36).toUpperCase();
       const { data, error } = await supabase
         .from("item_details")
         .insert({
