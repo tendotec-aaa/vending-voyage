@@ -162,7 +162,7 @@ export function usePurchases() {
           if (!itemDetailId && item.item_name) {
             const insertData: Record<string, any> = {
               name: item.item_name,
-              sku: item.sku || `SKU-${Date.now().toString(36).toUpperCase()}`,
+              sku: item.sku || Date.now().toString(36).toUpperCase(),
               type: "merchandise" as const,
             };
             // Include category and subcategory if provided

@@ -137,7 +137,7 @@ export default function InventoryPage() {
         </Card>
         <Card className="p-4">
           <p className="text-sm text-muted-foreground">Total Inventory Cost</p>
-          <p className="text-2xl font-bold text-foreground">${stats.totalCost.toFixed(2)}</p>
+          <p className="text-2xl font-bold text-foreground">${stats.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </Card>
       </div>
 
@@ -195,7 +195,7 @@ export default function InventoryPage() {
                     {item.total.toLocaleString()}
                   </TableCell>
                   <TableCell className="text-right text-foreground">
-                    ${item.totalInventoryCost.toFixed(2)}
+                    ${item.totalInventoryCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                 </TableRow>
               ))}

@@ -96,7 +96,7 @@ export default function NewPurchase() {
   });
 
   // Generate SKU
-  const generateSku = () => `SKU-${Date.now().toString(36).toUpperCase()}`;
+  const generateSku = () => Date.now().toString(36).toUpperCase();
 
   // Add line item
   const addLineItem = () => {
