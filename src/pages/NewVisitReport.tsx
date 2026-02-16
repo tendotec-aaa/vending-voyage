@@ -272,8 +272,8 @@ export default function NewVisitReport() {
   const daysSinceLastVisit = useMemo(() => {
     if (visitType === 'installation') return 0;
     if (!lastVisit?.visit_date) return null;
-    return differenceInDays(new Date(), new Date(lastVisit.visit_date));
-  }, [lastVisit, visitType]);
+    return differenceInDays(visitDate, new Date(lastVisit.visit_date));
+  }, [lastVisit, visitType, visitDate]);
 
   const getDaysSinceColor = (days: number | null) => {
     if (days === null) return "bg-muted text-muted-foreground";
