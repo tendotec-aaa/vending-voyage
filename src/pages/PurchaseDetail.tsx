@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ArrowLeft, Plus, Trash2, CalendarIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -159,11 +164,15 @@ export default function PurchaseDetail() {
     },
   });
 
+  // Arrived date dialog state
+  const [showArrivedDialog, setShowArrivedDialog] = useState(false);
+  const [arrivedDate, setArrivedDate] = useState<Date>(new Date());
+
   const updateStatus = useMutation({
-    mutationFn: async (status: PurchaseStatus) => {
+    mutationFn: async ({ status, arrivedAt }: { status: PurchaseStatus; arrivedAt?: string }) => {
       const updateData: Record<string, unknown> = { status };
-      if (status === "arrived") {
-        updateData.received_at = new Date().toISOString();
+      if (status === "arrived" && arrivedAt) {
+        updateData.received_at = arrivedAt;
       }
       const { error } = await supabase.from("purchases").update(updateData).eq("id", id!);
       if (error) throw error;
@@ -285,12 +294,19 @@ export default function PurchaseDetail() {
               {(purchase.status || "draft").replace("_", " ").toUpperCase()}
             </Badge>
             {isEditable && nextStatus && (
-              <Button onClick={() => updateStatus.mutate(nextStatus)} disabled={updateStatus.isPending}>
+              <Button onClick={() => {
+                if (nextStatus === "arrived") {
+                  setArrivedDate(new Date());
+                  setShowArrivedDialog(true);
+                } else {
+                  updateStatus.mutate({ status: nextStatus });
+                }
+              }} disabled={updateStatus.isPending}>
                 Mark as {nextStatus.replace("_", " ")}
               </Button>
             )}
             {isEditable && purchase.status !== "cancelled" && (
-              <Button variant="destructive" size="sm" onClick={() => updateStatus.mutate("cancelled")}>
+              <Button variant="destructive" size="sm" onClick={() => updateStatus.mutate({ status: "cancelled" })}>
                 Cancel Order
               </Button>
             )}
@@ -400,10 +416,10 @@ export default function PurchaseDetail() {
                                     onChange={(e) => updateLineFee.mutate({ feeId: fee.id, field: "fee_name", value: e.target.value })}
                                     className="h-7 text-xs flex-1"
                                   />
-                                  <Input
+                                   <Input
                                     type="number"
-                                    value={fee.amount}
-                                    onChange={(e) => updateLineFee.mutate({ feeId: fee.id, field: "amount", value: parseFloat(e.target.value) || 0 })}
+                                    defaultValue={fee.amount}
+                                    onBlur={(e) => updateLineFee.mutate({ feeId: fee.id, field: "amount", value: parseFloat(e.target.value) || 0 })}
                                     className="h-7 text-xs w-24"
                                   />
                                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteLineFee.mutate(fee.id)}>
@@ -458,8 +474,8 @@ export default function PurchaseDetail() {
                     />
                     <Input
                       type="number"
-                      value={fee.amount}
-                      onChange={(e) => updateGlobalFee.mutate({ feeId: fee.id, field: "amount", value: parseFloat(e.target.value) || 0 })}
+                      defaultValue={fee.amount}
+                      onBlur={(e) => updateGlobalFee.mutate({ feeId: fee.id, field: "amount", value: parseFloat(e.target.value) || 0 })}
                       disabled={!isFeesEditable}
                       className="w-32"
                     />
@@ -500,6 +516,57 @@ export default function PurchaseDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Arrived Date Dialog */}
+      <Dialog open={showArrivedDialog} onOpenChange={setShowArrivedDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set Arrival Date</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Arrival Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !arrivedDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {arrivedDate ? format(arrivedDate, "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={arrivedDate}
+                    onSelect={(date) => date && setArrivedDate(date)}
+                    initialFocus
+                    className="pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowArrivedDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                updateStatus.mutate({ status: "arrived", arrivedAt: arrivedDate.toISOString() });
+                setShowArrivedDialog(false);
+              }}
+              disabled={updateStatus.isPending}
+            >
+              Confirm Arrival
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
