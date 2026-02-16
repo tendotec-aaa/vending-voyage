@@ -1,3 +1,4 @@
+import { fmt2 } from "@/lib/formatters";
 import { format } from "date-fns";
 import { Package, Truck, Calendar, DollarSign, MoreVertical, Trash2, CheckCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -124,7 +125,7 @@ export function PurchaseCard({ purchase, onUpdateStatus, onDelete }: PurchaseCar
             </span>
             <div className="flex items-center gap-1 font-semibold text-foreground">
               <DollarSign className="h-4 w-4" />
-              <span>{purchase.total_amount?.toLocaleString() || "0"}</span>
+              <span>{purchase.total_amount ? fmt2(purchase.total_amount) : "0.00"}</span>
               <span className="text-muted-foreground text-sm font-normal ml-1">
                 {purchase.currency}
               </span>

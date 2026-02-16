@@ -1,3 +1,4 @@
+ import { fmt2 } from "@/lib/formatters";
  import { useState, useMemo } from "react";
  import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
  import { Button } from "@/components/ui/button";
@@ -181,7 +182,7 @@
                      borderRadius: "8px",
                    }}
                    labelStyle={{ color: "hsl(var(--foreground))" }}
-                   formatter={(value: number) => [`$${value.toLocaleString()}`, ""]}
+                   formatter={(value: number) => [`$${fmt2(value)}`, ""]}
                  />
                  <Legend />
                  {selectedSpots.map((spot, idx) => (

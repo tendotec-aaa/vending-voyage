@@ -49,8 +49,7 @@ const statusColors: Record<PurchaseStatus, string> = {
   cancelled: "bg-destructive/20 text-destructive",
 };
 
-const fmt2 = (n: number) => n.toFixed(2);
-const fmt3 = (n: number) => n.toFixed(3);
+import { fmt2, fmt3 } from "@/lib/formatters";
 
 export default function PurchaseDetail() {
   const { id } = useParams<{ id: string }>();

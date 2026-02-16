@@ -1,3 +1,4 @@
+ import { fmt2, fmtPct, fmtPct0 } from "@/lib/formatters";
  import { useState } from "react";
  import { useNavigate } from "react-router-dom";
  import { Card } from "@/components/ui/card";
@@ -119,22 +120,22 @@
                    <TableCell className="font-medium text-foreground">{spot.name}</TableCell>
                    <TableCell className="text-muted-foreground">{spot.locationName}</TableCell>
                    <TableCell className="text-right font-medium text-foreground">
-                     ${spot.totalSales.toLocaleString()}
+                      ${fmt2(spot.totalSales)}
                    </TableCell>
                    <TableCell className="text-right text-muted-foreground">
-                     ${spot.rentAmount.toLocaleString()}
+                     ${fmt2(spot.rentAmount)}
                    </TableCell>
                    <TableCell className={`text-right font-medium ${isProfitable ? "text-green-500" : "text-destructive"}`}>
-                     ${spot.netProfit.toLocaleString()}
+                     ${fmt2(spot.netProfit)}
                    </TableCell>
                    <TableCell className={`text-right font-medium ${spot.roi >= 0 ? "text-green-500" : "text-destructive"}`}>
-                     {spot.roi.toFixed(1)}%
+                     {fmtPct(spot.roi)}%
                    </TableCell>
                    <TableCell>
                      <div className="flex items-center gap-2 min-w-[120px]">
                        <Progress value={spot.stockPercentage} className="flex-1 h-2" />
                        <span className="text-xs text-muted-foreground w-10">
-                         {spot.stockPercentage.toFixed(0)}%
+                         {fmtPct0(spot.stockPercentage)}%
                        </span>
                      </div>
                    </TableCell>

@@ -1,3 +1,4 @@
+import { fmt2 } from "@/lib/formatters";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Package, Search } from "lucide-react";
@@ -126,7 +127,7 @@ export default function Purchases() {
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">{items.length}</TableCell>
                       <TableCell className="text-right font-medium text-foreground">
-                        ${(purchase.total_amount || 0).toLocaleString()}
+                        ${fmt2(purchase.total_amount || 0)}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {purchase.created_at ? new Date(purchase.created_at).toLocaleDateString() : "—"}

@@ -1,3 +1,4 @@
+import { fmt2 } from "@/lib/formatters";
 import { useState, useMemo, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -670,7 +671,7 @@ export default function NewVisitReport() {
                 <div className="space-y-2">
                   <Label>Price/Unit</Label>
                   <div className="p-2 bg-muted rounded-md text-foreground font-medium">
-                    ${slot.pricePerUnit.toFixed(2)}
+                    ${fmt2(slot.pricePerUnit)}
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -844,7 +845,7 @@ export default function NewVisitReport() {
                 <div className="space-y-2">
                   <Label>Price/Unit</Label>
                   <div className="p-2 bg-muted rounded-md text-foreground font-medium">
-                    ${slot.pricePerUnit.toFixed(2)}
+                    ${fmt2(slot.pricePerUnit)}
                   </div>
                 </div>
               </div>
@@ -1078,7 +1079,7 @@ export default function NewVisitReport() {
             <div className="space-y-2">
               <Label>Total Cash Collected</Label>
               <div className="p-3 bg-muted rounded-md text-foreground font-semibold text-lg">
-                ${totals.totalCashCollected.toFixed(2)}
+                ${fmt2(totals.totalCashCollected)}
               </div>
             </div>
             <div className="space-y-2">
