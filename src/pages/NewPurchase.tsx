@@ -1,3 +1,4 @@
+import { fmt2, fmt3 } from "@/lib/formatters";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
@@ -692,26 +693,26 @@ export default function NewPurchase() {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Items Subtotal</span>
-                <span>${summary.itemsSubtotal.toFixed(2)} {currency}</span>
+                <span>${fmt2(summary.itemsSubtotal)} {currency}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Item Fees</span>
-                <span>${summary.itemFeesTotal.toFixed(2)} {currency}</span>
+                <span>${fmt2(summary.itemFeesTotal)} {currency}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Global Fees</span>
-                <span>${summary.globalFeesTotal.toFixed(2)} {currency}</span>
+                <span>${fmt2(summary.globalFeesTotal)} {currency}</span>
               </div>
               {orderType === "local" && localTaxRate > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Tax ({localTaxRate}%)</span>
-                  <span>${summary.taxAmount.toFixed(2)} {currency}</span>
+                  <span>${fmt2(summary.taxAmount)} {currency}</span>
                 </div>
               )}
               <Separator />
               <div className="flex justify-between font-semibold text-lg">
                 <span>Total</span>
-                <span>${summary.total.toFixed(2)} {currency}</span>
+                <span>${fmt2(summary.total)} {currency}</span>
               </div>
             </div>
 
@@ -726,7 +727,7 @@ export default function NewPurchase() {
                         <div key={index} className="flex justify-between text-sm">
                           <span className="text-muted-foreground">{lc.item_name}</span>
                           <span>
-                            ${lc.per_unit_landed.toFixed(3)} {currency}/unit
+                            ${fmt3(lc.per_unit_landed)} {currency}/unit
                           </span>
                         </div>
                       )

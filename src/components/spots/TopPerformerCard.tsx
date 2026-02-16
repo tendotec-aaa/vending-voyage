@@ -1,3 +1,4 @@
+ import { fmt2, fmtPct } from "@/lib/formatters";
  import { Card, CardContent } from "@/components/ui/card";
  import { TrendingUp, TrendingDown, Minus } from "lucide-react";
  import { SpotAnalytics } from "@/hooks/useSpotAnalytics";
@@ -40,19 +41,19 @@
          <div className="grid grid-cols-3 gap-2 text-center">
            <div>
              <p className="text-lg font-bold text-foreground">
-               ${spot.totalSales.toLocaleString()}
+               ${fmt2(spot.totalSales)}
              </p>
              <p className="text-xs text-muted-foreground">Total Sales</p>
            </div>
            <div>
              <p className={`text-lg font-bold ${spot.netProfit >= 0 ? "text-green-500" : "text-destructive"}`}>
-               ${spot.netProfit.toLocaleString()}
+               ${fmt2(spot.netProfit)}
              </p>
              <p className="text-xs text-muted-foreground">Sales - Rent</p>
            </div>
            <div>
              <p className={`text-lg font-bold ${spot.roi >= 0 ? "text-green-500" : "text-destructive"}`}>
-               {spot.roi.toFixed(1)}%
+               {fmtPct(spot.roi)}%
              </p>
              <p className="text-xs text-muted-foreground">ROI</p>
            </div>

@@ -1,3 +1,4 @@
+import { fmt2 } from "@/lib/formatters";
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -333,7 +334,7 @@ export default function MachineDetail() {
                       <TableCell>{slot.item_details?.name || "—"}</TableCell>
                       <TableCell className="text-right">{slot.current_stock ?? 0}</TableCell>
                       <TableCell className="text-right">{slot.capacity ?? 150}</TableCell>
-                      <TableCell className="text-right">${Number(slot.coin_acceptor ?? 1).toFixed(2)}</TableCell>
+                      <TableCell className="text-right">${fmt2(Number(slot.coin_acceptor ?? 1))}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

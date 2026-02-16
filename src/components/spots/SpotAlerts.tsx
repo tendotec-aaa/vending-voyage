@@ -1,3 +1,4 @@
+ import { fmt2, fmtPct, fmtPct0, fmtInt } from "@/lib/formatters";
  import { useNavigate } from "react-router-dom";
  import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
  import { Badge } from "@/components/ui/badge";
@@ -134,7 +135,7 @@
                <AlertCard
                  key={spot.id}
                  spot={spot}
-                 issue={`${spot.stockPercentage.toFixed(0)}% stock remaining (${spot.currentStock}/${spot.totalCapacity})`}
+                 issue={`${fmtPct0(spot.stockPercentage)}% stock remaining (${fmtInt(spot.currentStock)}/${fmtInt(spot.totalCapacity)})`}
                  actionLabel="View"
                  actionPath="/locations"
                />
@@ -160,7 +161,7 @@
                <AlertCard
                  key={spot.id}
                  spot={spot}
-                 issue={`ROI: ${spot.roi.toFixed(1)}% (Net: $${spot.netProfit.toLocaleString()})`}
+                 issue={`ROI: ${fmtPct(spot.roi)}% (Net: $${fmt2(spot.netProfit)})`}
                  actionLabel="Analyze"
                  actionPath="/analytics"
                />

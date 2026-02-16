@@ -1,3 +1,4 @@
+import { fmt2 } from "@/lib/formatters";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -129,7 +130,7 @@ export function TicketCard({ ticket, onUpdateStatus, onDelete }: TicketCardProps
               </div>
             )}
             {ticket.cost !== null && ticket.cost > 0 && (
-              <span className="font-medium text-foreground">Cost: ${ticket.cost.toFixed(2)}</span>
+              <span className="font-medium text-foreground">Cost: ${fmt2(ticket.cost)}</span>
             )}
           </div>
         </div>

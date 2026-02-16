@@ -1,3 +1,4 @@
+import { fmt2 } from "@/lib/formatters";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -317,7 +318,7 @@ export default function Locations() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary">{locationSpots.length}/{totalSpots} spots</Badge>
-                        <span className="text-sm text-foreground font-medium">${Number(location.rent_amount || 0).toFixed(2)}</span>
+                        <span className="text-sm text-foreground font-medium">${fmt2(Number(location.rent_amount || 0))}</span>
                       </div>
                     </div>
 

@@ -1,3 +1,4 @@
+import { fmt2, fmt3 } from "@/lib/formatters";
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -366,11 +367,11 @@ export default function ItemDetail() {
               <div className="space-y-4">
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">Total Inventory Cost</p>
-                  <p className="text-xl font-semibold text-foreground">${totalInventoryCost.toFixed(2)}</p>
+                  <p className="text-xl font-semibold text-foreground">${fmt2(totalInventoryCost)}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">Weighted Avg Cost/Unit</p>
-                  <p className="text-xl font-semibold text-foreground">${weightedAvgCost.toFixed(3)}</p>
+                  <p className="text-xl font-semibold text-foreground">${fmt3(weightedAvgCost)}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">Active Batches</p>
@@ -445,10 +446,10 @@ export default function ItemDetail() {
                       </p>
                     </div>
                     <div className="text-right mt-2 sm:mt-0">
-                      <p className="text-sm text-foreground">${Number(pi.final_unit_cost).toFixed(3)}/unit</p>
+                      <p className="text-sm text-foreground">${fmt3(Number(pi.final_unit_cost))}/unit</p>
                       {pi.active_item && (pi.quantity_remaining || 0) > 0 && (
                         <p className="text-xs font-medium text-primary">
-                          Batch Value: ${((pi.quantity_remaining || 0) * (pi.final_unit_cost || 0)).toFixed(2)}
+                          Batch Value: ${fmt2((pi.quantity_remaining || 0) * (pi.final_unit_cost || 0))}
                         </p>
                       )}
                     </div>
