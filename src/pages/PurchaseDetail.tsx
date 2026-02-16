@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -14,12 +14,30 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, Trash2, CalendarIcon } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, CalendarIcon, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 
 type PurchaseStatus = Database["public"]["Enums"]["purchase_status"];
+
+interface LocalGlobalFee {
+  id?: string;
+  fee_name: string;
+  amount: number;
+  distribution_method: string;
+  _isNew?: boolean;
+  _isDeleted?: boolean;
+}
+
+interface LocalLineFee {
+  id?: string;
+  purchase_line_id: string;
+  fee_name: string;
+  amount: number;
+  _isNew?: boolean;
+  _isDeleted?: boolean;
+}
 
 const statusFlow: PurchaseStatus[] = ["draft", "pending", "in_transit", "arrived"];
 const statusColors: Record<PurchaseStatus, string> = {
@@ -39,6 +57,12 @@ export default function PurchaseDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Local fee editing state
+  const [localGlobalFees, setLocalGlobalFees] = useState<LocalGlobalFee[]>([]);
+  const [localLineFees, setLocalLineFees] = useState<LocalLineFee[]>([]);
+  const [feesInitialized, setFeesInitialized] = useState(false);
+  const [hasFeeChanges, setHasFeeChanges] = useState(false);
 
   const { data: purchase, isLoading } = useQuery({
     queryKey: ["purchase-detail", id],
@@ -92,13 +116,162 @@ export default function PurchaseDetail() {
     enabled: !!purchase?.purchase_items,
   });
 
-  // Recalculate and save total + landed costs
-  const recalculateMutation = useMutation({
+  // Initialize local state from fetched data
+  useEffect(() => {
+    if (globalFees.length > 0 || lineFees.length > 0 || (purchase && !feesInitialized)) {
+      setLocalGlobalFees(globalFees.map((f) => ({
+        id: f.id,
+        fee_name: f.fee_name,
+        amount: f.amount,
+        distribution_method: f.distribution_method,
+      })));
+      setLocalLineFees(lineFees.map((f) => ({
+        id: f.id,
+        purchase_line_id: f.purchase_line_id,
+        fee_name: f.fee_name,
+        amount: f.amount,
+      })));
+      setFeesInitialized(true);
+      setHasFeeChanges(false);
+    }
+  }, [globalFees, lineFees, purchase, feesInitialized]);
+
+  // Local fee editing helpers
+  const addLocalGlobalFee = () => {
+    setLocalGlobalFees([...localGlobalFees, {
+      fee_name: "",
+      amount: 0,
+      distribution_method: "by_value",
+      _isNew: true,
+    }]);
+    setHasFeeChanges(true);
+  };
+
+  const updateLocalGlobalFee = (index: number, field: string, value: any) => {
+    const updated = [...localGlobalFees];
+    updated[index] = { ...updated[index], [field]: value };
+    setLocalGlobalFees(updated);
+    setHasFeeChanges(true);
+  };
+
+  const deleteLocalGlobalFee = (index: number) => {
+    const fee = localGlobalFees[index];
+    if (fee._isNew) {
+      setLocalGlobalFees(localGlobalFees.filter((_, i) => i !== index));
+    } else {
+      const updated = [...localGlobalFees];
+      updated[index] = { ...updated[index], _isDeleted: true };
+      setLocalGlobalFees(updated);
+    }
+    setHasFeeChanges(true);
+  };
+
+  const addLocalLineFee = (purchaseLineId: string) => {
+    setLocalLineFees([...localLineFees, {
+      purchase_line_id: purchaseLineId,
+      fee_name: "",
+      amount: 0,
+      _isNew: true,
+    }]);
+    setHasFeeChanges(true);
+  };
+
+  const updateLocalLineFee = (index: number, field: string, value: any) => {
+    const updated = [...localLineFees];
+    updated[index] = { ...updated[index], [field]: value };
+    setLocalLineFees(updated);
+    setHasFeeChanges(true);
+  };
+
+  const deleteLocalLineFee = (index: number) => {
+    const fee = localLineFees[index];
+    if (fee._isNew) {
+      setLocalLineFees(localLineFees.filter((_, i) => i !== index));
+    } else {
+      const updated = [...localLineFees];
+      updated[index] = { ...updated[index], _isDeleted: true };
+      setLocalLineFees(updated);
+    }
+    setHasFeeChanges(true);
+  };
+
+  // Batch save all fee changes + recalculate
+  const applyFeesMutation = useMutation({
     mutationFn: async () => {
-      if (!purchase) return;
-      const items = (purchase.purchase_items || []) as any[];
-      const currentGlobalFees = globalFees;
-      const currentLineFees = lineFees;
+      // 1. Delete removed global fees
+      const deletedGlobal = localGlobalFees.filter((f) => f._isDeleted && f.id);
+      for (const fee of deletedGlobal) {
+        await supabase.from("purchase_global_fees").delete().eq("id", fee.id!);
+      }
+
+      // 2. Delete removed line fees
+      const deletedLine = localLineFees.filter((f) => f._isDeleted && f.id);
+      for (const fee of deletedLine) {
+        await supabase.from("purchase_line_fees").delete().eq("id", fee.id!);
+      }
+
+      // 3. Insert new global fees
+      const newGlobal = localGlobalFees.filter((f) => f._isNew && !f._isDeleted);
+      if (newGlobal.length > 0) {
+        const { error } = await supabase.from("purchase_global_fees").insert(
+          newGlobal.map((f) => ({
+            purchase_id: id!,
+            fee_name: f.fee_name || "Unnamed Fee",
+            amount: f.amount,
+            distribution_method: f.distribution_method,
+          }))
+        );
+        if (error) throw error;
+      }
+
+      // 4. Insert new line fees
+      const newLine = localLineFees.filter((f) => f._isNew && !f._isDeleted);
+      if (newLine.length > 0) {
+        const { error } = await supabase.from("purchase_line_fees").insert(
+          newLine.map((f) => ({
+            purchase_line_id: f.purchase_line_id,
+            fee_name: f.fee_name || "Unnamed Fee",
+            amount: f.amount,
+          }))
+        );
+        if (error) throw error;
+      }
+
+      // 5. Update existing global fees
+      const existingGlobal = localGlobalFees.filter((f) => !f._isNew && !f._isDeleted && f.id);
+      for (const fee of existingGlobal) {
+        await supabase.from("purchase_global_fees").update({
+          fee_name: fee.fee_name,
+          amount: fee.amount,
+          distribution_method: fee.distribution_method,
+        }).eq("id", fee.id!);
+      }
+
+      // 6. Update existing line fees
+      const existingLine = localLineFees.filter((f) => !f._isNew && !f._isDeleted && f.id);
+      for (const fee of existingLine) {
+        await supabase.from("purchase_line_fees").update({
+          fee_name: fee.fee_name,
+          amount: fee.amount,
+        }).eq("id", fee.id!);
+      }
+
+      // 7. Recalculate landed costs
+      // Re-fetch the saved fees for accurate calculation
+      const { data: savedGlobalFees } = await supabase
+        .from("purchase_global_fees")
+        .select("*")
+        .eq("purchase_id", id!);
+
+      const items = (purchase?.purchase_items || []) as any[];
+      const itemIds = items.map((i: any) => i.id);
+      const { data: savedLineFees } = await supabase
+        .from("purchase_line_fees")
+        .select("*")
+        .in("purchase_line_id", itemIds.length > 0 ? itemIds : ["__none__"]);
+
+      const currentGlobalFees = savedGlobalFees || [];
+      const currentLineFees = savedLineFees || [];
 
       const itemsSubtotal = items.reduce((sum: number, i: any) => sum + i.quantity_ordered * i.unit_cost, 0);
       const totalQuantity = items.reduce((sum: number, i: any) => sum + i.quantity_ordered, 0);
@@ -124,15 +297,10 @@ export default function PurchaseDetail() {
           }
         }
 
-        const taxRate = purchase.type === "local" && purchase.local_tax_rate ? purchase.local_tax_rate / 100 : 0;
+        const taxRate = purchase?.type === "local" && purchase?.local_tax_rate ? purchase.local_tax_rate / 100 : 0;
         const taxAllocated = (itemValue + lineFeesTotal + distributedGlobalFees) * taxRate;
         const totalItemCost = itemValue + lineFeesTotal + distributedGlobalFees + taxAllocated;
         const landedUnitCost = item.quantity_ordered > 0 ? totalItemCost / item.quantity_ordered : 0;
-
-        // Round to 3 decimal places for storage
-        // For import orders, final_unit_cost = landed_unit_cost
-        // For local orders, final_unit_cost = (subtotal + line fees + global fees + tax) / qty
-        // In practice both formulas yield the same result since landed_unit_cost = totalItemCost / qty
         const finalUnitCost = landedUnitCost;
 
         await supabase
@@ -150,7 +318,7 @@ export default function PurchaseDetail() {
       const allLineFeesTotal = currentLineFees.reduce((sum, f) => sum + (f.amount || 0), 0);
       const globalFeesTotal = currentGlobalFees.reduce((sum, f) => sum + (f.amount || 0), 0);
       const subtotalBeforeTax = itemsSubtotal + allLineFeesTotal + globalFeesTotal;
-      const taxAmount = purchase.type === "local" && purchase.local_tax_rate ? subtotalBeforeTax * (purchase.local_tax_rate / 100) : 0;
+      const taxAmount = purchase?.type === "local" && purchase?.local_tax_rate ? subtotalBeforeTax * (purchase.local_tax_rate / 100) : 0;
       const total = subtotalBeforeTax + taxAmount;
 
       await supabase
@@ -159,8 +327,16 @@ export default function PurchaseDetail() {
         .eq("id", id!);
     },
     onSuccess: () => {
+      setFeesInitialized(false);
+      setHasFeeChanges(false);
       queryClient.invalidateQueries({ queryKey: ["purchase-detail", id] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-global-fees", id] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-line-fees", id] });
       queryClient.invalidateQueries({ queryKey: ["purchases"] });
+      toast({ title: "Fees applied", description: "All fee changes have been saved and costs recalculated." });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: `Failed to apply fees: ${error.message}`, variant: "destructive" });
     },
   });
 
@@ -185,81 +361,6 @@ export default function PurchaseDetail() {
     onError: (error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
   });
 
-  const addGlobalFee = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase.from("purchase_global_fees").insert({
-        purchase_id: id!,
-        fee_name: "New Fee",
-        amount: 0,
-        distribution_method: "by_value",
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["purchase-global-fees", id] });
-      setTimeout(() => recalculateMutation.mutate(), 500);
-    },
-  });
-
-  const updateGlobalFee = useMutation({
-    mutationFn: async ({ feeId, field, value }: { feeId: string; field: string; value: any }) => {
-      const { error } = await supabase.from("purchase_global_fees").update({ [field]: value }).eq("id", feeId);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["purchase-global-fees", id] });
-      setTimeout(() => recalculateMutation.mutate(), 500);
-    },
-  });
-
-  const deleteGlobalFee = useMutation({
-    mutationFn: async (feeId: string) => {
-      const { error } = await supabase.from("purchase_global_fees").delete().eq("id", feeId);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["purchase-global-fees", id] });
-      setTimeout(() => recalculateMutation.mutate(), 500);
-    },
-  });
-
-  const addLineFee = useMutation({
-    mutationFn: async (purchaseLineId: string) => {
-      const { error } = await supabase.from("purchase_line_fees").insert({
-        purchase_line_id: purchaseLineId,
-        fee_name: "New Fee",
-        amount: 0,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["purchase-line-fees", id] });
-      setTimeout(() => recalculateMutation.mutate(), 500);
-    },
-  });
-
-  const updateLineFee = useMutation({
-    mutationFn: async ({ feeId, field, value }: { feeId: string; field: string; value: any }) => {
-      const { error } = await supabase.from("purchase_line_fees").update({ [field]: value }).eq("id", feeId);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["purchase-line-fees", id] });
-      setTimeout(() => recalculateMutation.mutate(), 500);
-    },
-  });
-
-  const deleteLineFee = useMutation({
-    mutationFn: async (feeId: string) => {
-      const { error } = await supabase.from("purchase_line_fees").delete().eq("id", feeId);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["purchase-line-fees", id] });
-      setTimeout(() => recalculateMutation.mutate(), 500);
-    },
-  });
-
   if (isLoading) return <AppLayout><div className="text-muted-foreground">Loading...</div></AppLayout>;
   if (!purchase) return <AppLayout><div className="text-muted-foreground">Purchase not found</div></AppLayout>;
 
@@ -271,9 +372,13 @@ export default function PurchaseDetail() {
   const items = (purchase.purchase_items || []) as any[];
   const showLandedCost = purchase.status === "arrived" || purchase.status === "received";
 
+  // Use local fees for display calculations
+  const activeLocalLineFees = localLineFees.filter((f) => !f._isDeleted);
+  const activeLocalGlobalFees = localGlobalFees.filter((f) => !f._isDeleted);
+
   const itemsSubtotal = items.reduce((sum: number, i: any) => sum + i.quantity_ordered * i.unit_cost, 0);
-  const lineFeesTotal = lineFees.reduce((sum, f) => sum + (f.amount || 0), 0);
-  const globalFeesTotal = globalFees.reduce((sum, f) => sum + (f.amount || 0), 0);
+  const lineFeesTotal = activeLocalLineFees.reduce((sum, f) => sum + (f.amount || 0), 0);
+  const globalFeesTotal = activeLocalGlobalFees.reduce((sum, f) => sum + (f.amount || 0), 0);
   const subtotalBeforeTax = itemsSubtotal + lineFeesTotal + globalFeesTotal;
   const taxAmount = purchase.type === "local" && purchase.local_tax_rate ? subtotalBeforeTax * (purchase.local_tax_rate / 100) : 0;
   const total = subtotalBeforeTax + taxAmount;
@@ -335,12 +440,12 @@ export default function PurchaseDetail() {
             ) : (
               <div className="space-y-4">
                 {items.map((item: any) => {
-                  const itemLineFees = lineFees.filter((f) => f.purchase_line_id === item.id);
+                  const itemLineFees = activeLocalLineFees.filter((f) => f.purchase_line_id === item.id);
                   const itemLineFeesTotal = itemLineFees.reduce((sum, f) => sum + (f.amount || 0), 0);
                   const itemTotal = item.quantity_ordered * item.unit_cost;
                   const globalAllocated = item.global_fees_allocated || 0;
                   const numLineFees = itemLineFees.length;
-                  const numGlobalFees = globalFees.length;
+                  const numGlobalFees = activeLocalGlobalFees.length;
                   const feePerUnitLine = item.quantity_ordered > 0 ? itemLineFeesTotal / item.quantity_ordered : 0;
                   const feePerUnitGlobal = item.quantity_ordered > 0 ? globalAllocated / item.quantity_ordered : 0;
 
@@ -407,37 +512,42 @@ export default function PurchaseDetail() {
                       {/* Line item fees detail */}
                       {itemLineFees.length > 0 && (
                         <div className="pl-4 border-l-2 border-border space-y-1">
-                          {itemLineFees.map((fee) => (
-                            <div key={fee.id} className="flex items-center gap-2 text-sm text-muted-foreground">
-                              {isFeesEditable ? (
-                                <>
-                                  <Input
-                                    value={fee.fee_name}
-                                    onChange={(e) => updateLineFee.mutate({ feeId: fee.id, field: "fee_name", value: e.target.value })}
-                                    className="h-7 text-xs flex-1"
-                                  />
-                                   <Input
-                                    type="number"
-                                    defaultValue={fee.amount}
-                                    onBlur={(e) => updateLineFee.mutate({ feeId: fee.id, field: "amount", value: parseFloat(e.target.value) || 0 })}
-                                    className="h-7 text-xs w-24"
-                                  />
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteLineFee.mutate(fee.id)}>
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </>
-                              ) : (
-                                <>
-                                  <span>{fee.fee_name}</span>
-                                  <span className="ml-auto">${fmt2(fee.amount)}</span>
-                                </>
-                              )}
-                            </div>
-                          ))}
+                          {itemLineFees.map((fee, feeIdx) => {
+                            const globalIdx = localLineFees.indexOf(fee);
+                            return (
+                              <div key={fee.id || `new-${feeIdx}`} className="flex items-center gap-2 text-sm text-muted-foreground">
+                                {isFeesEditable ? (
+                                  <>
+                                    <Input
+                                      value={fee.fee_name}
+                                      onChange={(e) => updateLocalLineFee(globalIdx, "fee_name", e.target.value)}
+                                      className="h-7 text-xs flex-1"
+                                      placeholder="Fee name"
+                                    />
+                                    <Input
+                                      type="number"
+                                      value={fee.amount}
+                                      onChange={(e) => updateLocalLineFee(globalIdx, "amount", parseFloat(e.target.value) || 0)}
+                                      className="h-7 text-xs w-24"
+                                      placeholder="Amount"
+                                    />
+                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteLocalLineFee(globalIdx)}>
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>{fee.fee_name}</span>
+                                    <span className="ml-auto">${fmt2(fee.amount)}</span>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                       {isFeesEditable && (
-                        <Button variant="ghost" size="sm" className="text-xs" onClick={() => addLineFee.mutate(item.id)}>
+                        <Button variant="ghost" size="sm" className="text-xs" onClick={() => addLocalLineFee(item.id)}>
                           <Plus className="mr-1 h-3 w-3" /> Add Line Fee
                         </Button>
                       )}
@@ -454,54 +564,73 @@ export default function PurchaseDetail() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Global Fees</CardTitle>
             {isFeesEditable && (
-              <Button variant="outline" size="sm" onClick={() => addGlobalFee.mutate()}>
+              <Button variant="outline" size="sm" onClick={addLocalGlobalFee}>
                 <Plus className="mr-2 h-4 w-4" /> Add Fee
               </Button>
             )}
           </CardHeader>
           <CardContent>
-            {globalFees.length === 0 ? (
+            {activeLocalGlobalFees.length === 0 ? (
               <p className="text-muted-foreground text-sm">No global fees.</p>
             ) : (
               <div className="space-y-3">
-                {globalFees.map((fee) => (
-                  <div key={fee.id} className="flex gap-3 items-center">
-                    <Input
-                      value={fee.fee_name}
-                      onChange={(e) => updateGlobalFee.mutate({ feeId: fee.id, field: "fee_name", value: e.target.value })}
-                      disabled={!isFeesEditable}
-                      className="flex-1"
-                    />
-                    <Input
-                      type="number"
-                      defaultValue={fee.amount}
-                      onBlur={(e) => updateGlobalFee.mutate({ feeId: fee.id, field: "amount", value: parseFloat(e.target.value) || 0 })}
-                      disabled={!isFeesEditable}
-                      className="w-32"
-                    />
-                    <Select
-                      value={fee.distribution_method}
-                      onValueChange={(v) => updateGlobalFee.mutate({ feeId: fee.id, field: "distribution_method", value: v })}
-                      disabled={!isFeesEditable}
-                    >
-                      <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="by_value">By Value</SelectItem>
-                        <SelectItem value="by_quantity">By Quantity</SelectItem>
-                        <SelectItem value="by_cbm">By CBM</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {isFeesEditable && (
-                      <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteGlobalFee.mutate(fee.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
+                {localGlobalFees.map((fee, index) => {
+                  if (fee._isDeleted) return null;
+                  return (
+                    <div key={fee.id || `new-${index}`} className="flex gap-3 items-center">
+                      <Input
+                        value={fee.fee_name}
+                        onChange={(e) => updateLocalGlobalFee(index, "fee_name", e.target.value)}
+                        disabled={!isFeesEditable}
+                        className="flex-1"
+                        placeholder="Fee name"
+                      />
+                      <Input
+                        type="number"
+                        value={fee.amount}
+                        onChange={(e) => updateLocalGlobalFee(index, "amount", parseFloat(e.target.value) || 0)}
+                        disabled={!isFeesEditable}
+                        className="w-32"
+                        placeholder="Amount"
+                      />
+                      <Select
+                        value={fee.distribution_method}
+                        onValueChange={(v) => updateLocalGlobalFee(index, "distribution_method", v)}
+                        disabled={!isFeesEditable}
+                      >
+                        <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="by_value">By Value</SelectItem>
+                          <SelectItem value="by_quantity">By Quantity</SelectItem>
+                          <SelectItem value="by_cbm">By CBM</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {isFeesEditable && (
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteLocalGlobalFee(index)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
         </Card>
+
+        {/* Apply Fees Button */}
+        {isFeesEditable && hasFeeChanges && (
+          <div className="flex justify-end">
+            <Button
+              onClick={() => applyFeesMutation.mutate()}
+              disabled={applyFeesMutation.isPending}
+              className="gap-2"
+            >
+              <Save className="h-4 w-4" />
+              {applyFeesMutation.isPending ? "Applying..." : "Apply Fee Changes"}
+            </Button>
+          </div>
+        )}
 
         {/* Cost Summary */}
         <Card>
