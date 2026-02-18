@@ -29,7 +29,7 @@ export function ReceiveStockDialog() {
   const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
   const [discrepancyOpen, setDiscrepancyOpen] = useState(false);
 
-  const { unreceivedPurchases, isLoadingUnreceived, receiveStock, isReceiving } = useReceiveStock();
+  const { unreceivedPurchases, isLoadingUnreceived, receiveStock, isReceiving, systemWarehouse } = useReceiveStock();
   const { warehouses: rawWarehouses } = usePurchases();
 
   // Cast warehouses to include is_system
@@ -314,6 +314,7 @@ export function ReceiveStockDialog() {
         items={discrepancyItems}
         onConfirm={(note) => handleReceive(note)}
         isLoading={isReceiving}
+        systemWarehouseName={systemWarehouse?.name}
       />
     </>
   );
