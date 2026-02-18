@@ -124,6 +124,8 @@ export function useReceiveStock() {
 
         // 3. Handle discrepancy
         if (difference > 0) {
+          const systemWarehouseName = systemWarehouseQuery.data?.name || "Unaccounted Inventory";
+          const defaultNote = `Missing ${difference} unit(s) of "${item.itemName}" (expected ${item.quantityExpected}, received ${item.quantityReceived}) — routed to ${systemWarehouseName} for supplier reclaim.`;
           const { error: noteError } = await supabase
             .from("receiving_notes")
             .insert({
@@ -132,7 +134,7 @@ export function useReceiveStock() {
               quantity_expected: item.quantityExpected,
               quantity_received: item.quantityReceived,
               difference,
-              note: payload.discrepancyNote || `Missing ${difference} units of ${item.itemName}`,
+              note: payload.discrepancyNote || defaultNote,
             });
 
           if (noteError) throw noteError;
