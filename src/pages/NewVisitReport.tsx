@@ -519,16 +519,42 @@ export default function NewVisitReport() {
       <Card key={slot.id} className="p-4 bg-background border-border">
         <div className="space-y-4">
           {/* Header Info */}
-          <div className="flex items-center justify-between border-b border-border pb-3">
-            <div>
-              <p className="text-sm text-muted-foreground">Machine Serial No.</p>
-              <p className="font-semibold text-foreground">{slot.machineSerialNo}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-muted-foreground">Slot #{slot.slotNumber}</p>
-              <p className="font-medium text-foreground">
-                {isInstallation ? "Assign Toy:" : "Toy Name:"} {slot.toyName}
+          <div className="flex items-start justify-between border-b border-border pb-3 gap-4">
+            {/* LEFT: Toy Name — the most important info */}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-0.5">
+                {isInstallation ? "Assign Toy" : "Toy"}
               </p>
+              {isInstallation ? (
+                <div className={cn(
+                  "flex items-center gap-2 px-3 py-2 rounded-md border-2",
+                  slot.toyName && slot.toyName !== "Unassigned"
+                    ? "border-primary bg-primary/10"
+                    : "border-dashed border-muted-foreground/50 bg-muted/40"
+                )}>
+                  <span className={cn(
+                    "text-base font-bold truncate",
+                    slot.toyName && slot.toyName !== "Unassigned"
+                      ? "text-primary"
+                      : "text-muted-foreground italic"
+                  )}>
+                    {slot.toyName && slot.toyName !== "Unassigned" ? slot.toyName : "No toy assigned yet"}
+                  </span>
+                </div>
+              ) : (
+                <p className={cn(
+                  "text-lg font-bold truncate",
+                  slot.toyName === "Unassigned" ? "text-muted-foreground italic" : "text-foreground"
+                )}>
+                  {slot.toyName}
+                </p>
+              )}
+            </div>
+
+            {/* RIGHT: Machine Serial + Slot */}
+            <div className="text-right shrink-0">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Machine · Slot #{slot.slotNumber}</p>
+              <p className="text-sm font-mono text-muted-foreground">{slot.machineSerialNo}</p>
             </div>
           </div>
 
