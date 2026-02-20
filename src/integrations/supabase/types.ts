@@ -1142,6 +1142,54 @@ export type Database = {
           },
         ]
       }
+      visit_slot_snapshots: {
+        Row: {
+          created_at: string
+          id: string
+          previous_capacity: number
+          previous_coin_acceptor: number
+          previous_product_id: string | null
+          previous_stock: number
+          slot_id: string
+          visit_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          previous_capacity?: number
+          previous_coin_acceptor?: number
+          previous_product_id?: string | null
+          previous_stock?: number
+          slot_id: string
+          visit_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          previous_capacity?: number
+          previous_coin_acceptor?: number
+          previous_product_id?: string | null
+          previous_stock?: number
+          slot_id?: string
+          visit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "visit_slot_snapshots_slot_id_fkey"
+            columns: ["slot_id"]
+            isOneToOne: false
+            referencedRelation: "machine_slots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "visit_slot_snapshots_visit_id_fkey"
+            columns: ["visit_id"]
+            isOneToOne: false
+            referencedRelation: "spot_visits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       warehouses: {
         Row: {
           address: string | null
@@ -1228,7 +1276,7 @@ export type Database = {
       ticket_status: "pending" | "in_progress" | "completed"
       user_role: "admin" | "route_operator" | "warehouse_manager"
       visit_action_type: "restock" | "collection" | "service" | "swap"
-      visit_status: "completed" | "flagged"
+      visit_status: "completed" | "flagged" | "reversed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1375,7 +1423,7 @@ export const Constants = {
       ticket_status: ["pending", "in_progress", "completed"],
       user_role: ["admin", "route_operator", "warehouse_manager"],
       visit_action_type: ["restock", "collection", "service", "swap"],
-      visit_status: ["completed", "flagged"],
+      visit_status: ["completed", "flagged", "reversed"],
     },
   },
 } as const

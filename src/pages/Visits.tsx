@@ -1,7 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { 
   Table, 
   TableBody, 
@@ -22,97 +22,134 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Calendar } from "@/components/ui/calendar";
-import { Plus, Eye, RotateCcw, CalendarIcon } from "lucide-react";
+import { Plus, Eye, RotateCcw, CalendarIcon, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
-
-const visits = [
-  {
-    id: "VR-2024-001",
-    date: "2024-01-10",
-    location: "Westfield Mall - Food Court",
-    spot: "Spot 1",
-    driver: "John Smith",
-    revenue: "$127.50",
-    refilled: 45,
-    capacity: 60,
-  },
-  {
-    id: "VR-2024-002",
-    date: "2024-01-10",
-    location: "Central Station",
-    spot: "Spot 3",
-    driver: "Sarah Johnson",
-    revenue: "$89.25",
-    refilled: 32,
-    capacity: 50,
-  },
-  {
-    id: "VR-2024-003",
-    date: "2024-01-10",
-    location: "Tech Park Building A",
-    spot: "Spot 2",
-    driver: "Mike Davis",
-    revenue: "$156.00",
-    refilled: 28,
-    capacity: 40,
-  },
-  {
-    id: "VR-2024-004",
-    date: "2024-01-09",
-    location: "University Library",
-    spot: "Spot 1",
-    driver: "Emily Chen",
-    revenue: "$67.75",
-    refilled: 22,
-    capacity: 30,
-  },
-  {
-    id: "VR-2024-005",
-    date: "2024-01-09",
-    location: "Airport Terminal 2",
-    spot: "Spot 5",
-    driver: "John Smith",
-    revenue: "$234.00",
-    refilled: 56,
-    capacity: 80,
-  },
-];
-
-const locations = [
-  "Westfield Mall - Food Court",
-  "Central Station",
-  "Tech Park Building A",
-  "University Library",
-  "Airport Terminal 2",
-];
-
-const spots = ["Spot 1", "Spot 2", "Spot 3", "Spot 4", "Spot 5"];
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useUserRole } from "@/hooks/useUserRole";
+import { toast } from "sonner";
 
 export default function VisitsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { isAdmin } = useUserRole();
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [selectedLocation, setSelectedLocation] = useState<string>("all");
   const [selectedSpot, setSelectedSpot] = useState<string>("all");
+  const [reverseVisitId, setReverseVisitId] = useState<string | null>(null);
 
-  const filteredVisits = visits.filter((visit) => {
-    if (selectedLocation !== "all" && visit.location !== selectedLocation) {
-      return false;
-    }
-    if (selectedSpot !== "all" && visit.spot !== selectedSpot) {
-      return false;
-    }
+  // Fetch visits from DB
+  const { data: visits = [], isLoading } = useQuery({
+    queryKey: ['spot-visits-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('spot_visits')
+        .select(`
+          id,
+          visit_date,
+          visit_type,
+          total_cash_collected,
+          status,
+          notes,
+          spot:spots!spot_visits_spot_id_fkey(
+            id,
+            name,
+            location:locations!spots_location_id_fkey(id, name)
+          ),
+          operator:user_profiles!spot_visits_operator_id_fkey(
+            first_names,
+            last_names
+          )
+        `)
+        .order('visit_date', { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  // Fetch unique locations/spots for filters
+  const locations = [...new Set(visits.map((v: any) => v.spot?.location?.name).filter(Boolean))];
+  const spots = [...new Set(visits.map((v: any) => v.spot?.name).filter(Boolean))];
+
+  // Rollback mutation
+  const reverseVisit = useMutation({
+    mutationFn: async (visitId: string) => {
+      // 1. Fetch snapshots
+      const { data: snapshots, error: snapErr } = await supabase
+        .from('visit_slot_snapshots' as any)
+        .select('*')
+        .eq('visit_id', visitId);
+      if (snapErr) throw snapErr;
+
+      if (snapshots && snapshots.length > 0) {
+        // 2. Restore each slot
+        for (const snap of snapshots as any[]) {
+          await supabase.from('machine_slots').update({
+            current_product_id: snap.previous_product_id,
+            current_stock: snap.previous_stock,
+            capacity: snap.previous_capacity,
+            coin_acceptor: snap.previous_coin_acceptor,
+          }).eq('id', snap.slot_id);
+        }
+      }
+
+      // 3. Delete visit line items
+      await supabase
+        .from('visit_line_items')
+        .delete()
+        .eq('spot_visit_id', visitId);
+
+      // 4. Mark visit as reversed
+      const { error: updateErr } = await supabase
+        .from('spot_visits')
+        .update({ status: 'reversed' as any })
+        .eq('id', visitId);
+      if (updateErr) throw updateErr;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spot-visits-list'] });
+      queryClient.invalidateQueries({ queryKey: ['machine-slots'] });
+      toast.success("Visit reversed successfully. Machine slots restored.");
+      setReverseVisitId(null);
+    },
+    onError: (error) => {
+      toast.error(`Reversal failed: ${error.message}`);
+      setReverseVisitId(null);
+    },
+  });
+
+  const filteredVisits = visits.filter((visit: any) => {
+    if (selectedLocation !== "all" && visit.spot?.location?.name !== selectedLocation) return false;
+    if (selectedSpot !== "all" && visit.spot?.name !== selectedSpot) return false;
     if (dateRange?.from) {
-      const visitDate = new Date(visit.date);
+      const visitDate = new Date(visit.visit_date);
       if (visitDate < dateRange.from) return false;
       if (dateRange.to && visitDate > dateRange.to) return false;
     }
     return true;
   });
+
+  const getStatusBadge = (status: string) => {
+    if (status === 'reversed') return <Badge variant="destructive">Reversed</Badge>;
+    if (status === 'flagged') return <Badge variant="outline" className="border-yellow-500 text-yellow-600">Flagged</Badge>;
+    return <Badge variant="secondary">Completed</Badge>;
+  };
 
   return (
     <AppLayout
@@ -128,7 +165,6 @@ export default function VisitsPage() {
       {/* Filters */}
       <Card className="p-4 mb-6 bg-card border-border">
         <div className="flex flex-col lg:flex-row gap-4">
-          {/* Date Range Picker */}
           <Popover>
             <PopoverTrigger asChild>
               <Button
@@ -165,7 +201,6 @@ export default function VisitsPage() {
             </PopoverContent>
           </Popover>
 
-          {/* Location Filter */}
           <Select value={selectedLocation} onValueChange={setSelectedLocation}>
             <SelectTrigger className="min-w-[200px]">
               <SelectValue placeholder="All Locations" />
@@ -180,7 +215,6 @@ export default function VisitsPage() {
             </SelectContent>
           </Select>
 
-          {/* Spot Filter */}
           <Select value={selectedSpot} onValueChange={setSelectedSpot}>
             <SelectTrigger className="min-w-[140px]">
               <SelectValue placeholder="All Spots" />
@@ -195,7 +229,6 @@ export default function VisitsPage() {
             </SelectContent>
           </Select>
 
-          {/* Clear Filters */}
           {(dateRange || selectedLocation !== "all" || selectedSpot !== "all") && (
             <Button
               variant="ghost"
@@ -213,46 +246,105 @@ export default function VisitsPage() {
 
       {/* Visits Table */}
       <Card className="bg-card border-border">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-border">
-              <TableHead className="text-muted-foreground">Report ID</TableHead>
-              <TableHead className="text-muted-foreground">Date</TableHead>
-              <TableHead className="text-muted-foreground">Location</TableHead>
-              <TableHead className="text-muted-foreground">Spot</TableHead>
-              <TableHead className="text-muted-foreground">Driver</TableHead>
-              <TableHead className="text-muted-foreground text-right">Revenue</TableHead>
-              <TableHead className="text-muted-foreground text-right">Refilled</TableHead>
-              <TableHead className="text-muted-foreground text-right">Capacity</TableHead>
-              <TableHead className="text-muted-foreground w-24">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredVisits.map((visit) => (
-              <TableRow key={visit.id} className="border-border hover:bg-muted/50">
-                <TableCell className="font-medium text-primary">{visit.id}</TableCell>
-                <TableCell className="text-muted-foreground">{visit.date}</TableCell>
-                <TableCell className="text-foreground truncate max-w-[180px]">{visit.location}</TableCell>
-                <TableCell className="text-foreground">{visit.spot}</TableCell>
-                <TableCell className="text-foreground">{visit.driver}</TableCell>
-                <TableCell className="text-right font-medium text-foreground">{visit.revenue}</TableCell>
-                <TableCell className="text-right text-muted-foreground">{visit.refilled} units</TableCell>
-                <TableCell className="text-right text-muted-foreground">{visit.capacity} units</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <Eye className="w-4 h-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
-                      <RotateCcw className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </TableCell>
+        {isLoading ? (
+          <div className="flex items-center justify-center p-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="border-border">
+                <TableHead className="text-muted-foreground">Date</TableHead>
+                <TableHead className="text-muted-foreground">Location</TableHead>
+                <TableHead className="text-muted-foreground">Spot</TableHead>
+                <TableHead className="text-muted-foreground">Operator</TableHead>
+                <TableHead className="text-muted-foreground">Type</TableHead>
+                <TableHead className="text-muted-foreground text-right">Cash Collected</TableHead>
+                <TableHead className="text-muted-foreground">Status</TableHead>
+                <TableHead className="text-muted-foreground w-24">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {filteredVisits.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    No visit reports found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredVisits.map((visit: any) => (
+                  <TableRow key={visit.id} className="border-border hover:bg-muted/50">
+                    <TableCell className="text-muted-foreground">
+                      {visit.visit_date ? format(new Date(visit.visit_date), "MMM dd, yyyy") : "—"}
+                    </TableCell>
+                    <TableCell className="text-foreground truncate max-w-[180px]">
+                      {visit.spot?.location?.name || "—"}
+                    </TableCell>
+                    <TableCell className="text-foreground">{visit.spot?.name || "—"}</TableCell>
+                    <TableCell className="text-foreground">
+                      {visit.operator
+                        ? `${visit.operator.first_names || ""} ${visit.operator.last_names || ""}`.trim() || "—"
+                        : "—"}
+                    </TableCell>
+                    <TableCell className="text-foreground capitalize">
+                      {visit.visit_type?.replace(/_/g, " ") || "—"}
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-foreground">
+                      ${(visit.total_cash_collected || 0).toFixed(2)}
+                    </TableCell>
+                    <TableCell>{getStatusBadge(visit.status)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        {isAdmin && visit.status !== 'reversed' && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => setReverseVisitId(visit.id)}
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        )}
       </Card>
+
+      {/* Reverse Visit Confirmation Dialog */}
+      <AlertDialog open={!!reverseVisitId} onOpenChange={(open) => !open && setReverseVisitId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reverse This Visit?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will restore all machine slots to their pre-visit state and mark this visit as "reversed."
+              The visit record will be kept for audit purposes but all inventory changes will be undone.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reverseVisit.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={reverseVisit.isPending}
+              onClick={() => reverseVisitId && reverseVisit.mutate(reverseVisitId)}
+            >
+              {reverseVisit.isPending ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Reversing...</>
+              ) : (
+                "Yes, Reverse Visit"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
