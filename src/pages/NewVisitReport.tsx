@@ -78,7 +78,7 @@ const jamStatusOptions = [
   { id: "no_jam", name: "No Jam" },
   { id: "with_coins", name: "With Coins" },
   { id: "without_coins", name: "Without Coins" },
-  { id: "by_coin", name: "By Coin" },
+  { id: "by_coin", name: "By Coin (+1)" },
 ];
 
 // Severity options
@@ -296,6 +296,8 @@ export default function NewVisitReport() {
         if (location?.contract_start_date) {
           setVisitDate(new Date(location.contract_start_date));
         }
+      } else {
+        setVisitType('routine_service');
       }
     }
   }, [machineSlots, selectedSpot, selectedLocation, locations]);
@@ -363,11 +365,13 @@ export default function NewVisitReport() {
       } else if (visitType === 'inventory_audit' && updated.auditedCount !== null) {
         updated.currentStock = updated.auditedCount;
       } else {
-        updated.currentStock = updated.lastStock - updated.unitsSold + updated.unitsRefilled - updated.unitsRemoved;
+        const jamAdjustment = updated.jamStatus === 'by_coin' ? 1 : 0;
+        updated.currentStock = updated.lastStock - (updated.unitsSold + jamAdjustment) + updated.unitsRefilled - updated.unitsRemoved;
       }
       
       // Calculate cash collected
-      updated.cashCollected = updated.unitsSold * updated.pricePerUnit;
+      const jamAdj = updated.jamStatus === 'by_coin' ? 1 : 0;
+      updated.cashCollected = (updated.unitsSold + jamAdj) * updated.pricePerUnit;
       
       return updated;
     }));
@@ -394,6 +398,20 @@ export default function NewVisitReport() {
         .single();
       
       if (visitError) throw visitError;
+
+      // Save pre-visit snapshots before updating machine_slots
+      const snapshots = slots.map(slot => ({
+        visit_id: visitData.id,
+        slot_id: slot.slotId,
+        previous_product_id: slot.toyId || null,
+        previous_stock: slot.lastStock,
+        previous_capacity: slot.capacity,
+        previous_coin_acceptor: slot.pricePerUnit,
+      }));
+      const { error: snapshotError } = await supabase
+        .from('visit_slot_snapshots' as any)
+        .insert(snapshots);
+      if (snapshotError) console.error('Snapshot save error:', snapshotError);
       
       // Create visit_line_items for each slot
       const lineItems = slots.map(slot => ({
