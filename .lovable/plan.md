@@ -1,167 +1,154 @@
 
 
-## Visit Report Enhancements: Auto-Type Detection + Rollback/Reversibility
+## Redesign: Item Detail Page Layout
 
-### Overview
+### What Exists Today
 
-Two main changes:
-1. **Auto-detect "Routine Service"** when slots already have stock/products assigned
-2. **Visit rollback capability** — save a pre-visit snapshot of every machine slot so an admin can reverse a faulty report and restore inventory to exactly where it was before
+The current page has:
+- A header with back button, item name, SKU, and an Edit button
+- A photo card + "Item Information" card side by side (name, SKU, category, subcategory, type, description)
+- Two cards side by side: "Cost Summary (FIFO)" and "Stock Breakdown"
+- A "Purchase Batches (FIFO)" list at the bottom
 
----
+All data queries are already in place: item details, warehouse stock, machine stock, and purchase batches.
 
-### 1. Auto-Set Visit Type to "Routine Service"
+### What Will Change
 
-Currently, the auto-detection logic (line ~287) only handles the "all empty" case (sets to Installation). When slots DO have products/stock, no visit type is set — the user must pick manually.
-
-**Change**: In the same `useEffect`, add an `else` branch: if NOT all empty (i.e., at least one slot has a product or stock), auto-set `visitType` to `"routine_service"`. The user can still change it manually to Maintenance, Emergency, Inventory Audit, etc.
-
-**File**: `src/pages/NewVisitReport.tsx` (the existing `useEffect` at line ~287)
+The page will be restructured into the 5 sections described, while keeping ALL existing data, queries, editing, and photo upload functionality intact. Two new queries will be added for Logistics History and total units sold.
 
 ---
 
-### 2. Visit Rollback — Pre-Visit Snapshots
+### Section 1 — Navigation and Identity Header
 
-#### New Database Table: `visit_slot_snapshots`
+- Keep the back arrow navigation and Edit button
+- Product title stays prominent (text-2xl font-bold)
+- Add colorful status badges next to the title: **Type** badge (e.g., "Merchandise") and **Category** badge (e.g., "Capsules") using distinct color variants
+- SKU shown as a subtle monospace label below the title
+- Photo is removed from this top section and will not be shown (or optionally kept as a small avatar-sized thumbnail next to the title if desired — the upload/edit functionality remains accessible via the Edit dialog)
 
-A lightweight table that captures the state of each `machine_slot` **before** the visit modifies it. One row per slot per visit.
+### Section 2 — High-Level Metric Cards (4-column grid)
 
-| Column | Type | Purpose |
+Four summary cards in a responsive row:
+
+| Card | Value | Source |
 |---|---|---|
-| id | uuid (PK) | Row ID |
-| visit_id | uuid (FK -> spot_visits) | Which visit this snapshot belongs to |
-| slot_id | uuid (FK -> machine_slots) | Which slot was snapshotted |
-| previous_product_id | uuid (nullable) | Product that was in the slot before the visit |
-| previous_stock | integer | Stock level before the visit |
-| previous_capacity | integer | Capacity before the visit |
-| previous_coin_acceptor | numeric | Price per unit before the visit |
-| created_at | timestamptz | When the snapshot was taken |
+| Unit Cost | Weighted avg cost (already computed) | `weightedAvgCost` |
+| Warehouse Stock | Total in warehouses | `totalWarehouse` |
+| Deployed | Total in machines | `totalMachine` |
+| Total Sold | Sum of all `visit_line_items` for this product | New query on `visit_line_items` |
 
-RLS: Authenticated users can read; only admins (or authenticated) can insert/delete.
+The "Total Sold" card requires a new query that sums `meter_reading` (or counts line items with action_type = "collection") from `visit_line_items` where `product_id = id`.
 
-#### Submission Flow Change
+### Section 3 — Financial Performance Panel
 
-In the `submitVisitReport` mutation (after creating the `spot_visit` record but **before** updating `machine_slots`), insert one `visit_slot_snapshots` row per slot capturing:
-- `previous_product_id` = the slot's `current_product_id` from the database
-- `previous_stock` = `slot.lastStock` (the value loaded from the DB)
-- `previous_capacity` = `slot.capacity`
-- `previous_coin_acceptor` = `slot.pricePerUnit`
+A single wide card with a 5-column horizontal breakdown:
 
-This is a simple bulk insert of the data already available in memory — no extra DB reads needed.
+| Metric | Source |
+|---|---|
+| Total Acquired | Sum of `quantity_ordered` from `purchaseBatches` |
+| Total Inventory Value | `totalInventoryCost` (already computed) |
+| Total Revenue | Sum of `cash_collected` from `visit_line_items` for this product (new query) |
+| Gross Profit | Revenue - Inventory Cost |
+| Margin % | (Gross Profit / Revenue) * 100 |
 
-#### Rollback Functionality
+If there is a discrepancy between computed stock and actual physical counts (surplus/shortage data from the inventory table or audit records), a yellow alert banner will appear below this section. This will check if any warehouse stock row has a discrepancy flag or if the `view_sales_ledger` reveals mismatches.
 
-A new function/mutation (in a hook or inline) that, given a `visit_id`:
+### Section 4 — Detailed History Tabs
 
-1. Reads all `visit_slot_snapshots` for that visit
-2. For each snapshot, restores the `machine_slots` row: sets `current_product_id`, `current_stock`, `capacity`, `coin_acceptor` back to the snapshot values
-3. Deletes the `visit_line_items` for that visit
-4. Updates the `spot_visits` record status to `"reversed"` (keeps the record for audit trail, never deletes it)
-5. Deletes the snapshots (or keeps them, marked as used)
+Two tabs using the existing `Tabs` component:
 
-This is exposed as a "Reverse Visit" button on the Visits list page (admin-only), with an AlertDialog confirmation.
+**Tab 1: Logistics History**
+A new query on `visit_line_items` joined with `spot_visits` (for date, location) filtered by `product_id = id`. Displayed as a table with:
+- Date (from `spot_visits.visit_date`)
+- Location (from `spot_visits` -> `spots` -> `locations`)
+- Action Type (color-coded badge: restock = green, collection = blue, service = yellow, swap = orange)
+- Quantity change (+added / -removed)
+- Cash collected
+
+**Tab 2: Acquisition History**
+The existing Purchase Batches list, reformatted into a proper table with columns:
+- Date (purchase created_at or received_at)
+- PO Number
+- Status badge
+- Quantity ordered / received / remaining
+- Unit cost
+- Batch value
+
+### Section 5 — Metadata Footer
+
+A small, muted-color info block at the bottom showing:
+- Created: `item.created_at` formatted
+- Last Updated: `item.updated_at` formatted
+- System ID: `item.id` (monospace, truncated with copy button)
 
 ---
-
-### 3. Jam Status "+1" Logic
-
-The functional description mentions that "By Coin" jam status should add +1 to units sold (a coin was inserted but the unit may not have dispensed properly — it counts as a sale). This is already partially in the dropdown options but the calculation logic in `updateSlot` doesn't account for it.
-
-**Change**: In the `updateSlot` function, when `jamStatus === "by_coin"`, add +1 to the effective units sold for the current stock calculation. Also append "(+1)" to the "By Coin" dropdown label.
-
----
-
-### Files to Create/Modify
-
-| File | Action | Purpose |
-|---|---|---|
-| Migration SQL | Create | New `visit_slot_snapshots` table |
-| `src/pages/NewVisitReport.tsx` | Modify | (a) Auto-set "routine_service" when slots have items, (b) Save snapshots on submit, (c) Jam "+1" logic |
-| `src/pages/Visits.tsx` | Modify | Add "Reverse" button per visit row (admin-only) with rollback logic |
-| `src/integrations/supabase/types.ts` | Auto-updated | Reflects new table |
 
 ### Technical Details
 
-**Migration SQL:**
-```sql
-CREATE TABLE public.visit_slot_snapshots (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  visit_id uuid NOT NULL REFERENCES public.spot_visits(id) ON DELETE CASCADE,
-  slot_id uuid NOT NULL REFERENCES public.machine_slots(id) ON DELETE CASCADE,
-  previous_product_id uuid,
-  previous_stock integer NOT NULL DEFAULT 0,
-  previous_capacity integer NOT NULL DEFAULT 150,
-  previous_coin_acceptor numeric NOT NULL DEFAULT 1.00,
-  created_at timestamptz NOT NULL DEFAULT now()
+**New queries to add in ItemDetail.tsx:**
+
+```typescript
+// Total units sold for this product
+const { data: salesData } = useQuery({
+  queryKey: ["item-sales-total", id],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from("visit_line_items")
+      .select("meter_reading, cash_collected, quantity_added, quantity_removed")
+      .eq("product_id", id!);
+    if (error) throw error;
+    return data;
+  },
+  enabled: !!id,
+});
+
+// Logistics history (visit line items with visit context)
+const { data: logisticsHistory = [] } = useQuery({
+  queryKey: ["item-logistics-history", id],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from("visit_line_items")
+      .select(`
+        id, action_type, quantity_added, quantity_removed,
+        cash_collected, meter_reading, created_at,
+        spot_visit:spot_visits(
+          visit_date, status,
+          spot:spots(name, location:locations(name))
+        )
+      `)
+      .eq("product_id", id!)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+  enabled: !!id,
+});
+```
+
+**Computed values from salesData:**
+```typescript
+const totalUnitsSold = (salesData || []).reduce(
+  (sum, s) => sum + (s.meter_reading || 0), 0
 );
-
-ALTER TABLE public.visit_slot_snapshots ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Allow read for authenticated" ON public.visit_slot_snapshots
-  FOR SELECT USING (auth.role() = 'authenticated');
-
-CREATE POLICY "Allow insert for authenticated" ON public.visit_slot_snapshots
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
-CREATE POLICY "Allow delete for authenticated" ON public.visit_slot_snapshots
-  FOR DELETE USING (auth.role() = 'authenticated');
+const totalRevenue = (salesData || []).reduce(
+  (sum, s) => sum + (s.cash_collected || 0), 0
+);
+const grossProfit = totalRevenue - totalInventoryCost;
+const marginPct = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+const totalAcquired = purchaseBatches.reduce(
+  (sum, b) => sum + (b.quantity_ordered || 0), 0
+);
 ```
 
-**Snapshot insert (in submitVisitReport, before machine_slots update):**
-```typescript
-const snapshots = slots.map(slot => ({
-  visit_id: visitData.id,
-  slot_id: slot.slotId,
-  previous_product_id: slot.toyId || null,
-  previous_stock: slot.lastStock,
-  previous_capacity: slot.capacity,
-  previous_coin_acceptor: slot.pricePerUnit,
-}));
-await supabase.from('visit_slot_snapshots').insert(snapshots);
-```
+**Files to modify:**
+- `src/pages/ItemDetail.tsx` — Full layout restructure + 2 new queries + Tabs for history
 
-**Rollback logic (on Visits page):**
-```typescript
-// 1. Fetch snapshots
-const { data: snapshots } = await supabase
-  .from('visit_slot_snapshots')
-  .select('*')
-  .eq('visit_id', visitId);
+**No new files, no database changes, no schema changes.**
 
-// 2. Restore each slot
-for (const snap of snapshots) {
-  await supabase.from('machine_slots').update({
-    current_product_id: snap.previous_product_id,
-    current_stock: snap.previous_stock,
-    capacity: snap.previous_capacity,
-    coin_acceptor: snap.previous_coin_acceptor,
-  }).eq('id', snap.slot_id);
-}
-
-// 3. Mark visit as reversed
-await supabase.from('spot_visits')
-  .update({ status: 'reversed' })
-  .eq('id', visitId);
-```
-
-**Auto-detect routine_service:**
-```typescript
-// In existing useEffect after the allEmpty check:
-if (allEmpty) {
-  setVisitType('installation');
-  // ... existing contract date logic
-} else {
-  setVisitType('routine_service');
-}
-```
-
-**Jam "+1" in updateSlot:**
-```typescript
-// When calculating currentStock for non-installation, non-audit:
-const jamAdjustment = updated.jamStatus === 'by_coin' ? 1 : 0;
-updated.currentStock = updated.lastStock - (updated.unitsSold + jamAdjustment) + updated.unitsRefilled - updated.unitsRemoved;
-updated.cashCollected = (updated.unitsSold + jamAdjustment) * updated.pricePerUnit;
-```
-
-And in the dropdown label: `{ id: "by_coin", name: "By Coin (+1)" }`
+**Existing functionality preserved:**
+- Photo upload/remove (moved into the edit flow or kept as small thumbnail)
+- Admin-only edit mode with category/subcategory/description editing
+- All existing queries (item detail, warehouse stock, machine stock, purchase batches)
+- Navigation to purchase detail pages from acquisition history rows
+- FIFO cost calculations
 
