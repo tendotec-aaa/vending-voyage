@@ -154,6 +154,64 @@ export type Database = {
           },
         ]
       }
+      inventory_adjustments: {
+        Row: {
+          actual_quantity: number
+          adjustment_type: string
+          created_at: string
+          difference: number
+          expected_quantity: number
+          id: string
+          item_detail_id: string
+          slot_id: string
+          visit_id: string
+        }
+        Insert: {
+          actual_quantity: number
+          adjustment_type: string
+          created_at?: string
+          difference: number
+          expected_quantity: number
+          id?: string
+          item_detail_id: string
+          slot_id: string
+          visit_id: string
+        }
+        Update: {
+          actual_quantity?: number
+          adjustment_type?: string
+          created_at?: string
+          difference?: number
+          expected_quantity?: number
+          id?: string
+          item_detail_id?: string
+          slot_id?: string
+          visit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_adjustments_item_detail_id_fkey"
+            columns: ["item_detail_id"]
+            isOneToOne: false
+            referencedRelation: "item_details"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_adjustments_slot_id_fkey"
+            columns: ["slot_id"]
+            isOneToOne: false
+            referencedRelation: "machine_slots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_adjustments_visit_id_fkey"
+            columns: ["visit_id"]
+            isOneToOne: false
+            referencedRelation: "spot_visits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       item_details: {
         Row: {
           category_id: string | null
@@ -1079,6 +1137,7 @@ export type Database = {
           id: string
           machine_id: string | null
           meter_reading: number | null
+          photo_url: string | null
           product_id: string | null
           quantity_added: number | null
           quantity_removed: number | null
@@ -1092,6 +1151,7 @@ export type Database = {
           id?: string
           machine_id?: string | null
           meter_reading?: number | null
+          photo_url?: string | null
           product_id?: string | null
           quantity_added?: number | null
           quantity_removed?: number | null
@@ -1105,6 +1165,7 @@ export type Database = {
           id?: string
           machine_id?: string | null
           meter_reading?: number | null
+          photo_url?: string | null
           product_id?: string | null
           quantity_added?: number | null
           quantity_removed?: number | null
