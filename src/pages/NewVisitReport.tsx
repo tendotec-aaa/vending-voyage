@@ -55,6 +55,7 @@ import {
   Minus,
   Lightbulb,
 } from "lucide-react";
+import { VisitDraftsDropdown, saveDraft, type VisitDraft } from "@/components/visits/VisitDraftsDropdown";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { format, differenceInDays } from "date-fns";
@@ -674,7 +675,66 @@ export default function NewVisitReport() {
   };
 
   const handleSaveDraft = () => {
+    const locationObj = locations.find(l => l.id === selectedLocation);
+    const spotObj = spots.find(s => s.id === selectedSpot);
+    const draft: VisitDraft = {
+      id: `draft-${selectedLocation}-${selectedSpot}-${Date.now()}`,
+      savedAt: new Date().toISOString(),
+      locationName: locationObj?.name || "",
+      spotName: spotObj?.name || "",
+      visitType,
+      selectedLocation,
+      selectedSpot,
+      visitDate: visitDate.toISOString(),
+      slots: slots.map(s => ({ ...s, swapPhotoFile: null })), // Can't serialize File
+      hasObservationIssue,
+      observationIssueLog,
+      observationSeverity,
+    };
+    saveDraft(draft);
     toast.success("Draft saved successfully!");
+  };
+
+  const handleLoadDraft = (draft: VisitDraft) => {
+    setSelectedLocation(draft.selectedLocation);
+    setSelectedSpot(draft.selectedSpot);
+    setVisitType(draft.visitType);
+    setVisitDate(new Date(draft.visitDate));
+    setHasObservationIssue(draft.hasObservationIssue);
+    setObservationIssueLog(draft.observationIssueLog);
+    setObservationSeverity(draft.observationSeverity);
+    // Slots will be regenerated from DB when spot loads, but we restore user-entered values after
+    if (draft.slots?.length > 0) {
+      // Wait for slots to regenerate from DB, then overlay draft values
+      setTimeout(() => {
+        setSlots(prev => {
+          if (prev.length === 0) return prev;
+          return prev.map(slot => {
+            const draftSlot = draft.slots.find((ds: any) => ds.slotId === slot.slotId);
+            if (!draftSlot) return slot;
+            return {
+              ...slot,
+              unitsSold: draftSlot.unitsSold || 0,
+              unitsRefilled: draftSlot.unitsRefilled || 0,
+              unitsRemoved: draftSlot.unitsRemoved || 0,
+              falseCoins: draftSlot.falseCoins || 0,
+              auditedCount: draftSlot.auditedCount ?? null,
+              jamStatus: draftSlot.jamStatus || "no_jam",
+              reportIssue: draftSlot.reportIssue || false,
+              issueDescription: draftSlot.issueDescription || "",
+              severity: draftSlot.severity || "",
+              replaceAllToys: draftSlot.replaceAllToys || false,
+              toyId: draftSlot.toyId || slot.toyId,
+              toyName: draftSlot.toyName || slot.toyName,
+              pricePerUnit: draftSlot.pricePerUnit || slot.pricePerUnit,
+              capacity: draftSlot.capacity || slot.capacity,
+              toyCapacity: draftSlot.toyCapacity || slot.toyCapacity,
+            };
+          });
+        });
+      }, 1500);
+    }
+    toast.success("Draft loaded!");
   };
 
   const getCapacityPercentage = (slot: SlotEntry) => {
@@ -1293,10 +1353,13 @@ export default function NewVisitReport() {
       title="New Visit Report"
       subtitle="Record a field service visit"
       actions={
-        <Button variant="outline" onClick={() => navigate("/visits")} className="gap-2">
-          <ArrowLeft className="w-4 h-4" />
-          Back to Visits
-        </Button>
+        <div className="flex items-center gap-2">
+          <VisitDraftsDropdown onLoadDraft={handleLoadDraft} />
+          <Button variant="outline" onClick={() => navigate("/visits")} className="gap-2">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Visits
+          </Button>
+        </div>
       }
     >
       <div className="max-w-4xl mx-auto space-y-6">
