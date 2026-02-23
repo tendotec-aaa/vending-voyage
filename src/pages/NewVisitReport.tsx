@@ -8,7 +8,6 @@ import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -32,6 +31,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { 
   ArrowLeft, 
   Camera, 
@@ -40,7 +47,13 @@ import {
   CalendarIcon,
   AlertTriangle,
   ImagePlus,
-  Clock
+  Clock,
+  Star,
+  CheckCircle,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Lightbulb,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -130,6 +143,22 @@ interface SlotEntry {
   severity: string;
   toyCapacity: number;
   cashCollected: number;
+  // For swaps
+  previousProductId: string | null;
+  previousStock: number;
+  // For evidence lock
+  swapPhotoUrl: string | null;
+  swapPhotoFile: File | null;
+}
+
+interface PerformanceGrade {
+  totalCash: number;
+  avgCash: number;
+  grade: "above" | "average" | "below";
+  slotsServiced: number;
+  issuesFlagged: number;
+  ticketsCreated: number;
+  warnings: string[];
 }
 
 export default function NewVisitReport() {
@@ -158,6 +187,10 @@ export default function NewVisitReport() {
 
   // 30-day warning dialog state
   const [show30DayWarning, setShow30DayWarning] = useState(false);
+
+  // Performance grade modal state
+  const [showPerformanceGrade, setShowPerformanceGrade] = useState(false);
+  const [performanceGrade, setPerformanceGrade] = useState<PerformanceGrade | null>(null);
 
   // Fetch locations
   const { data: locations = [] } = useQuery({
@@ -269,6 +302,87 @@ export default function NewVisitReport() {
     },
   });
 
+  // Fetch warehouses (non-system, for inventory ledger)
+  const { data: warehouses = [] } = useQuery({
+    queryKey: ['warehouses-for-visit'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('warehouses')
+        .select('id, name, is_system')
+        .eq('is_system', false)
+        .order('name');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const sourceWarehouseId = warehouses.length > 0 ? warehouses[0].id : null;
+
+  // Fetch historical sales data for smart-restock guidance (Feature 5)
+  const { data: salesHistory = [] } = useQuery({
+    queryKey: ['sales-history', selectedSpot],
+    queryFn: async () => {
+      if (!selectedSpot) return [];
+      // Get last 5 visits and their line items for this spot
+      const { data: visits, error: vErr } = await supabase
+        .from('spot_visits')
+        .select('id, visit_date')
+        .eq('spot_id', selectedSpot)
+        .eq('status', 'completed')
+        .order('visit_date', { ascending: false })
+        .limit(5);
+      if (vErr || !visits || visits.length < 2) return [];
+
+      const visitIds = visits.map(v => v.id);
+      const { data: lineItems, error: lErr } = await supabase
+        .from('visit_line_items')
+        .select('slot_id, cash_collected, quantity_added, spot_visit_id')
+        .in('spot_visit_id', visitIds);
+      if (lErr) return [];
+
+      // Calculate per-slot daily sales rate
+      const oldestDate = new Date(visits[visits.length - 1].visit_date!);
+      const newestDate = new Date(visits[0].visit_date!);
+      const daySpan = Math.max(1, differenceInDays(newestDate, oldestDate));
+
+      // Group by slot_id and compute total cash
+      const slotSales: Record<string, { totalCash: number; totalSold: number }> = {};
+      for (const li of lineItems || []) {
+        if (!li.slot_id) continue;
+        if (!slotSales[li.slot_id]) slotSales[li.slot_id] = { totalCash: 0, totalSold: 0 };
+        slotSales[li.slot_id].totalCash += li.cash_collected || 0;
+      }
+
+      // Return per-slot rate
+      return Object.entries(slotSales).map(([slotId, data]) => ({
+        slotId,
+        dailyRate: data.totalCash / daySpan, // cash per day as proxy for units
+        daySpan,
+      }));
+    },
+    enabled: !!selectedSpot,
+  });
+
+  // Fetch average cash for this spot (for performance grade - Feature 7)
+  const { data: spotAvgCash } = useQuery({
+    queryKey: ['spot-avg-cash', selectedSpot],
+    queryFn: async () => {
+      if (!selectedSpot) return null;
+      const { data, error } = await supabase
+        .from('spot_visits')
+        .select('total_cash_collected')
+        .eq('spot_id', selectedSpot)
+        .eq('status', 'completed')
+        .order('visit_date', { ascending: false })
+        .limit(10);
+      if (error) throw error;
+      if (!data || data.length === 0) return 0;
+      const sum = data.reduce((acc, v) => acc + (v.total_cash_collected || 0), 0);
+      return sum / data.length;
+    },
+    enabled: !!selectedSpot,
+  });
+
   // Calculate days since last visit
   const daysSinceLastVisit = useMemo(() => {
     if (visitType === 'installation') return 0;
@@ -283,6 +397,18 @@ export default function NewVisitReport() {
     return "bg-red-500/20 text-red-700 dark:text-red-400";
   };
 
+  // Smart-restock guidance per slot
+  const getRestockSuggestion = (slotId: string, currentStock: number, capacity: number) => {
+    const history = salesHistory.find(h => h.slotId === slotId);
+    if (!history || history.dailyRate <= 0) return null;
+    const targetDays = 14;
+    const suggested = Math.ceil(history.dailyRate * targetDays) - currentStock;
+    return {
+      suggested: Math.max(0, Math.min(suggested, capacity - currentStock)),
+      dailyRate: history.dailyRate,
+    };
+  };
+
   // Auto-detect installation visit
   useEffect(() => {
     if (machineSlots.length > 0 && selectedSpot) {
@@ -291,7 +417,6 @@ export default function NewVisitReport() {
       );
       if (allEmpty) {
         setVisitType('installation');
-        // Set visit date to contract start date
         const location = locations.find(l => l.id === selectedLocation);
         if (location?.contract_start_date) {
           setVisitDate(new Date(location.contract_start_date));
@@ -333,6 +458,10 @@ export default function NewVisitReport() {
           severity: "",
           toyCapacity: slot.capacity || 0,
           cashCollected: 0,
+          previousProductId: slot.current_product_id || null,
+          previousStock: slot.current_stock || 0,
+          swapPhotoUrl: null,
+          swapPhotoFile: null,
         };
       });
       
@@ -377,82 +506,136 @@ export default function NewVisitReport() {
     }));
   };
 
-  // Submit visit report mutation
+  // Check if swap photos are required but missing (Feature 4 validation)
+  const hasMissingSwapPhotos = useMemo(() => {
+    return slots.some(s => s.replaceAllToys && s.toyId && !s.swapPhotoFile && !s.swapPhotoUrl);
+  }, [slots]);
+
+  // Handle swap photo upload for a slot
+  const handleSwapPhotoSelect = (slotId: string, file: File) => {
+    const previewUrl = URL.createObjectURL(file);
+    updateSlot(slotId, { swapPhotoFile: file, swapPhotoUrl: previewUrl });
+  };
+
+  // Upload swap photos to storage and return URLs
+  const uploadSwapPhotos = async (visitId: string): Promise<Record<string, string>> => {
+    const photoUrls: Record<string, string> = {};
+    for (const slot of slots) {
+      if (slot.replaceAllToys && slot.swapPhotoFile) {
+        const filePath = `swap-evidence/${visitId}/${slot.slotId}.jpg`;
+        const { error } = await supabase.storage
+          .from('item-photos')
+          .upload(filePath, slot.swapPhotoFile, { upsert: true });
+        if (!error) {
+          const { data: urlData } = supabase.storage
+            .from('item-photos')
+            .getPublicUrl(filePath);
+          photoUrls[slot.slotId] = urlData.publicUrl;
+        }
+      }
+    }
+    return photoUrls;
+  };
+
+  // Submit visit report mutation — now calls edge function
   const submitVisitReport = useMutation({
     mutationFn: async () => {
       const visitTypeData = visitTypes.find(t => t.id === visitType);
-      
-      // Create spot_visit record with operator_id and visit_type
-      const { data: visitData, error: visitError } = await supabase
-        .from('spot_visits')
-        .insert({
-          spot_id: selectedSpot,
-          visit_date: visitDate.toISOString(),
-          total_cash_collected: totals.totalCashCollected,
-          notes: hasObservationIssue ? `${observationSeverity}: ${observationIssueLog}` : null,
-          status: hasObservationIssue ? 'flagged' : 'completed',
-          operator_id: user?.id,
-          visit_type: visitType,
-        } as any)
-        .select()
-        .single();
-      
-      if (visitError) throw visitError;
 
-      // Save pre-visit snapshots before updating machine_slots
-      const snapshots = slots.map(slot => ({
-        visit_id: visitData.id,
-        slot_id: slot.slotId,
-        previous_product_id: slot.toyId || null,
-        previous_stock: slot.lastStock,
-        previous_capacity: slot.capacity,
-        previous_coin_acceptor: slot.pricePerUnit,
-      }));
-      const { error: snapshotError } = await supabase
-        .from('visit_slot_snapshots' as any)
-        .insert(snapshots);
-      if (snapshotError) console.error('Snapshot save error:', snapshotError);
+      // Upload swap photos first (we use a temp ID then the real one from the edge fn)
+      // Actually, photos need visit_id from DB. We'll upload after getting visitId from response.
       
-      // Create visit_line_items for each slot
-      const lineItems = slots.map(slot => ({
-        spot_visit_id: visitData.id,
-        machine_id: slot.machineId,
-        slot_id: slot.slotId,
-        product_id: slot.toyId || null,
-        action_type: visitTypeData?.actionType || 'collection',
-        quantity_added: slot.unitsRefilled,
-        quantity_removed: slot.unitsRemoved,
-        cash_collected: slot.cashCollected,
-        meter_reading: slot.auditedCount,
-      }));
-      
-      const { error: lineItemsError } = await supabase
-        .from('visit_line_items')
-        .insert(lineItems);
-      
-      if (lineItemsError) throw lineItemsError;
-      
-      // Update machine_slots with current_product_id, current_stock, and installation fields
-      for (const slot of slots) {
-        const updateData: Record<string, any> = { current_stock: slot.currentStock };
-        if (slot.toyId) updateData.current_product_id = slot.toyId;
-        if (visitType === 'installation') {
-          updateData.capacity = slot.capacity;
-          updateData.coin_acceptor = slot.pricePerUnit;
+      const payload = {
+        spotId: selectedSpot,
+        locationId: selectedLocation,
+        setupId: spotSetup?.id || "",
+        visitDate: visitDate.toISOString(),
+        visitType,
+        actionType: visitTypeData?.actionType || "collection",
+        totalCashCollected: totals.totalCashCollected,
+        hasObservationIssue,
+        observationIssueLog,
+        observationSeverity,
+        sourceWarehouseId,
+        slots: slots.map(s => ({
+          slotId: s.slotId,
+          machineId: s.machineId,
+          toyId: s.toyId,
+          toyName: s.toyName,
+          replaceAllToys: s.replaceAllToys,
+          lastStock: s.lastStock,
+          unitsSold: s.unitsSold,
+          unitsRefilled: s.unitsRefilled,
+          unitsRemoved: s.unitsRemoved,
+          falseCoins: s.falseCoins,
+          auditedCount: s.auditedCount,
+          currentStock: s.currentStock,
+          pricePerUnit: s.pricePerUnit,
+          jamStatus: s.jamStatus,
+          capacity: s.capacity,
+          reportIssue: s.reportIssue,
+          issueDescription: s.issueDescription,
+          severity: s.severity,
+          cashCollected: s.cashCollected,
+          photoUrl: null, // Will be updated after upload
+          previousProductId: s.previousProductId,
+          previousStock: s.previousStock,
+        })),
+      };
+
+      const { data, error } = await supabase.functions.invoke('submit-visit-report', {
+        body: payload,
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      // Upload swap photos now that we have visitId
+      if (data?.visitId) {
+        const photoUrls = await uploadSwapPhotos(data.visitId);
+        // Update visit_line_items with photo URLs if any
+        for (const [slotId, url] of Object.entries(photoUrls)) {
+          await supabase
+            .from('visit_line_items')
+            .update({ photo_url: url } as any)
+            .eq('spot_visit_id', data.visitId)
+            .eq('slot_id', slotId);
         }
-        await supabase
-          .from('machine_slots')
-          .update(updateData)
-          .eq('id', slot.slotId);
       }
-      
-      return visitData;
+
+      return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['spot_visits'] });
       queryClient.invalidateQueries({ queryKey: ['machine-slots'] });
-      toast.success("Visit report submitted successfully!");
-      navigate("/visits");
+      queryClient.invalidateQueries({ queryKey: ['warehouse-inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['maintenance-tickets'] });
+
+      // Show warnings if any
+      if (data?.warnings?.length > 0) {
+        data.warnings.forEach((w: string) => toast.warning(w));
+      }
+
+      // Show performance grade modal (Feature 7)
+      const avgCash = spotAvgCash || 0;
+      const totalCash = totals.totalCashCollected;
+      let grade: "above" | "average" | "below" = "average";
+      if (avgCash > 0) {
+        const ratio = totalCash / avgCash;
+        if (ratio >= 1.1) grade = "above";
+        else if (ratio < 0.9) grade = "below";
+      }
+
+      setPerformanceGrade({
+        totalCash,
+        avgCash,
+        grade,
+        slotsServiced: slots.length,
+        issuesFlagged: slots.filter(s => s.reportIssue).length + (hasObservationIssue ? 1 : 0),
+        ticketsCreated: data?.ticketsCreated || 0,
+        warnings: data?.warnings || [],
+      });
+      setShowPerformanceGrade(true);
     },
     onError: (error) => {
       toast.error(`Error submitting report: ${error.message}`);
@@ -474,6 +657,10 @@ export default function NewVisitReport() {
     }
     if (!confirmAccurate) {
       toast.error("Please confirm the report is accurate");
+      return;
+    }
+    if (hasMissingSwapPhotos) {
+      toast.error("Please upload a photo for each product swap");
       return;
     }
     
@@ -525,6 +712,60 @@ export default function NewVisitReport() {
             style={{ width: `${Math.min(percentage, 100)}%` }}
           />
         </div>
+      </div>
+    );
+  };
+
+  // Render smart-restock suggestion (Feature 5)
+  const renderRestockSuggestion = (slot: SlotEntry) => {
+    if (visitType === 'installation') return null;
+    const suggestion = getRestockSuggestion(slot.slotId, slot.lastStock, slot.capacity);
+    if (!suggestion || suggestion.suggested <= 0) return null;
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+        <Lightbulb className="w-3 h-3 text-yellow-500" />
+        <span>Suggested: ~{suggestion.suggested} units (based on {fmt2(suggestion.dailyRate)}/day avg)</span>
+      </div>
+    );
+  };
+
+  // Render swap photo upload area (Feature 4)
+  const renderSwapPhotoUpload = (slot: SlotEntry) => {
+    if (!slot.replaceAllToys || !slot.toyId) return null;
+    return (
+      <div className="border-t border-border pt-3 mt-3">
+        <Label className="flex items-center gap-1.5 text-sm font-medium mb-2">
+          <Camera className="w-4 h-4" />
+          Swap Evidence Photo <span className="text-destructive">*</span>
+        </Label>
+        {slot.swapPhotoUrl ? (
+          <div className="relative w-32 h-32 rounded-md overflow-hidden border border-border">
+            <img src={slot.swapPhotoUrl} alt="Swap evidence" className="w-full h-full object-cover" />
+            <Button
+              variant="destructive"
+              size="sm"
+              className="absolute top-1 right-1 h-6 w-6 p-0"
+              onClick={() => updateSlot(slot.id, { swapPhotoFile: null, swapPhotoUrl: null })}
+            >
+              ×
+            </Button>
+          </div>
+        ) : (
+          <label className="flex flex-col items-center justify-center w-32 h-32 border-2 border-dashed border-muted-foreground/40 rounded-md cursor-pointer hover:border-primary/60 transition-colors">
+            <ImagePlus className="w-6 h-6 text-muted-foreground mb-1" />
+            <span className="text-xs text-muted-foreground">Upload</span>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleSwapPhotoSelect(slot.id, file);
+              }}
+            />
+          </label>
+        )}
       </div>
     );
   };
@@ -654,10 +895,37 @@ export default function NewVisitReport() {
                 <Checkbox
                   id={`replace-${slot.id}`}
                   checked={slot.replaceAllToys}
-                  onCheckedChange={(checked) => updateSlot(slot.id, { replaceAllToys: !!checked })}
+                  onCheckedChange={(checked) => {
+                    updateSlot(slot.id, { replaceAllToys: !!checked });
+                  }}
                 />
                 <Label htmlFor={`replace-${slot.id}`}>Replace all toys in this slot</Label>
               </div>
+
+              {/* Product swap selector */}
+              {slot.replaceAllToys && (
+                <div className="space-y-2 mb-4 p-3 bg-muted/50 rounded-md border border-border">
+                  <Label>New Product</Label>
+                  <Select
+                    value={slot.toyId}
+                    onValueChange={(value) => {
+                      const product = products.find(p => p.id === value);
+                      updateSlot(slot.id, { toyId: value, toyName: product?.name || "" });
+                    }}
+                  >
+                    <SelectTrigger className="bg-card">
+                      <SelectValue placeholder="Select replacement toy" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {products.map((product) => (
+                        <SelectItem key={product.id} value={product.id}>
+                          {product.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="space-y-2">
@@ -685,6 +953,7 @@ export default function NewVisitReport() {
                     onChange={(e) => updateSlot(slot.id, { unitsRefilled: parseInt(e.target.value) || 0 })}
                     className="bg-card"
                   />
+                  {renderRestockSuggestion(slot)}
                 </div>
                 <div className="space-y-2">
                   <Label>Units Removed</Label>
@@ -743,6 +1012,9 @@ export default function NewVisitReport() {
                 {renderCapacityIndicator(slot)}
               </div>
 
+              {/* Swap Photo Upload (Feature 4) */}
+              {renderSwapPhotoUpload(slot)}
+
               {/* Issue Reporting */}
               <div className="border-t border-border pt-4 mt-4">
                 <div className="flex items-center space-x-2">
@@ -800,6 +1072,31 @@ export default function NewVisitReport() {
                 />
                 <Label htmlFor={`replace-${slot.id}`}>Replace all toys in this slot</Label>
               </div>
+
+              {/* Product swap selector for audit */}
+              {slot.replaceAllToys && (
+                <div className="space-y-2 mb-4 p-3 bg-muted/50 rounded-md border border-border">
+                  <Label>New Product</Label>
+                  <Select
+                    value={slot.toyId}
+                    onValueChange={(value) => {
+                      const product = products.find(p => p.id === value);
+                      updateSlot(slot.id, { toyId: value, toyName: product?.name || "" });
+                    }}
+                  >
+                    <SelectTrigger className="bg-card">
+                      <SelectValue placeholder="Select replacement toy" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {products.map((product) => (
+                        <SelectItem key={product.id} value={product.id}>
+                          {product.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="space-y-2">
@@ -827,6 +1124,7 @@ export default function NewVisitReport() {
                     onChange={(e) => updateSlot(slot.id, { unitsRefilled: parseInt(e.target.value) || 0 })}
                     className="bg-card"
                   />
+                  {renderRestockSuggestion(slot)}
                 </div>
                 <div className="space-y-2">
                   <Label>Units Removed</Label>
@@ -919,6 +1217,9 @@ export default function NewVisitReport() {
                 </div>
               </div>
 
+              {/* Swap Photo Upload (Feature 4) */}
+              {renderSwapPhotoUpload(slot)}
+
               {/* Issue Reporting */}
               <div className="border-t border-border pt-4 mt-4">
                 <div className="flex items-center space-x-2">
@@ -967,6 +1268,24 @@ export default function NewVisitReport() {
         </div>
       </Card>
     );
+  };
+
+  const getGradeIcon = (grade: string) => {
+    if (grade === "above") return <TrendingUp className="w-8 h-8 text-green-500" />;
+    if (grade === "below") return <TrendingDown className="w-8 h-8 text-red-500" />;
+    return <Minus className="w-8 h-8 text-yellow-500" />;
+  };
+
+  const getGradeColor = (grade: string) => {
+    if (grade === "above") return "text-green-600 dark:text-green-400";
+    if (grade === "below") return "text-red-600 dark:text-red-400";
+    return "text-yellow-600 dark:text-yellow-400";
+  };
+
+  const getGradeLabel = (grade: string) => {
+    if (grade === "above") return "Above Average";
+    if (grade === "below") return "Below Average";
+    return "Average";
   };
 
   return (
@@ -1248,6 +1567,14 @@ export default function NewVisitReport() {
           </div>
         </Card>
 
+        {/* Swap Photo Warning */}
+        {hasMissingSwapPhotos && (
+          <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-md text-sm text-destructive">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>Please upload a photo for each product swap before submitting.</span>
+          </div>
+        )}
+
         {/* Action Buttons */}
         <div className="flex justify-end gap-4">
           <Button variant="outline" onClick={handleSaveDraft} className="gap-2">
@@ -1256,7 +1583,7 @@ export default function NewVisitReport() {
           </Button>
           <Button 
             onClick={handleSubmit} 
-            disabled={submitVisitReport.isPending}
+            disabled={submitVisitReport.isPending || hasMissingSwapPhotos}
             className="gap-2"
           >
             {submitVisitReport.isPending ? "Submitting..." : "Submit Report"}
@@ -1284,6 +1611,79 @@ export default function NewVisitReport() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Performance Grade Modal (Feature 7) */}
+      <Dialog open={showPerformanceGrade} onOpenChange={setShowPerformanceGrade}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-green-500" />
+              Visit Report Submitted
+            </DialogTitle>
+            <DialogDescription>
+              Here's a summary of this visit's performance.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {performanceGrade && (
+            <div className="space-y-4 py-2">
+              {/* Grade */}
+              <div className="flex items-center justify-center gap-3 p-4 bg-muted rounded-lg">
+                {getGradeIcon(performanceGrade.grade)}
+                <div>
+                  <p className={cn("text-xl font-bold", getGradeColor(performanceGrade.grade))}>
+                    {getGradeLabel(performanceGrade.grade)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    vs. ${fmt2(performanceGrade.avgCash)} avg
+                  </p>
+                </div>
+              </div>
+
+              {/* Stats */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-muted/50 rounded-md text-center">
+                  <p className="text-lg font-bold text-foreground">${fmt2(performanceGrade.totalCash)}</p>
+                  <p className="text-xs text-muted-foreground">Cash Collected</p>
+                </div>
+                <div className="p-3 bg-muted/50 rounded-md text-center">
+                  <p className="text-lg font-bold text-foreground">{performanceGrade.slotsServiced}</p>
+                  <p className="text-xs text-muted-foreground">Slots Serviced</p>
+                </div>
+                <div className="p-3 bg-muted/50 rounded-md text-center">
+                  <p className="text-lg font-bold text-foreground">{performanceGrade.issuesFlagged}</p>
+                  <p className="text-xs text-muted-foreground">Issues Flagged</p>
+                </div>
+                <div className="p-3 bg-muted/50 rounded-md text-center">
+                  <p className="text-lg font-bold text-foreground">{performanceGrade.ticketsCreated}</p>
+                  <p className="text-xs text-muted-foreground">Tickets Created</p>
+                </div>
+              </div>
+
+              {/* Warnings */}
+              {performanceGrade.warnings.length > 0 && (
+                <div className="space-y-1">
+                  {performanceGrade.warnings.map((w, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-400">
+                      <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                      <span>{w}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button onClick={() => {
+              setShowPerformanceGrade(false);
+              navigate("/visits");
+            }} className="w-full">
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
