@@ -61,11 +61,11 @@ interface VisitDraftsDropdownProps {
 }
 
 export function VisitDraftsDropdown({ onLoadDraft }: VisitDraftsDropdownProps) {
-  const [drafts, setDrafts] = useState<VisitDraft[]>([]);
+  const [drafts, setDrafts] = useState<VisitDraft[]>(() => getDrafts());
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (open) setDrafts(getDrafts());
+    setDrafts(getDrafts());
   }, [open]);
 
   const handleDelete = (e: React.MouseEvent, id: string) => {
