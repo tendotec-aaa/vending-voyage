@@ -1,127 +1,134 @@
 
 
-## Multi-Part Implementation Plan
+# Visit Report Detail Page Redesign
 
-This plan covers four areas: Locations page improvements, spot sorting, visit report photo functionality, and False Coin / Jam By Coin logic corrections.
+## Overview
+A comprehensive redesign of the Visit Detail page (`/visits/:id`) to show complete slot-level audit data, profitability analytics, and a responsive card-based layout that works well on both desktop and mobile without horizontal scrolling.
 
----
+## Current Problems
+- Missing columns: last stock, current stock, audited count, false coins, jam status, surplus/shortage
+- "Meter" column name is confusing -- it actually stores the audited physical count (often null)
+- "Action" column should match Visit Type naming
+- Wide table requires horizontal scrolling on mobile
+- Status badge has no color differentiation
+- No profitability analytics or rent cost context
+- No days-since-last-visit indicator
+- Swap events not clearly visible
 
-### Part A: Locations Page -- Collapsed List View with Expandable Spots
+## Database Migration Required
 
-**Current behavior:** Each location is a Card that always shows all its spots via an Accordion. Spot names are not clickable links to the Spot Detail page.
+Two columns are missing from `visit_line_items` and need to be added to persist data that's currently captured in the form but discarded on submission:
 
-**Changes to `src/pages/Locations.tsx`:**
+- `false_coins` (integer, default 0) -- number of false coins found
+- `jam_status` (text, default 'no_jam') -- jam type recorded during visit
 
-1. Wrap each location card in a Collapsible component so the entire spot section is hidden by default. The location header row becomes the toggle -- clicking a chevron expands to reveal the spot accordion underneath.
-2. Make each spot name a clickable link that navigates to `/spots/{spotId}` (the Spot Detail page).
-3. The location name remains clickable to `/locations/{locationId}` as it is today.
+The edge function also needs updating to save these two new fields.
 
----
+## Plan
 
-### Part B: Natural Numeric Sorting for Spots
+### 1. Database Migration: Add missing columns to visit_line_items
 
-**Current behavior:** Spots are sorted alphabetically by name, so "Spot 1, Spot 10, Spot 2, Spot 3..." appears.
+Add `false_coins` (integer, default 0) and `jam_status` (text, default 'no_jam') to the `visit_line_items` table so this data is persisted from now on.
 
-**Changes to `src/pages/Locations.tsx` and `src/pages/NewVisitReport.tsx`:**
+### 2. Update Edge Function (submit-visit-report)
 
-1. Replace `.sort((a, b) => a.name.localeCompare(b.name))` with a natural sort comparator using `localeCompare` with `{ numeric: true }` option: `.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))`.
-2. Apply the same fix in the spots query `order` on the Locations page by sorting client-side after fetching.
-3. Apply the same fix to the spots dropdown in `NewVisitReport.tsx`.
+- Include `false_coins` and `jam_status` in the `SlotPayload` interface
+- Store them in the `visit_line_items` insert
 
----
+### 3. Redesign the Slot Activity Section as Card-Based List
 
-### Part C: Visit Photo and Observation Photo -- Working Camera and Upload
+Replace the wide table with a **stacked card list** (one card per slot). Each card shows:
 
-**Current behavior:** The "Take Photo" and "Upload" buttons in the "Photo and Sign Off" section and the "Upload Image" button in the Observations section are non-functional placeholder buttons.
-
-**Changes to `src/pages/NewVisitReport.tsx`:**
-
-1. Add state for the visit verification photo (`visitPhotoFile`, `visitPhotoUrl`) and observation photo (`observationPhotoFile`, `observationPhotoUrl`).
-2. Replace the placeholder "Take Photo" button with a hidden file input (`accept="image/*" capture="environment"`) that opens the device camera.
-3. Replace the placeholder "Upload" button with a hidden file input (`accept="image/*"`) for gallery selection.
-4. Show a thumbnail preview with a delete button when a photo is selected.
-5. In the submission mutation (`submitVisitReport`):
-   - Upload the visit photo to `item-photos` bucket under path `visit-photos/{visitId}/verification.jpg`.
-   - Upload the observation photo under path `visit-photos/{visitId}/observation.jpg`.
-   - Update the `spot_visits` record's `verification_photo_url` column (already exists in the schema) with the uploaded URL.
-   - The observation photo URL will be appended to the `notes` field of `spot_visits` since there's no dedicated column.
-6. Same pattern for the observation section's "Upload Image" button.
-
-**Changes to `supabase/functions/submit-visit-report/index.ts`:**
-
-- No changes needed to the edge function -- photos are uploaded separately from the client after the visit ID is returned.
-
----
-
-### Part D: False Coins and Jam By Coin Logic Corrections
-
-**User's requested behavior:**
-- **False Coins:** Each false coin means current stock should be **-1** (a false coin was inserted, machine dispensed a toy without valid payment, so stock decreases by 1 per false coin).
-- **Jam By Coin (+1):** A coin was inserted but no toy dispensed (jam), so current stock should be **+1** (the toy that should have dispensed is still in the machine). Currently, the code **subtracts** 1 from stock for `by_coin`, which is wrong.
-
-**Changes to `src/pages/NewVisitReport.tsx` (updateSlot function, line ~486-508):**
-
-Current logic:
 ```
-const jamAdjustment = updated.jamStatus === 'by_coin' ? 1 : 0;
-currentStock = lastStock - (unitsSold + jamAdjustment) + unitsRefilled - unitsRemoved;
-cashCollected = (unitsSold + jamAdj) * pricePerUnit;
+[Machine AA-01 | Slot #1]  [Visit Type Badge]
+Product: Pokemon           [Swapped badge if applicable]
+--------------------------------------------------
+Last Stock    | Current Stock | Audited  | Fill %
+    150       |     131       |   --     |  73%
+--------------------------------------------------
+Added | Removed | False Coins | Jam Status
+  80  |    5    |     0       | No Jam
+--------------------------------------------------
+Sales (units): 91   |  Surplus/Shortage: --
 ```
 
-New logic:
-```
-const jamAdjustment = updated.jamStatus === 'by_coin' ? 1 : 0;
-const falseCoinsAdj = updated.falseCoins || 0;
-// Jam By Coin: coin taken, toy NOT dispensed -> stock +1, cash +1
-// False Coins: no real coin, toy WAS dispensed -> stock -1
-currentStock = lastStock - unitsSold + jamAdjustment - falseCoinsAdj + unitsRefilled - unitsRemoved;
-// Cash: sold units + jam coins (those are real coins collected)
-cashCollected = (unitsSold + jamAdjustment) * pricePerUnit;
-```
+Key layout decisions:
+- 2-column grid on desktop, single column on mobile
+- Fill percentage shown as a mini progress bar
+- Surplus/Shortage = `audited_count - current_stock` (only shown if audited count exists)
+- Visit Type badge (e.g., "Routine Service", "Installation") replaces the old "Action" column
+- Swap events get a prominent colored badge with the previous product name
 
-Key changes:
-- `jamAdjustment` is now **added** to stock (not subtracted) because the toy stayed in the machine.
-- `falseCoins` is **subtracted** from stock because toys were dispensed without valid payment.
-- `jamAdjustment` is still **added** to cash because the coin was collected (real money).
-- `falseCoins` does NOT add to cash (they are fake coins, no real revenue).
+### 4. Colored Status Badges
 
-**Changes to `supabase/functions/submit-visit-report/index.ts` (edge function):**
+- **Completed**: Green background (`bg-green-500/20 text-green-700`)
+- **Reversed**: Red/destructive background (already done)
+- **Flagged**: Yellow/amber background (`bg-yellow-500/20 text-yellow-700`)
 
-Update the backend inventory adjustment calculation to match:
+### 5. Enhanced Summary Cards Row
 
-Current (line ~170-173 in edge function):
-```
-const jamAdj = s.jamStatus === "by_coin" ? 1 : 0;
-const expected = s.lastStock - (s.unitsSold + jamAdj) + s.unitsRefilled - s.unitsRemoved;
-```
+Expand the top summary section from 4 to include additional context:
 
-New:
-```
-const jamAdj = s.jamStatus === "by_coin" ? 1 : 0;
-const falseCoinsAdj = s.falseCoins || 0;
-const expected = s.lastStock - s.unitsSold + jamAdj - falseCoinsAdj + s.unitsRefilled - s.unitsRemoved;
-```
+**Row 1 (existing, enhanced)**:
+- Date (with visit type label)
+- Operator
+- Cash Collected
+- Status (with proper colors)
 
-Also update the `currentStock` calculation in the response's `adjustmentsLogged` section to match.
+**Row 2 (new analytics)**:
+- Days Since Last Visit (color-coded: green < 15, yellow 15-30, red > 30)
+- Monthly Rent Cost (from location data)
+- Rent Cost Since Last Visit (rent_amount / 30 x days_since_last_visit)
+- Net Profit This Visit (cash_collected - rent_since_last_visit)
 
-Add `falseCoins` to the `SlotPayload` interface in the edge function (it's already sent from the frontend but not declared in the interface).
+This requires fetching the **previous visit** for this spot and the **location's rent_amount**.
 
-**Warehouse inventory impact:** The connected inventory ledger in the edge function already handles `unitsRefilled` (deducted from warehouse) and `unitsRemoved` (returned to warehouse). False coins represent toys that left the machine without payment -- these are effectively "sold" from the machine perspective (stock is reduced), so no additional warehouse adjustment is needed. The financial loss shows up in the cash discrepancy (fewer coins than toys dispensed).
+### 6. Profitability Mini-Analysis Card
 
----
+A dedicated card below the summary showing:
+- Revenue this visit: $250.00
+- Rent accrued since last visit: $X.XX (daily rent x days)
+- Gross profit: Revenue - Rent
+- A simple colored indicator (green = profitable, red = loss)
+- Total units added vs removed
 
-### Technical Summary
+### 7. Maintenance Tickets Section (always visible)
 
-| File | Changes |
-|------|---------|
-| `src/pages/Locations.tsx` | Collapsible location cards, natural sort for spots, clickable spot names to `/spots/{id}` |
-| `src/pages/NewVisitReport.tsx` | Working photo upload/camera for visit and observations, natural sort for spot dropdown, false coins and jam stock logic fix |
-| `supabase/functions/submit-visit-report/index.ts` | Add `falseCoins` to interface, fix jam/false coin expected stock formula |
+Show the maintenance section always, with:
+- If tickets exist: display them with colored priority badges (already implemented)
+- If no tickets: show a small "No maintenance issues reported" message
+- This gives clear visibility into whether the visit flagged any problems
 
-### Execution Order
+### 8. Data Fetching Updates
 
-1. Fix Locations page (collapsible + sort + spot links)
-2. Fix NewVisitReport spot sorting
-3. Implement photo upload functionality
-4. Fix false coins and jam logic in frontend and edge function
+Update the visit detail query to also fetch:
+- `locations.rent_amount`, `locations.negotiation_type`, `locations.commission_percentage` (via spot -> location join, already partially there)
+- Previous completed visit for the same spot (to calculate days between visits)
+- Current `machine_slots.current_stock` and `machine_slots.capacity` for fill percentage
+
+### 9. Query Updates for Slot Snapshots
+
+Combine `visit_line_items` + `visit_slot_snapshots` to derive per-slot:
+- **Last Stock** = `snapshot.previous_stock`
+- **Current Stock** = `previous_stock - quantity_removed + quantity_added`
+- **Audited Count** = `meter_reading` (renamed from "Meter")
+- **Fill %** = `current_stock / snapshot.previous_capacity * 100`
+- **Surplus/Shortage** = `audited_count - current_stock` (when audited_count exists)
+- **False Coins** = from `visit_line_items.false_coins` (new column)
+- **Jam Status** = from `visit_line_items.jam_status` (new column)
+- **Swapped** = when `snapshot.previous_product_id !== line_item.product_id`
+
+## Technical Details
+
+### Files to modify:
+1. **New migration SQL** -- add `false_coins` and `jam_status` to `visit_line_items`
+2. **`supabase/functions/submit-visit-report/index.ts`** -- persist `false_coins` and `jam_status`
+3. **`src/pages/VisitDetail.tsx`** -- complete rewrite of the page layout with card-based slots, analytics, and responsive design
+4. **`src/integrations/supabase/types.ts`** -- will auto-update after migration
+
+### Data flow:
+- Visit query already joins spot -> location (just need to add `rent_amount` to the select)
+- Add a query for the previous visit date for the same spot
+- Merge `visit_line_items` with `visit_slot_snapshots` by `slot_id` for the before/after data
+- Compute profitability client-side from rent and cash data
 
