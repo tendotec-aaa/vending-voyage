@@ -234,20 +234,23 @@ export default function VisitDetail() {
     const removed = li.quantity_removed || 0;
     const falseCoins = li.false_coins ?? 0;
     const jamStatus = li.jam_status ?? "no_jam";
-    const pricePerUnit = snap?.previous_coin_acceptor || 1;
-    const cashCollected = li.cash_collected || 0;
-    const unitsSold = pricePerUnit > 0 ? Math.round(cashCollected / pricePerUnit) : 0;
-    const jamAdjustment = jamStatus === "by_coin" ? 1 : 0;
     const auditedCount = li.meter_reading;
 
-    // Match NewVisitReport formula exactly:
-    // currentStock = lastStock - unitsSold + jamAdjustment - falseCoins + added - removed
-    // For inventory_audit with audited count, currentStock = auditedCount
-    let currentStock: number | null = null;
-    if (auditedCount !== null && visit.visit_type === "inventory_audit") {
-      currentStock = auditedCount;
-    } else if (lastStock !== null) {
-      currentStock = lastStock - unitsSold + jamAdjustment - falseCoins + added - removed;
+    // Use stored values directly when available (preferred - exact match to form submission)
+    const unitsSold = li.units_sold ?? 0;
+    let currentStock: number | null = li.computed_current_stock ?? null;
+
+    // Fallback for older visits that don't have stored values
+    if (currentStock === null) {
+      const pricePerUnit = snap?.previous_coin_acceptor || 1;
+      const cashCollected = li.cash_collected || 0;
+      const jamAdjustment = jamStatus === "by_coin" ? 1 : 0;
+      const fallbackUnitsSold = pricePerUnit > 0 ? Math.round((cashCollected / pricePerUnit) - jamAdjustment) : 0;
+      if (auditedCount !== null && visit.visit_type === "inventory_audit") {
+        currentStock = auditedCount;
+      } else if (lastStock !== null) {
+        currentStock = lastStock - fallbackUnitsSold + jamAdjustment - falseCoins + added - removed;
+      }
     }
 
     const capacity = snap?.previous_capacity || li.slot?.capacity || 150;
