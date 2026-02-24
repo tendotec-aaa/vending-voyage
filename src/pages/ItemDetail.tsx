@@ -130,7 +130,7 @@ export default function ItemDetail() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("visit_line_items")
-        .select("meter_reading, cash_collected, quantity_added, quantity_removed")
+        .select("units_sold, cash_collected, quantity_added, quantity_removed")
         .eq("product_id", id!);
       if (error) throw error;
       return data;
@@ -144,10 +144,11 @@ export default function ItemDetail() {
       const { data, error } = await supabase
         .from("visit_line_items")
         .select(`
-          id, spot_visit_id, action_type, quantity_added, quantity_removed,
-          cash_collected, meter_reading, created_at,
+          id, spot_visit_id, slot_id, action_type, quantity_added, quantity_removed,
+          cash_collected, meter_reading, units_sold, computed_current_stock,
+          false_coins, jam_status, created_at,
           spot_visit:spot_visits(
-            visit_date, status,
+            id, visit_date, status,
             spot:spots(name, location:locations(name))
           )
         `)
@@ -159,11 +160,24 @@ export default function ItemDetail() {
     enabled: !!id,
   });
 
+  const { data: snapshots = [] } = useQuery({
+    queryKey: ["item-visit-snapshots", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("visit_slot_snapshots")
+        .select("visit_id, slot_id, previous_stock, previous_product_id")
+        .eq("previous_product_id", id!);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
+
   const { data: ledgerEntries = [] } = useQuery({
     queryKey: ["item-inventory-ledger", id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("inventory_ledger" as any)
+        .from("inventory_ledger")
         .select(`
           id, created_at, movement_type, quantity, running_balance,
           reference_id, reference_type, notes,
@@ -173,7 +187,7 @@ export default function ItemDetail() {
         .order("created_at", { ascending: false })
         .limit(200);
       if (error) throw error;
-      return data as any[];
+      return data;
     },
     enabled: !!id,
   });
@@ -291,7 +305,7 @@ export default function ItemDetail() {
   const weightedAvgCost = totalStock > 0 ? totalInventoryCost / totalStock : 0;
 
   const totalUnitsSold = (salesData || []).reduce(
-    (sum, s) => sum + (s.meter_reading || 0), 0
+    (sum, s) => sum + (s.units_sold || 0), 0
   );
   const totalRevenue = (salesData || []).reduce(
     (sum, s) => sum + (Number(s.cash_collected) || 0), 0
@@ -503,115 +517,146 @@ export default function ItemDetail() {
             <TabsTrigger value="acquisition">Acquisition History</TabsTrigger>
           </TabsList>
 
+          {/* ── Inventory Ledger Tab ── */}
           <TabsContent value="ledger">
             <Card>
-              <CardContent className="p-0">
+              <CardContent className="p-2 sm:p-4">
                 {ledgerEntries.length === 0 ? (
-                  <p className="text-muted-foreground p-6">No ledger entries yet.</p>
+                  <p className="text-muted-foreground p-4">No ledger entries yet.</p>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
-                        <TableHead className="text-right">Balance</TableHead>
-                        <TableHead>Notes</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {ledgerEntries.map((entry: any) => {
-                        const locationLabel = entry.warehouse_id
-                          ? warehouseStock.find((w: any) => w.warehouse?.id === entry.warehouse_id)?.warehouse?.name || "Warehouse"
-                          : entry.slot_id
-                          ? machineStock.find((m: any) => m.machine)?.machine?.serial_number || "Machine Slot"
-                          : "—";
-                        return (
-                          <TableRow key={entry.id}>
-                            <TableCell className="text-sm">
-                              {entry.created_at ? format(new Date(entry.created_at), "MMM d, yyyy HH:mm") : "—"}
-                            </TableCell>
-                            <TableCell>
-                              <Badge className={`text-xs ${movementColors[entry.movement_type] || ""}`}>
+                  <div className="space-y-1">
+                    {ledgerEntries.map((entry) => {
+                      const locationLabel = entry.warehouse_id
+                        ? warehouseStock.find((w: any) => w.warehouse?.id === entry.warehouse_id)?.warehouse?.name || "Warehouse"
+                        : entry.slot_id
+                        ? machineStock.find((m: any) => m.machine)?.machine?.serial_number || "Slot"
+                        : "—";
+                      return (
+                        <div
+                          key={entry.id}
+                          className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 border-b border-border/40 last:border-0"
+                        >
+                          {/* Left: date + type badge */}
+                          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge className={`text-[10px] px-1.5 py-0 ${movementColors[entry.movement_type] || ""}`}>
                                 {entry.movement_type.replace(/_/g, " ")}
                               </Badge>
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {entry.warehouse_id ? "🏭 " : entry.slot_id ? "🎰 " : ""}{locationLabel}
-                            </TableCell>
-                            <TableCell className={`text-right text-sm font-medium ${entry.quantity > 0 ? "text-chart-2" : entry.quantity < 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                              {entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}
-                            </TableCell>
-                            <TableCell className="text-right text-sm font-semibold text-foreground">
-                              {entry.running_balance.toLocaleString()}
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                              <span className="text-xs text-muted-foreground">
+                                {entry.warehouse_id ? "🏭" : entry.slot_id ? "🎰" : ""} {locationLabel}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-muted-foreground truncate">
                               {entry.notes || "—"}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                            </span>
+                          </div>
+                          {/* Right: qty + balance + date */}
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="text-right">
+                              <span className={`text-sm font-semibold ${entry.quantity > 0 ? "text-chart-2" : entry.quantity < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                                {entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}
+                              </span>
+                              <p className="text-[10px] text-muted-foreground">
+                                bal: {entry.running_balance}
+                              </p>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground w-14 text-right">
+                              {entry.created_at ? format(new Date(entry.created_at), "MMM d") : "—"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </CardContent>
             </Card>
           </TabsContent>
 
+          {/* ── Logistics History Tab ── */}
           <TabsContent value="logistics">
             <Card>
-              <CardContent className="p-0">
+              <CardContent className="p-2 sm:p-4">
                 {logisticsHistory.length === 0 ? (
-                  <p className="text-muted-foreground p-6">No logistics history yet.</p>
+                  <p className="text-muted-foreground p-4">No logistics history yet.</p>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead>Action</TableHead>
-                        <TableHead className="text-right">Qty Change</TableHead>
-                        <TableHead className="text-right">Sales (units)</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {logisticsHistory.map((row: any) => {
-                        const visit = row.spot_visit;
-                        const spot = visit?.spot;
-                        const location = spot?.location;
-                        const qty = (row.quantity_added || 0) - (row.quantity_removed || 0);
-                        const unitsSold = row.meter_reading || 0;
-                        return (
-                          <TableRow
-                            key={row.id}
-                            className="cursor-pointer hover:bg-muted/50"
-                            onClick={() => {
-                              if (row.spot_visit_id) navigate(`/visits`);
-                            }}
-                          >
-                            <TableCell className="text-sm">
-                              {visit?.visit_date ? format(new Date(visit.visit_date), "MMM d, yyyy") : "—"}
-                            </TableCell>
-                            <TableCell className="text-sm">
-                              {location?.name ? `${location.name} › ${spot?.name || ""}` : spot?.name || "—"}
-                            </TableCell>
-                            <TableCell>
-                              <Badge className={`text-xs ${actionColors[row.action_type] || ""}`}>
+                  <div className="space-y-2">
+                    {logisticsHistory.map((row: any) => {
+                      const visit = row.spot_visit;
+                      const spot = visit?.spot;
+                      const location = spot?.location;
+                      const snap = snapshots.find(
+                        (s: any) => s.visit_id === row.spot_visit_id && s.slot_id === row.slot_id
+                      );
+                      const lastStock = snap?.previous_stock ?? null;
+                      const currentStock = row.computed_current_stock ?? null;
+                      const unitsSold = row.units_sold ?? 0;
+                      const added = row.quantity_added || 0;
+                      const removed = row.quantity_removed || 0;
+                      const falseCoins = row.false_coins ?? 0;
+                      const jamStatus = row.jam_status ?? "no_jam";
+                      const auditedCount = row.meter_reading;
+                      const jamLabel = jamStatus === "by_coin" ? "Jam (+1)" : jamStatus === "mechanical" ? "Jam (mech)" : "—";
+
+                      return (
+                        <div
+                          key={row.id}
+                          className="rounded-lg border border-border/60 p-3 hover:bg-muted/30 cursor-pointer transition-colors"
+                          onClick={() => row.spot_visit_id && navigate(`/visits/${row.spot_visit_id}`)}
+                        >
+                          {/* Header row: location + date + action */}
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Badge className={`text-[10px] px-1.5 py-0 shrink-0 ${actionColors[row.action_type] || ""}`}>
                                 {row.action_type}
                               </Badge>
-                            </TableCell>
-                            <TableCell className={`text-right text-sm font-medium ${qty > 0 ? "text-chart-2" : qty < 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                              {qty > 0 ? `+${qty}` : qty}
-                            </TableCell>
-                            <TableCell className="text-right text-sm">
-                              {unitsSold > 0 ? unitsSold.toLocaleString() : "—"}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                              <span className="text-xs text-muted-foreground truncate">
+                                {location?.name ? `${location.name} › ${spot?.name || ""}` : spot?.name || "—"}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-muted-foreground shrink-0">
+                              {visit?.visit_date ? format(new Date(visit.visit_date), "MMM d, yyyy") : "—"}
+                            </span>
+                          </div>
+                          {/* Movement breakdown grid */}
+                          <div className="grid grid-cols-4 sm:grid-cols-8 gap-x-2 gap-y-1 text-center">
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">Last</p>
+                              <p className="text-sm font-medium text-foreground">{lastStock ?? "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">Current</p>
+                              <p className="text-sm font-medium text-foreground">{currentStock ?? "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">Audited</p>
+                              <p className="text-sm font-medium text-foreground">{auditedCount ?? "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">Sold</p>
+                              <p className="text-sm font-medium text-primary">{unitsSold || "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">Added</p>
+                              <p className="text-sm font-medium text-chart-2">{added > 0 ? `+${added}` : "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">Removed</p>
+                              <p className="text-sm font-medium text-destructive">{removed > 0 ? `-${removed}` : "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">False</p>
+                              <p className="text-sm font-medium text-chart-4">{falseCoins || "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">Jam</p>
+                              <p className="text-[11px] font-medium text-muted-foreground">{jamLabel}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </CardContent>
             </Card>
