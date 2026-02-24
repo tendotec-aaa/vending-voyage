@@ -97,8 +97,87 @@ export default function VisitsPage() {
         .eq('visit_id', visitId);
       if (snapErr) throw snapErr;
 
+      // 2. Fetch visit line items BEFORE deleting (needed for warehouse reversal)
+      const { data: lineItems, error: lineErr } = await supabase
+        .from('visit_line_items')
+        .select('id, slot_id, product_id, action_type, quantity_added, quantity_removed')
+        .eq('spot_visit_id', visitId);
+      if (lineErr) throw lineErr;
+
+      // 3. Find source warehouse (first non-system warehouse, same logic as submission)
+      const { data: warehouses } = await supabase
+        .from('warehouses')
+        .select('id, is_system')
+        .eq('is_system', false)
+        .limit(1);
+      const sourceWarehouseId = warehouses?.[0]?.id || null;
+
+      // 4. Reverse warehouse inventory changes
+      if (sourceWarehouseId && lineItems && lineItems.length > 0) {
+        for (const li of lineItems as any[]) {
+          if (!li.product_id) continue;
+
+          // Undo refill: units were deducted from warehouse during visit → add them back
+          if ((li.quantity_added || 0) > 0) {
+            const { data: existing } = await supabase
+              .from('inventory')
+              .select('id, quantity_on_hand')
+              .eq('item_detail_id', li.product_id)
+              .eq('warehouse_id', sourceWarehouseId)
+              .maybeSingle();
+            if (existing) {
+              await supabase.from('inventory').update({
+                quantity_on_hand: (existing.quantity_on_hand || 0) + li.quantity_added,
+                last_updated: new Date().toISOString(),
+              }).eq('id', existing.id);
+            }
+          }
+
+          // Undo removal: units were returned to warehouse during visit → deduct them back
+          if ((li.quantity_removed || 0) > 0 && li.action_type !== 'swap') {
+            const { data: existing } = await supabase
+              .from('inventory')
+              .select('id, quantity_on_hand')
+              .eq('item_detail_id', li.product_id)
+              .eq('warehouse_id', sourceWarehouseId)
+              .maybeSingle();
+            if (existing) {
+              await supabase.from('inventory').update({
+                quantity_on_hand: (existing.quantity_on_hand || 0) - li.quantity_removed,
+                last_updated: new Date().toISOString(),
+              }).eq('id', existing.id);
+            }
+          }
+        }
+
+        // Undo swap returns: old products were returned to warehouse during visit → deduct them back
+        if (snapshots && snapshots.length > 0) {
+          for (const snap of snapshots as any[]) {
+            // Find the corresponding line item for this slot
+            const li = (lineItems as any[]).find((l: any) => l.slot_id === snap.slot_id);
+            if (li?.action_type === 'swap' && snap.previous_product_id && snap.previous_product_id !== li.product_id) {
+              const returnQty = snap.previous_stock || 0;
+              if (returnQty > 0) {
+                const { data: existing } = await supabase
+                  .from('inventory')
+                  .select('id, quantity_on_hand')
+                  .eq('item_detail_id', snap.previous_product_id)
+                  .eq('warehouse_id', sourceWarehouseId)
+                  .maybeSingle();
+                if (existing) {
+                  await supabase.from('inventory').update({
+                    quantity_on_hand: (existing.quantity_on_hand || 0) - returnQty,
+                    last_updated: new Date().toISOString(),
+                  }).eq('id', existing.id);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 5. Restore each machine slot from snapshot
       if (snapshots && snapshots.length > 0) {
-        // 2. Restore each slot
         for (const snap of snapshots as any[]) {
           await supabase.from('machine_slots').update({
             current_product_id: snap.previous_product_id,
@@ -109,13 +188,13 @@ export default function VisitsPage() {
         }
       }
 
-      // 3. Delete visit line items
+      // 6. Delete visit line items
       await supabase
         .from('visit_line_items')
         .delete()
         .eq('spot_visit_id', visitId);
 
-      // 4. Mark visit as reversed
+      // 7. Mark visit as reversed
       const { error: updateErr } = await supabase
         .from('spot_visits')
         .update({ status: 'reversed' as any })
@@ -125,7 +204,11 @@ export default function VisitsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['spot-visits-list'] });
       queryClient.invalidateQueries({ queryKey: ['machine-slots'] });
-      toast.success("Visit reversed successfully. Machine slots restored.");
+      queryClient.invalidateQueries({ queryKey: ['warehouse-inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['consolidated-inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['item-warehouse-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['item-machine-stock'] });
+      toast.success("Visit reversed successfully. Machine slots and warehouse inventory restored.");
       setReverseVisitId(null);
     },
     onError: (error) => {
