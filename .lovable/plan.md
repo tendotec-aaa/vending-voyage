@@ -1,191 +1,127 @@
 
 
-## Gold Standard Visit Report: Implementation Plan
+## Multi-Part Implementation Plan
 
-### Current State vs. Blueprint
-
-| # | Feature | Status | Work Required |
-|---|---------|--------|---------------|
-| 1 | Atomic Transaction | Not done | Wrap submission in edge function with DB transaction |
-| 2 | Connected Inventory Ledger | Not done | Deduct warehouse stock on refill, return removed stock |
-| 3 | Financial Integrity Trail (Shortage/Surplus) | Partial | Audit view exists but no permanent shortage/surplus records |
-| 4 | Evidence Lock (Swap Photo) | Not done | Require photo upload when "Replace all toys" is checked |
-| 5 | Smart-Restock Guidance | Not done | Calculate suggested load per slot based on sales velocity |
-| 6 | Automatic Maintenance Loop | Not done | Auto-create maintenance tickets from flagged issues |
-| 7 | Instant Performance Grade | Not done | Post-submission score card |
-| 8 | Snapshot Safety Net | Done | visit_slot_snapshots + rollback already implemented |
+This plan covers four areas: Locations page improvements, spot sorting, visit report photo functionality, and False Coin / Jam By Coin logic corrections.
 
 ---
 
-### Implementation Details
+### Part A: Locations Page -- Collapsed List View with Expandable Spots
 
-#### 1. Atomic Transaction (Edge Function)
+**Current behavior:** Each location is a Card that always shows all its spots via an Accordion. Spot names are not clickable links to the Spot Detail page.
 
-Move the entire submission logic from the frontend into a single Supabase Edge Function called `submit-visit-report`. This function will use a PostgreSQL transaction so that if any step fails, nothing is saved.
+**Changes to `src/pages/Locations.tsx`:**
 
-**New file:** `supabase/functions/submit-visit-report/index.ts`
-
-The frontend will send one payload containing all slot data, visit metadata, and observation notes. The edge function will:
-- Begin a database transaction
-- Insert `spot_visits` record
-- Insert `visit_slot_snapshots` (pre-visit state)
-- Insert `visit_line_items` for each slot
-- Update `machine_slots` with new stock/product
-- Deduct warehouse inventory for refills (Feature 2)
-- Route removed stock back to warehouse (Feature 2)
-- Log shortage/surplus records for audits (Feature 3)
-- Create maintenance tickets for flagged issues (Feature 6)
-- Commit transaction (or rollback entirely on any failure)
-
-The frontend `submitVisitReport` mutation will change from multiple Supabase calls to a single `supabase.functions.invoke('submit-visit-report', { body: payload })`.
-
-#### 2. Connected Inventory Ledger
-
-Inside the edge function transaction:
-
-**On Refill (`unitsRefilled > 0`):**
-- Find the inventory row for this product in the source warehouse (initially, we use the first non-system warehouse; later this can be operator-specific)
-- Subtract `unitsRefilled` from `inventory.quantity_on_hand`
-- If insufficient warehouse stock, still allow submission but flag a warning in the response
-
-**On Removal (`unitsRemoved > 0`):**
-- Add `unitsRemoved` back to the source warehouse's inventory row for that product
-- If no inventory row exists, create one
-
-**On Product Swap (`replaceAllToys === true`):**
-- The old product's remaining stock (`lastStock - unitsSold`) is returned to warehouse inventory
-- The new product's refilled quantity is deducted from warehouse inventory
-
-No new tables needed -- uses the existing `inventory` table with its `(item_detail_id, warehouse_id)` composite constraint.
-
-#### 3. Financial Integrity Trail
-
-**New table:** `inventory_adjustments`
-
-| Column | Type | Purpose |
-|---|---|---|
-| id | uuid PK | Row ID |
-| visit_id | uuid FK -> spot_visits | Which visit triggered this |
-| item_detail_id | uuid FK -> item_details | Which product |
-| slot_id | uuid FK -> machine_slots | Which slot |
-| adjustment_type | text | 'shortage' or 'surplus' |
-| expected_quantity | integer | What the system calculated |
-| actual_quantity | integer | What the technician physically counted |
-| difference | integer | actual - expected (negative = shortage) |
-| created_at | timestamptz | Timestamp |
-
-During audit submissions, when `auditedCount` differs from the calculated stock, the edge function inserts a row into this table. The `machine_slots.current_stock` is set to the audited count (accepting physical reality), but the discrepancy is permanently recorded.
-
-This table can later power dashboards showing shrinkage patterns by location, product, or operator.
-
-#### 4. Evidence Lock for Product Swaps
-
-**Frontend change in `NewVisitReport.tsx`:**
-
-When `replaceAllToys` is checked and the technician selects a new product:
-- Show a mandatory photo upload area for that specific slot
-- The photo is uploaded to the existing `item-photos` storage bucket with a path like `swap-evidence/{visit_id}/{slot_id}.jpg`
-- The photo URL is included in the submission payload
-- Store the URL in `visit_line_items` -- requires adding a `photo_url` column to `visit_line_items`
-
-**Validation:** The Submit button is disabled if any slot with `replaceAllToys === true` and a new product selected has no photo uploaded.
-
-**Migration:** Add `photo_url text` column to `visit_line_items`.
-
-#### 5. Smart-Restock Guidance
-
-**Frontend change in `NewVisitReport.tsx`:**
-
-After slots are loaded, calculate a "Suggested Load" per slot:
-- Query the last N visits' line items for this spot to get average daily sales rate per slot
-- Formula: `suggestedRefill = Math.ceil(salesRate * targetDays) - currentStock`
-- Where `targetDays` could default to 14 (two weeks of stock)
-
-Display as a subtle hint below the "Units Refilled" input:
-```
-Suggested: ~45 units (based on 3.2/day avg)
-```
-
-This is purely a frontend calculation using data already available (last visit date + units sold history). A new query fetches the last 5 visits' line items for the selected spot to compute the average.
-
-No database changes needed.
-
-#### 6. Automatic Maintenance Loop
-
-Inside the edge function transaction, after processing all slots:
-
-For each slot where `reportIssue === true`:
-- Insert a row into `maintenance_tickets` with:
-  - `location_id`: from the spot's parent location
-  - `spot_id`: the current spot
-  - `machine_id`: the slot's machine
-  - `slot_id`: the slot ID
-  - `issue_type`: "Field Report"
-  - `description`: the technician's issue description
-  - `priority`: mapped from severity (low/medium/high)
-  - `reporter_id`: the operator's user ID
-  - `visit_id`: the visit record ID
-  - `product_id`: current product in the slot
-  - `setup_id`: the setup ID
-  - `status`: "pending"
-
-Also for observation-level issues (`hasObservationIssue === true`):
-- Create one maintenance ticket for the general observation, linked to the spot but not a specific slot
-
-No new tables needed -- uses the existing `maintenance_tickets` table which already has all the required columns including `visit_id`, `machine_id`, `slot_id`, `setup_id`, and `product_id`.
-
-#### 7. Instant Performance Grade
-
-**Frontend change in `NewVisitReport.tsx`:**
-
-After successful submission, instead of immediately navigating away, show a modal/dialog with a "Visit Summary" scorecard:
-
-- Total cash collected this visit
-- Comparison to the average cash collected at this spot (from past visits)
-- A simple grade: Star rating or color (Green = above average, Yellow = average, Red = below average)
-- Number of slots serviced
-- Any issues flagged count
-- A "Done" button to navigate to the visits list
-
-The comparison data comes from the existing `spot_visits` table -- average `total_cash_collected` for this spot over the last 10 visits.
-
-No database changes needed.
+1. Wrap each location card in a Collapsible component so the entire spot section is hidden by default. The location header row becomes the toggle -- clicking a chevron expands to reveal the spot accordion underneath.
+2. Make each spot name a clickable link that navigates to `/spots/{spotId}` (the Spot Detail page).
+3. The location name remains clickable to `/locations/{locationId}` as it is today.
 
 ---
 
-### Database Changes Summary
+### Part B: Natural Numeric Sorting for Spots
 
-**New table:**
-- `inventory_adjustments` (for shortage/surplus audit trail)
+**Current behavior:** Spots are sorted alphabetically by name, so "Spot 1, Spot 10, Spot 2, Spot 3..." appears.
 
-**Modified table:**
-- `visit_line_items`: add `photo_url text` column
+**Changes to `src/pages/Locations.tsx` and `src/pages/NewVisitReport.tsx`:**
 
-**New edge function:**
-- `submit-visit-report` (atomic transaction handler)
+1. Replace `.sort((a, b) => a.name.localeCompare(b.name))` with a natural sort comparator using `localeCompare` with `{ numeric: true }` option: `.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))`.
+2. Apply the same fix in the spots query `order` on the Locations page by sorting client-side after fetching.
+3. Apply the same fix to the spots dropdown in `NewVisitReport.tsx`.
 
-### Frontend Changes Summary
+---
 
-**Modified file:** `src/pages/NewVisitReport.tsx`
-- Smart-restock suggestion display per slot
-- Mandatory photo upload UI for product swaps
-- Photo upload to storage bucket
-- Post-submission performance grade modal
-- Submission now calls edge function instead of direct DB calls
-- Payload includes all data for the edge function
+### Part C: Visit Photo and Observation Photo -- Working Camera and Upload
+
+**Current behavior:** The "Take Photo" and "Upload" buttons in the "Photo and Sign Off" section and the "Upload Image" button in the Observations section are non-functional placeholder buttons.
+
+**Changes to `src/pages/NewVisitReport.tsx`:**
+
+1. Add state for the visit verification photo (`visitPhotoFile`, `visitPhotoUrl`) and observation photo (`observationPhotoFile`, `observationPhotoUrl`).
+2. Replace the placeholder "Take Photo" button with a hidden file input (`accept="image/*" capture="environment"`) that opens the device camera.
+3. Replace the placeholder "Upload" button with a hidden file input (`accept="image/*"`) for gallery selection.
+4. Show a thumbnail preview with a delete button when a photo is selected.
+5. In the submission mutation (`submitVisitReport`):
+   - Upload the visit photo to `item-photos` bucket under path `visit-photos/{visitId}/verification.jpg`.
+   - Upload the observation photo under path `visit-photos/{visitId}/observation.jpg`.
+   - Update the `spot_visits` record's `verification_photo_url` column (already exists in the schema) with the uploaded URL.
+   - The observation photo URL will be appended to the `notes` field of `spot_visits` since there's no dedicated column.
+6. Same pattern for the observation section's "Upload Image" button.
+
+**Changes to `supabase/functions/submit-visit-report/index.ts`:**
+
+- No changes needed to the edge function -- photos are uploaded separately from the client after the visit ID is returned.
+
+---
+
+### Part D: False Coins and Jam By Coin Logic Corrections
+
+**User's requested behavior:**
+- **False Coins:** Each false coin means current stock should be **-1** (a false coin was inserted, machine dispensed a toy without valid payment, so stock decreases by 1 per false coin).
+- **Jam By Coin (+1):** A coin was inserted but no toy dispensed (jam), so current stock should be **+1** (the toy that should have dispensed is still in the machine). Currently, the code **subtracts** 1 from stock for `by_coin`, which is wrong.
+
+**Changes to `src/pages/NewVisitReport.tsx` (updateSlot function, line ~486-508):**
+
+Current logic:
+```
+const jamAdjustment = updated.jamStatus === 'by_coin' ? 1 : 0;
+currentStock = lastStock - (unitsSold + jamAdjustment) + unitsRefilled - unitsRemoved;
+cashCollected = (unitsSold + jamAdj) * pricePerUnit;
+```
+
+New logic:
+```
+const jamAdjustment = updated.jamStatus === 'by_coin' ? 1 : 0;
+const falseCoinsAdj = updated.falseCoins || 0;
+// Jam By Coin: coin taken, toy NOT dispensed -> stock +1, cash +1
+// False Coins: no real coin, toy WAS dispensed -> stock -1
+currentStock = lastStock - unitsSold + jamAdjustment - falseCoinsAdj + unitsRefilled - unitsRemoved;
+// Cash: sold units + jam coins (those are real coins collected)
+cashCollected = (unitsSold + jamAdjustment) * pricePerUnit;
+```
+
+Key changes:
+- `jamAdjustment` is now **added** to stock (not subtracted) because the toy stayed in the machine.
+- `falseCoins` is **subtracted** from stock because toys were dispensed without valid payment.
+- `jamAdjustment` is still **added** to cash because the coin was collected (real money).
+- `falseCoins` does NOT add to cash (they are fake coins, no real revenue).
+
+**Changes to `supabase/functions/submit-visit-report/index.ts` (edge function):**
+
+Update the backend inventory adjustment calculation to match:
+
+Current (line ~170-173 in edge function):
+```
+const jamAdj = s.jamStatus === "by_coin" ? 1 : 0;
+const expected = s.lastStock - (s.unitsSold + jamAdj) + s.unitsRefilled - s.unitsRemoved;
+```
+
+New:
+```
+const jamAdj = s.jamStatus === "by_coin" ? 1 : 0;
+const falseCoinsAdj = s.falseCoins || 0;
+const expected = s.lastStock - s.unitsSold + jamAdj - falseCoinsAdj + s.unitsRefilled - s.unitsRemoved;
+```
+
+Also update the `currentStock` calculation in the response's `adjustmentsLogged` section to match.
+
+Add `falseCoins` to the `SlotPayload` interface in the edge function (it's already sent from the frontend but not declared in the interface).
+
+**Warehouse inventory impact:** The connected inventory ledger in the edge function already handles `unitsRefilled` (deducted from warehouse) and `unitsRemoved` (returned to warehouse). False coins represent toys that left the machine without payment -- these are effectively "sold" from the machine perspective (stock is reduced), so no additional warehouse adjustment is needed. The financial loss shows up in the cash discrepancy (fewer coins than toys dispensed).
+
+---
+
+### Technical Summary
+
+| File | Changes |
+|------|---------|
+| `src/pages/Locations.tsx` | Collapsible location cards, natural sort for spots, clickable spot names to `/spots/{id}` |
+| `src/pages/NewVisitReport.tsx` | Working photo upload/camera for visit and observations, natural sort for spot dropdown, false coins and jam stock logic fix |
+| `supabase/functions/submit-visit-report/index.ts` | Add `falseCoins` to interface, fix jam/false coin expected stock formula |
 
 ### Execution Order
 
-1. Create `inventory_adjustments` table migration
-2. Add `photo_url` column to `visit_line_items` migration
-3. Create `submit-visit-report` edge function (Features 1, 2, 3, 6)
-4. Update `NewVisitReport.tsx` (Features 4, 5, 7 + call edge function)
-
-### What Already Works (No Changes Needed)
-
-- Snapshot safety net (Feature 8) -- already saving `visit_slot_snapshots` and rollback works from the Visits page
-- Auto-detection of visit type (installation vs routine service)
-- Jam status "+1" logic for "By Coin" jams
-- Audit view with surplus/shortage display in the UI
-- 30-day visit warning dialog
+1. Fix Locations page (collapsible + sort + spot links)
+2. Fix NewVisitReport spot sorting
+3. Implement photo upload functionality
+4. Fix false coins and jam logic in frontend and edge function
 
