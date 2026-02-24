@@ -210,22 +210,26 @@ export default function NewVisitReport() {
     },
   });
 
-  // Fetch spots for selected location
-  const { data: spots = [] } = useQuery({
-    queryKey: ['spots', selectedLocation],
+  // Fetch spots for selected location (with setup info)
+  const { data: spotsWithSetups = [] } = useQuery({
+    queryKey: ['spots-with-setups', selectedLocation],
     queryFn: async () => {
       if (!selectedLocation) return [];
       const { data, error } = await supabase
         .from('spots')
-        .select('*')
+        .select('*, setups(id, name)')
         .eq('location_id', selectedLocation)
         .eq('status', 'active')
         .order('name');
       if (error) throw error;
-      return data;
+      return (data || []).map((s: any) => ({
+        ...s,
+        hasSetup: Array.isArray(s.setups) ? s.setups.length > 0 : !!s.setups,
+      }));
     },
     enabled: !!selectedLocation,
   });
+  const spots = spotsWithSetups as (Spot & { hasSetup: boolean })[];
 
   // Fetch setup for selected spot
   const { data: spotSetup } = useQuery({
@@ -1438,8 +1442,24 @@ export default function NewVisitReport() {
                 </SelectTrigger>
                 <SelectContent>
                   {[...spots].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map((spot) => (
-                    <SelectItem key={spot.id} value={spot.id}>
-                      {spot.name} {spot.description ? `- ${spot.description}` : ""}
+                    <SelectItem 
+                      key={spot.id} 
+                      value={spot.id}
+                      disabled={!spot.hasSetup}
+                      className={cn(!spot.hasSetup && "opacity-50")}
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <span>{spot.name} {spot.description ? `- ${spot.description}` : ""}</span>
+                        {spot.hasSetup ? (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-green-500/20 text-green-700 dark:text-green-400 border-0">
+                            <CheckCircle className="w-3 h-3 mr-0.5" /> Operational
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-destructive/20 text-destructive border-0">
+                            No Setup
+                          </Badge>
+                        )}
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
