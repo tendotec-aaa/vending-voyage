@@ -232,15 +232,29 @@ export default function VisitDetail() {
     const lastStock = snap?.previous_stock ?? null;
     const added = li.quantity_added || 0;
     const removed = li.quantity_removed || 0;
-    const currentStock = lastStock !== null ? lastStock - removed + added : null;
-    const capacity = snap?.previous_capacity || li.slot?.capacity || 150;
-    const fillPct = currentStock !== null && capacity > 0 ? Math.round((currentStock / capacity) * 100) : null;
-    const auditedCount = li.meter_reading;
-    const surplusShortage = auditedCount !== null && currentStock !== null ? auditedCount - currentStock : null;
-    const isSwapped = li.action_type === "swap" && snap?.previous_product_id && snap.previous_product_id !== li.product_id;
-    const previousProductName = isSwapped ? (snap?.previous_product?.name || "Previous product") : null;
     const falseCoins = li.false_coins ?? 0;
     const jamStatus = li.jam_status ?? "no_jam";
+    const pricePerUnit = snap?.previous_coin_acceptor || 1;
+    const cashCollected = li.cash_collected || 0;
+    const unitsSold = pricePerUnit > 0 ? Math.round(cashCollected / pricePerUnit) : 0;
+    const jamAdjustment = jamStatus === "by_coin" ? 1 : 0;
+    const auditedCount = li.meter_reading;
+
+    // Match NewVisitReport formula exactly:
+    // currentStock = lastStock - unitsSold + jamAdjustment - falseCoins + added - removed
+    // For inventory_audit with audited count, currentStock = auditedCount
+    let currentStock: number | null = null;
+    if (auditedCount !== null && visit.visit_type === "inventory_audit") {
+      currentStock = auditedCount;
+    } else if (lastStock !== null) {
+      currentStock = lastStock - unitsSold + jamAdjustment - falseCoins + added - removed;
+    }
+
+    const capacity = snap?.previous_capacity || li.slot?.capacity || 150;
+    const fillPct = currentStock !== null && capacity > 0 ? Math.round((currentStock / capacity) * 100) : null;
+    const surplusShortage = auditedCount !== null && currentStock !== null && visit.visit_type !== "inventory_audit" ? auditedCount - currentStock : null;
+    const isSwapped = li.action_type === "swap" && snap?.previous_product_id && snap.previous_product_id !== li.product_id;
+    const previousProductName = isSwapped ? (snap?.previous_product?.name || "Previous product") : null;
 
     return {
       id: li.id,
