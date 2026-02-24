@@ -58,7 +58,7 @@ import {
 import { VisitDraftsDropdown, saveDraft, type VisitDraft } from "@/components/visits/VisitDraftsDropdown";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { format, differenceInDays } from "date-fns";
+import { format, differenceInDays, startOfDay } from "date-fns";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -443,12 +443,21 @@ export default function NewVisitReport() {
     enabled: !!selectedSpot,
   });
 
-  // Calculate days since last visit
+  // Calculate days since last visit (using startOfDay for accurate calendar-day count)
+  const selectedLocation_ = locations.find(l => l.id === selectedLocation);
+  const referenceDate = useMemo(() => {
+    if (lastVisit?.visit_date) return { date: new Date(lastVisit.visit_date), label: "Last Visit" };
+    if (visitType === 'installation' && selectedLocation_?.contract_start_date) {
+      return { date: new Date(selectedLocation_.contract_start_date), label: "Contract Start" };
+    }
+    return null;
+  }, [lastVisit, visitType, selectedLocation_]);
+
   const daysSinceLastVisit = useMemo(() => {
     if (visitType === 'installation') return 0;
-    if (!lastVisit?.visit_date) return null;
-    return differenceInDays(visitDate, new Date(lastVisit.visit_date));
-  }, [lastVisit, visitType, visitDate]);
+    if (!referenceDate) return null;
+    return differenceInDays(startOfDay(visitDate), startOfDay(referenceDate.date));
+  }, [referenceDate, visitType, visitDate]);
 
   const getDaysSinceColor = (days: number | null) => {
     if (days === null) return "bg-muted text-muted-foreground";
@@ -1674,6 +1683,11 @@ export default function NewVisitReport() {
                     {daysSinceLastVisit === 0 ? "days (first visit)" : daysSinceLastVisit !== null ? "days" : "No data"}
                   </span>
                 </div>
+                {referenceDate && (
+                  <p className="text-xs text-muted-foreground">
+                    {referenceDate.label}: {format(referenceDate.date, "PPP")}
+                  </p>
+                )}
               </div>
             )}
 
