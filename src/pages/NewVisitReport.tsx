@@ -162,26 +162,55 @@ interface PerformanceGrade {
   warnings: string[];
 }
 
+const FORM_CACHE_KEY = "visit-report-form-cache";
+
+interface FormCache {
+  selectedLocation: string;
+  selectedSpot: string;
+  visitType: string;
+  visitDate: string;
+  hasObservationIssue: boolean;
+  observationIssueLog: string;
+  observationSeverity: string;
+  confirmAccurate: boolean;
+  slots: Omit<SlotEntry, 'swapPhotoFile'>[];
+}
+
+function loadFormCache(): Partial<FormCache> | null {
+  try {
+    const raw = localStorage.getItem(FORM_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearFormCache() {
+  localStorage.removeItem(FORM_CACHE_KEY);
+}
+
 export default function NewVisitReport() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+
+  const cached = useMemo(() => loadFormCache(), []);
   
   // Location Details state
-  const [selectedLocation, setSelectedLocation] = useState("");
-  const [selectedSpot, setSelectedSpot] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState(cached?.selectedLocation || "");
+  const [selectedSpot, setSelectedSpot] = useState(cached?.selectedSpot || "");
   
   // Visit Details state
-  const [visitType, setVisitType] = useState("");
-  const [visitDate, setVisitDate] = useState<Date>(new Date());
+  const [visitType, setVisitType] = useState(cached?.visitType || "");
+  const [visitDate, setVisitDate] = useState<Date>(cached?.visitDate ? new Date(cached.visitDate) : new Date());
   
   // Slots state
   const [slots, setSlots] = useState<SlotEntry[]>([]);
   
   // Observations state
-  const [hasObservationIssue, setHasObservationIssue] = useState(false);
-  const [observationIssueLog, setObservationIssueLog] = useState("");
-  const [observationSeverity, setObservationSeverity] = useState("");
+  const [hasObservationIssue, setHasObservationIssue] = useState(cached?.hasObservationIssue || false);
+  const [observationIssueLog, setObservationIssueLog] = useState(cached?.observationIssueLog || "");
+  const [observationSeverity, setObservationSeverity] = useState(cached?.observationSeverity || "");
   
   // Photo & Sign Off state
   const [confirmAccurate, setConfirmAccurate] = useState(false);
@@ -210,7 +239,7 @@ export default function NewVisitReport() {
     },
   });
 
-  // Fetch spots for selected location (with setup info)
+  // Fetch spots for selected location (with setup info and last visit date)
   const { data: spotsWithSetups = [] } = useQuery({
     queryKey: ['spots-with-setups', selectedLocation],
     queryFn: async () => {
@@ -222,14 +251,36 @@ export default function NewVisitReport() {
         .eq('status', 'active')
         .order('name');
       if (error) throw error;
+
+      // Fetch last visit per spot
+      const spotIds = (data || []).map((s: any) => s.id);
+      let lastVisitMap: Record<string, string> = {};
+      if (spotIds.length > 0) {
+        const { data: visits } = await supabase
+          .from('spot_visits')
+          .select('spot_id, visit_date')
+          .in('spot_id', spotIds)
+          .eq('status', 'completed')
+          .order('visit_date', { ascending: false });
+        if (visits) {
+          for (const v of visits) {
+            if (v.spot_id && !lastVisitMap[v.spot_id]) {
+              lastVisitMap[v.spot_id] = v.visit_date!;
+            }
+          }
+        }
+      }
+
       return (data || []).map((s: any) => ({
         ...s,
         hasSetup: Array.isArray(s.setups) ? s.setups.length > 0 : !!s.setups,
+        lastVisitDate: lastVisitMap[s.id] || null,
+        daysSinceLastVisit: lastVisitMap[s.id] ? differenceInDays(new Date(), new Date(lastVisitMap[s.id])) : null,
       }));
     },
     enabled: !!selectedLocation,
   });
-  const spots = spotsWithSetups as (Spot & { hasSetup: boolean })[];
+  const spots = spotsWithSetups as (Spot & { hasSetup: boolean; lastVisitDate: string | null; daysSinceLastVisit: number | null })[];
 
   // Fetch setup for selected spot
   const { data: spotSetup } = useQuery({
@@ -474,11 +525,56 @@ export default function NewVisitReport() {
         };
       });
       
-      setSlots(generatedSlots);
+      // Overlay cached slot values if restoring from cache
+      if (cached?.slots && cached.slots.length > 0) {
+        const restored = generatedSlots.map(slot => {
+          const cs = cached.slots!.find((s: any) => s.slotId === slot.slotId);
+          if (!cs) return slot;
+          return {
+            ...slot,
+            unitsSold: cs.unitsSold || 0,
+            unitsRefilled: cs.unitsRefilled || 0,
+            unitsRemoved: cs.unitsRemoved || 0,
+            falseCoins: cs.falseCoins || 0,
+            auditedCount: cs.auditedCount ?? null,
+            jamStatus: cs.jamStatus || "no_jam",
+            reportIssue: cs.reportIssue || false,
+            issueDescription: cs.issueDescription || "",
+            severity: cs.severity || "",
+            replaceAllToys: cs.replaceAllToys || false,
+            toyId: cs.toyId || slot.toyId,
+            toyName: cs.toyName || slot.toyName,
+            pricePerUnit: cs.pricePerUnit || slot.pricePerUnit,
+            capacity: cs.capacity || slot.capacity,
+            toyCapacity: cs.toyCapacity || slot.toyCapacity,
+            currentStock: cs.currentStock ?? slot.currentStock,
+            cashCollected: cs.cashCollected ?? slot.cashCollected,
+          };
+        });
+        setSlots(restored);
+      } else {
+        setSlots(generatedSlots);
+      }
     } else if (!selectedSpot || !visitType) {
       setSlots([]);
     }
   }, [machineSlots, machines, products, selectedSpot, visitType]);
+
+  // Auto-save form state to localStorage
+  useEffect(() => {
+    const cache: FormCache = {
+      selectedLocation,
+      selectedSpot,
+      visitType,
+      visitDate: visitDate.toISOString(),
+      hasObservationIssue,
+      observationIssueLog,
+      observationSeverity,
+      confirmAccurate,
+      slots: slots.map(s => ({ ...s, swapPhotoFile: null })),
+    };
+    localStorage.setItem(FORM_CACHE_KEY, JSON.stringify(cache));
+  }, [selectedLocation, selectedSpot, visitType, visitDate, hasObservationIssue, observationIssueLog, observationSeverity, confirmAccurate, slots]);
 
   // Calculate totals
   const totals = useMemo(() => {
@@ -649,6 +745,7 @@ export default function NewVisitReport() {
       return data;
     },
     onSuccess: (data) => {
+      clearFormCache();
       queryClient.invalidateQueries({ queryKey: ['spot_visits'] });
       queryClient.invalidateQueries({ queryKey: ['machine-slots'] });
       queryClient.invalidateQueries({ queryKey: ['warehouse-inventory'] });
@@ -1441,7 +1538,17 @@ export default function NewVisitReport() {
                   <SelectValue placeholder={selectedLocation ? "Select a spot..." : "Select location first"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {[...spots].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map((spot) => (
+                  {[...spots]
+                    .sort((a, b) => {
+                      // First sort by name (numeric)
+                      const nameCompare = a.name.localeCompare(b.name, undefined, { numeric: true });
+                      if (nameCompare !== 0) return nameCompare;
+                      // Then by days since last visit (descending — longest ago first)
+                      const aDays = a.daysSinceLastVisit ?? Infinity;
+                      const bDays = b.daysSinceLastVisit ?? Infinity;
+                      return bDays - aDays;
+                    })
+                    .map((spot) => (
                     <SelectItem 
                       key={spot.id} 
                       value={spot.id}
@@ -1457,6 +1564,16 @@ export default function NewVisitReport() {
                         ) : (
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-destructive/20 text-destructive border-0">
                             No Setup
+                          </Badge>
+                        )}
+                        {spot.daysSinceLastVisit !== null && spot.hasSetup && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-0 text-muted-foreground">
+                            <Clock className="w-3 h-3 mr-0.5" /> {spot.daysSinceLastVisit}d ago
+                          </Badge>
+                        )}
+                        {spot.daysSinceLastVisit === null && spot.hasSetup && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-0 text-muted-foreground">
+                            Never visited
                           </Badge>
                         )}
                       </div>
