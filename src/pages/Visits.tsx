@@ -90,6 +90,10 @@ export default function VisitsPage() {
   // Rollback mutation
   const reverseVisit = useMutation({
     mutationFn: async (visitId: string) => {
+      // Get current user for ledger entries
+      const { data: { user } } = await supabase.auth.getUser();
+      const performedBy = user?.id || null;
+
       // 1. Fetch snapshots
       const { data: snapshots, error: snapErr } = await supabase
         .from('visit_slot_snapshots' as any)
@@ -104,7 +108,7 @@ export default function VisitsPage() {
         .eq('spot_visit_id', visitId);
       if (lineErr) throw lineErr;
 
-      // 3. Find source warehouse (first non-system warehouse, same logic as submission)
+      // 3. Find source warehouse
       const { data: warehouses } = await supabase
         .from('warehouses')
         .select('id, is_system')
@@ -112,12 +116,28 @@ export default function VisitsPage() {
         .limit(1);
       const sourceWarehouseId = warehouses?.[0]?.id || null;
 
-      // 4. Reverse warehouse inventory changes
+      // Helper: get latest running balance from ledger
+      const getBalance = async (itemId: string, whId: string | null, slotId: string | null) => {
+        let query = supabase
+          .from('inventory_ledger' as any)
+          .select('running_balance')
+          .eq('item_detail_id', itemId)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (whId) query = query.eq('warehouse_id', whId);
+        else query = query.is('warehouse_id', null);
+        if (slotId) query = query.eq('slot_id', slotId);
+        else query = query.is('slot_id', null);
+        const { data } = await query.maybeSingle();
+        return (data as any)?.running_balance ?? 0;
+      };
+
+      // 4. Reverse warehouse inventory changes + write ledger entries
       if (sourceWarehouseId && lineItems && lineItems.length > 0) {
         for (const li of lineItems as any[]) {
           if (!li.product_id) continue;
 
-          // Undo refill: units were deducted from warehouse during visit → add them back
+          // Undo refill: add back to warehouse
           if ((li.quantity_added || 0) > 0) {
             const { data: existing } = await supabase
               .from('inventory')
@@ -126,14 +146,28 @@ export default function VisitsPage() {
               .eq('warehouse_id', sourceWarehouseId)
               .maybeSingle();
             if (existing) {
+              const newQty = (existing.quantity_on_hand || 0) + li.quantity_added;
               await supabase.from('inventory').update({
-                quantity_on_hand: (existing.quantity_on_hand || 0) + li.quantity_added,
+                quantity_on_hand: newQty,
                 last_updated: new Date().toISOString(),
               }).eq('id', existing.id);
             }
+            // Ledger: warehouse gets stock back
+            const whBal = await getBalance(li.product_id, sourceWarehouseId, null);
+            await supabase.from('inventory_ledger' as any).insert({
+              item_detail_id: li.product_id,
+              warehouse_id: sourceWarehouseId,
+              movement_type: 'reversal',
+              quantity: li.quantity_added,
+              running_balance: whBal + li.quantity_added,
+              reference_id: visitId,
+              reference_type: 'visit',
+              performed_by: performedBy,
+              notes: 'Reversal: refill undone',
+            });
           }
 
-          // Undo removal: units were returned to warehouse during visit → deduct them back
+          // Undo removal: deduct from warehouse
           if ((li.quantity_removed || 0) > 0 && li.action_type !== 'swap') {
             const { data: existing } = await supabase
               .from('inventory')
@@ -142,18 +176,31 @@ export default function VisitsPage() {
               .eq('warehouse_id', sourceWarehouseId)
               .maybeSingle();
             if (existing) {
+              const newQty = (existing.quantity_on_hand || 0) - li.quantity_removed;
               await supabase.from('inventory').update({
-                quantity_on_hand: (existing.quantity_on_hand || 0) - li.quantity_removed,
+                quantity_on_hand: newQty,
                 last_updated: new Date().toISOString(),
               }).eq('id', existing.id);
             }
+            // Ledger: warehouse loses returned stock
+            const whBal = await getBalance(li.product_id, sourceWarehouseId, null);
+            await supabase.from('inventory_ledger' as any).insert({
+              item_detail_id: li.product_id,
+              warehouse_id: sourceWarehouseId,
+              movement_type: 'reversal',
+              quantity: -li.quantity_removed,
+              running_balance: whBal - li.quantity_removed,
+              reference_id: visitId,
+              reference_type: 'visit',
+              performed_by: performedBy,
+              notes: 'Reversal: removal undone',
+            });
           }
         }
 
-        // Undo swap returns: old products were returned to warehouse during visit → deduct them back
+        // Undo swap returns
         if (snapshots && snapshots.length > 0) {
           for (const snap of snapshots as any[]) {
-            // Find the corresponding line item for this slot
             const li = (lineItems as any[]).find((l: any) => l.slot_id === snap.slot_id);
             if (li?.action_type === 'swap' && snap.previous_product_id && snap.previous_product_id !== li.product_id) {
               const returnQty = snap.previous_stock || 0;
@@ -170,13 +217,49 @@ export default function VisitsPage() {
                     last_updated: new Date().toISOString(),
                   }).eq('id', existing.id);
                 }
+                // Ledger: swap return reversed
+                const whBal = await getBalance(snap.previous_product_id, sourceWarehouseId, null);
+                await supabase.from('inventory_ledger' as any).insert({
+                  item_detail_id: snap.previous_product_id,
+                  warehouse_id: sourceWarehouseId,
+                  movement_type: 'reversal',
+                  quantity: -returnQty,
+                  running_balance: whBal - returnQty,
+                  reference_id: visitId,
+                  reference_type: 'visit',
+                  performed_by: performedBy,
+                  notes: 'Reversal: swap return undone',
+                });
               }
             }
           }
         }
       }
 
-      // 5. Restore each machine slot from snapshot
+      // 5. Write slot reversal ledger entries BEFORE restoring slots
+      if (snapshots && snapshots.length > 0) {
+        for (const snap of snapshots as any[]) {
+          const li = (lineItems as any[]).find((l: any) => l.slot_id === snap.slot_id);
+          const productId = li?.product_id || snap.previous_product_id;
+          if (productId) {
+            const slotBal = await getBalance(productId, null, snap.slot_id);
+            const restoredStock = snap.previous_stock || 0;
+            await supabase.from('inventory_ledger' as any).insert({
+              item_detail_id: productId,
+              slot_id: snap.slot_id,
+              movement_type: 'reversal',
+              quantity: restoredStock - slotBal,
+              running_balance: restoredStock,
+              reference_id: visitId,
+              reference_type: 'visit',
+              performed_by: performedBy,
+              notes: 'Reversal: slot restored to pre-visit state',
+            });
+          }
+        }
+      }
+
+      // 6. Restore each machine slot from snapshot
       if (snapshots && snapshots.length > 0) {
         for (const snap of snapshots as any[]) {
           await supabase.from('machine_slots').update({
@@ -188,13 +271,13 @@ export default function VisitsPage() {
         }
       }
 
-      // 6. Delete visit line items
+      // 7. Delete visit line items
       await supabase
         .from('visit_line_items')
         .delete()
         .eq('spot_visit_id', visitId);
 
-      // 7. Mark visit as reversed
+      // 8. Mark visit as reversed
       const { error: updateErr } = await supabase
         .from('spot_visits')
         .update({ status: 'reversed' as any })
@@ -208,6 +291,8 @@ export default function VisitsPage() {
       queryClient.invalidateQueries({ queryKey: ['consolidated-inventory'] });
       queryClient.invalidateQueries({ queryKey: ['item-warehouse-stock'] });
       queryClient.invalidateQueries({ queryKey: ['item-machine-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['item-logistics-history'] });
+      queryClient.invalidateQueries({ queryKey: ['item-inventory-ledger'] });
       toast.success("Visit reversed successfully. Machine slots and warehouse inventory restored.");
       setReverseVisitId(null);
     },

@@ -27,7 +27,6 @@ interface SlotPayload {
   severity: string;
   cashCollected: number;
   photoUrl: string | null;
-  // For swaps: what was the old product before replacement
   previousProductId: string | null;
   previousStock: number;
 }
@@ -44,8 +43,134 @@ interface VisitPayload {
   observationIssueLog: string;
   observationSeverity: string;
   slots: SlotPayload[];
-  // Source warehouse for inventory operations
   sourceWarehouseId: string | null;
+}
+
+// ── Helper: get latest running balance for a location ──
+async function getRunningBalance(
+  db: ReturnType<typeof createClient>,
+  itemDetailId: string,
+  warehouseId: string | null,
+  slotId: string | null
+): Promise<number> {
+  let query = db
+    .from("inventory_ledger")
+    .select("running_balance")
+    .eq("item_detail_id", itemDetailId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (warehouseId) {
+    query = query.eq("warehouse_id", warehouseId);
+  } else {
+    query = query.is("warehouse_id", null);
+  }
+
+  if (slotId) {
+    query = query.eq("slot_id", slotId);
+  } else {
+    query = query.is("slot_id", null);
+  }
+
+  const { data } = await query.maybeSingle();
+  return data?.running_balance ?? 0;
+}
+
+// ── Helper: append a ledger entry ──
+async function appendLedger(
+  db: ReturnType<typeof createClient>,
+  entry: {
+    item_detail_id: string;
+    warehouse_id?: string | null;
+    slot_id?: string | null;
+    movement_type: string;
+    quantity: number;
+    running_balance: number;
+    reference_id?: string | null;
+    reference_type?: string | null;
+    performed_by?: string | null;
+    notes?: string | null;
+  }
+) {
+  await db.from("inventory_ledger").insert({
+    item_detail_id: entry.item_detail_id,
+    warehouse_id: entry.warehouse_id || null,
+    slot_id: entry.slot_id || null,
+    movement_type: entry.movement_type,
+    quantity: entry.quantity,
+    running_balance: entry.running_balance,
+    reference_id: entry.reference_id || null,
+    reference_type: entry.reference_type || null,
+    performed_by: entry.performed_by || null,
+    notes: entry.notes || null,
+  });
+}
+
+// ── Helper: upsert inventory (add quantity) ──
+async function upsertInventory(
+  db: ReturnType<typeof createClient>,
+  itemDetailId: string,
+  warehouseId: string,
+  quantity: number
+) {
+  const { data: existing } = await db
+    .from("inventory")
+    .select("id, quantity_on_hand")
+    .eq("item_detail_id", itemDetailId)
+    .eq("warehouse_id", warehouseId)
+    .maybeSingle();
+
+  if (existing) {
+    await db
+      .from("inventory")
+      .update({
+        quantity_on_hand: (existing.quantity_on_hand || 0) + quantity,
+        last_updated: new Date().toISOString(),
+      })
+      .eq("id", existing.id);
+  } else {
+    await db.from("inventory").insert({
+      item_detail_id: itemDetailId,
+      warehouse_id: warehouseId,
+      quantity_on_hand: quantity,
+      last_updated: new Date().toISOString(),
+    });
+  }
+}
+
+// ── Helper: deduct inventory (subtract quantity) ──
+async function deductInventory(
+  db: ReturnType<typeof createClient>,
+  itemDetailId: string,
+  warehouseId: string,
+  quantity: number
+): Promise<boolean> {
+  const { data: existing } = await db
+    .from("inventory")
+    .select("id, quantity_on_hand")
+    .eq("item_detail_id", itemDetailId)
+    .eq("warehouse_id", warehouseId)
+    .maybeSingle();
+
+  if (existing) {
+    const newQty = (existing.quantity_on_hand || 0) - quantity;
+    await db
+      .from("inventory")
+      .update({
+        quantity_on_hand: newQty,
+        last_updated: new Date().toISOString(),
+      })
+      .eq("id", existing.id);
+    return newQty >= 0;
+  } else {
+    await db.from("inventory").insert({
+      item_detail_id: itemDetailId,
+      warehouse_id: warehouseId,
+      quantity_on_hand: -quantity,
+      last_updated: new Date().toISOString(),
+    });
+    return false;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -66,7 +191,6 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verify user
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -81,7 +205,6 @@ Deno.serve(async (req) => {
     }
     const userId = claimsData.claims.sub as string;
 
-    // Use service role for the transaction (bypasses RLS)
     const db = createClient(supabaseUrl, supabaseServiceKey);
 
     const payload: VisitPayload = await req.json();
@@ -174,25 +297,78 @@ Deno.serve(async (req) => {
         throw new Error(`machine_slots update (${s.slotId}): ${error.message}`);
     }
 
-    // ── Step 5: Connected Inventory Ledger (Feature 2) ──
-    if (sourceWarehouseId) {
-      for (const s of slots) {
+    // ── Step 5: Connected Inventory Ledger + Warehouse Updates ──
+    for (const s of slots) {
+      if (!s.toyId) continue;
+
+      // --- Slot ledger: record the net stock change on the machine slot ---
+      const slotBalance = s.currentStock;
+      const slotQtyChange = s.currentStock - s.lastStock;
+      if (slotQtyChange !== 0) {
+        const movementType = s.replaceAllToys ? "swap_in" : 
+          (slotQtyChange > 0 ? "refill" : "removal");
+        await appendLedger(db, {
+          item_detail_id: s.toyId,
+          slot_id: s.slotId,
+          movement_type: movementType,
+          quantity: slotQtyChange,
+          running_balance: slotBalance,
+          reference_id: visitId,
+          reference_type: "visit",
+          performed_by: userId,
+          notes: `${visitType} — ${s.toyName}`,
+        });
+      }
+
+      // --- Warehouse ledger + inventory updates ---
+      if (sourceWarehouseId) {
         // Handle product swap: return old product stock to warehouse
         if (s.replaceAllToys && s.previousProductId && s.previousProductId !== s.toyId) {
           const returnQty = s.previousStock;
           if (returnQty > 0) {
             await upsertInventory(db, s.previousProductId, sourceWarehouseId, returnQty);
+            const prevBal = await getRunningBalance(db, s.previousProductId, sourceWarehouseId, null);
+            await appendLedger(db, {
+              item_detail_id: s.previousProductId,
+              warehouse_id: sourceWarehouseId,
+              movement_type: "swap_out",
+              quantity: returnQty,
+              running_balance: prevBal + returnQty,
+              reference_id: visitId,
+              reference_type: "visit",
+              performed_by: userId,
+              notes: `Swap return from slot`,
+            });
+            // Also record the slot losing old product
+            await appendLedger(db, {
+              item_detail_id: s.previousProductId,
+              slot_id: s.slotId,
+              movement_type: "swap_out",
+              quantity: -s.previousStock,
+              running_balance: 0,
+              reference_id: visitId,
+              reference_type: "visit",
+              performed_by: userId,
+              notes: `Old product removed during swap`,
+            });
           }
         }
 
         // Deduct refilled units from warehouse
-        if (s.unitsRefilled > 0 && s.toyId) {
-          const deducted = await deductInventory(
-            db,
-            s.toyId,
-            sourceWarehouseId,
-            s.unitsRefilled
-          );
+        if (s.unitsRefilled > 0) {
+          const deducted = await deductInventory(db, s.toyId, sourceWarehouseId, s.unitsRefilled);
+          const whBal = await getRunningBalance(db, s.toyId, sourceWarehouseId, null);
+          await appendLedger(db, {
+            item_detail_id: s.toyId,
+            warehouse_id: sourceWarehouseId,
+            movement_type: "refill",
+            quantity: -s.unitsRefilled,
+            running_balance: whBal - s.unitsRefilled,
+            reference_id: visitId,
+            reference_type: "visit",
+            performed_by: userId,
+            notes: `Refill to field — ${s.toyName}`,
+          });
           if (!deducted) {
             warnings.push(
               `Insufficient warehouse stock for "${s.toyName}" — refill of ${s.unitsRefilled} recorded but warehouse may go negative`
@@ -201,13 +377,25 @@ Deno.serve(async (req) => {
         }
 
         // Return removed units to warehouse (non-swap removals)
-        if (s.unitsRemoved > 0 && s.toyId && !s.replaceAllToys) {
+        if (s.unitsRemoved > 0 && !s.replaceAllToys) {
           await upsertInventory(db, s.toyId, sourceWarehouseId, s.unitsRemoved);
+          const whBal = await getRunningBalance(db, s.toyId, sourceWarehouseId, null);
+          await appendLedger(db, {
+            item_detail_id: s.toyId,
+            warehouse_id: sourceWarehouseId,
+            movement_type: "removal",
+            quantity: s.unitsRemoved,
+            running_balance: whBal + s.unitsRemoved,
+            reference_id: visitId,
+            reference_type: "visit",
+            performed_by: userId,
+            notes: `Returned from field — ${s.toyName}`,
+          });
         }
       }
     }
 
-    // ── Step 6: Financial Integrity Trail — inventory_adjustments (Feature 3) ──
+    // ── Step 6: Financial Integrity Trail — inventory_adjustments ──
     if (visitType === "inventory_audit") {
       const adjustments: Array<Record<string, unknown>> = [];
       for (const s of slots) {
@@ -227,6 +415,18 @@ Deno.serve(async (req) => {
               actual_quantity: s.auditedCount,
               difference: diff,
             });
+            // Ledger entry for the adjustment
+            await appendLedger(db, {
+              item_detail_id: s.toyId,
+              slot_id: s.slotId,
+              movement_type: "adjustment",
+              quantity: diff,
+              running_balance: s.auditedCount,
+              reference_id: visitId,
+              reference_type: "visit",
+              performed_by: userId,
+              notes: `Audit ${diff > 0 ? "surplus" : "shortage"}: expected ${expected}, found ${s.auditedCount}`,
+            });
           }
         }
       }
@@ -239,7 +439,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ── Step 7: Automatic Maintenance Loop (Feature 6) ──
+    // ── Step 7: Automatic Maintenance Loop ──
     const tickets: Array<Record<string, unknown>> = [];
 
     for (const s of slots) {
@@ -261,7 +461,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Observation-level issue
     if (hasObservationIssue && observationIssueLog) {
       tickets.push({
         location_id: locationId,
@@ -322,72 +521,3 @@ Deno.serve(async (req) => {
     );
   }
 });
-
-// ── Helper: upsert inventory (add quantity) ──
-async function upsertInventory(
-  db: ReturnType<typeof createClient>,
-  itemDetailId: string,
-  warehouseId: string,
-  quantity: number
-) {
-  // Try to find existing row
-  const { data: existing } = await db
-    .from("inventory")
-    .select("id, quantity_on_hand")
-    .eq("item_detail_id", itemDetailId)
-    .eq("warehouse_id", warehouseId)
-    .maybeSingle();
-
-  if (existing) {
-    await db
-      .from("inventory")
-      .update({
-        quantity_on_hand: (existing.quantity_on_hand || 0) + quantity,
-        last_updated: new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-  } else {
-    await db.from("inventory").insert({
-      item_detail_id: itemDetailId,
-      warehouse_id: warehouseId,
-      quantity_on_hand: quantity,
-      last_updated: new Date().toISOString(),
-    });
-  }
-}
-
-// ── Helper: deduct inventory (subtract quantity) ──
-async function deductInventory(
-  db: ReturnType<typeof createClient>,
-  itemDetailId: string,
-  warehouseId: string,
-  quantity: number
-): Promise<boolean> {
-  const { data: existing } = await db
-    .from("inventory")
-    .select("id, quantity_on_hand")
-    .eq("item_detail_id", itemDetailId)
-    .eq("warehouse_id", warehouseId)
-    .maybeSingle();
-
-  if (existing) {
-    const newQty = (existing.quantity_on_hand || 0) - quantity;
-    await db
-      .from("inventory")
-      .update({
-        quantity_on_hand: newQty,
-        last_updated: new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-    return newQty >= 0;
-  } else {
-    // No inventory row — create one with negative quantity as a warning
-    await db.from("inventory").insert({
-      item_detail_id: itemDetailId,
-      warehouse_id: warehouseId,
-      quantity_on_hand: -quantity,
-      last_updated: new Date().toISOString(),
-    });
-    return false;
-  }
-}
