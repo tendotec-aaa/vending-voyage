@@ -17,7 +17,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Plus, MapPin, Search, Layers, ChevronDown, Truck } from "lucide-react";
+import { Plus, MapPin, Search, Layers, ChevronDown, Truck, Calendar, DollarSign, Percent } from "lucide-react";
+import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -308,8 +309,8 @@ export default function Locations() {
                 <Card key={location.id}>
                   <Collapsible>
                     <div className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
                           <button
                             className="text-lg font-semibold text-primary hover:underline text-left"
                             onClick={() => navigate(`/locations/${location.id}`)}
@@ -317,10 +318,39 @@ export default function Locations() {
                             {location.name}
                           </button>
                           <p className="text-sm text-muted-foreground">{location.address || "No address"}</p>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
+                            {location.contract_start_date && (
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />
+                                Since {format(new Date(location.contract_start_date), "MMM d, yyyy")}
+                              </span>
+                            )}
+                            {location.negotiation_type && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 capitalize">
+                                {location.negotiation_type === "fixed_rent" ? "Fixed Rent" : location.negotiation_type === "commission" ? "Commission" : "Hybrid"}
+                              </Badge>
+                            )}
+                            {(location.negotiation_type === "commission" || location.negotiation_type === "hybrid") && location.commission_percentage ? (
+                              <span className="flex items-center gap-1">
+                                <Percent className="h-3 w-3" />
+                                {Number(location.commission_percentage)}%
+                              </span>
+                            ) : null}
+                            {location.contract_term && location.contract_term !== "indefinite" && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 capitalize">
+                                {location.contract_term.replace("_", " ")}
+                              </Badge>
+                            )}
+                            {location.contact_person_name && (
+                              <span className="truncate max-w-[150px]">📞 {location.contact_person_name}</span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           <Badge variant="secondary">{locationSpots.length}/{totalSpots} spots</Badge>
-                          <span className="text-sm text-foreground font-medium">${fmt2(Number(location.rent_amount || 0))}</span>
+                          {(location.negotiation_type === "fixed_rent" || location.negotiation_type === "hybrid") && Number(location.rent_amount) > 0 && (
+                            <span className="text-sm text-foreground font-medium">${fmt2(Number(location.rent_amount || 0))}</span>
+                          )}
                           {locationSpots.length > 0 && (
                             <CollapsibleTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-8 w-8">
