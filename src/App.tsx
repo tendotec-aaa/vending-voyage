@@ -11,6 +11,7 @@ import MachineDetail from "./pages/MachineDetail";
 import Setups from "./pages/Setups";
 import Visits from "./pages/Visits";
 import NewVisitReport from "./pages/NewVisitReport";
+import VisitDetail from "./pages/VisitDetail";
 import Inventory from "./pages/Inventory";
 import Locations from "./pages/Locations";
 import Analytics from "./pages/Analytics";
@@ -57,6 +58,7 @@ const App = () => (
             <Route path="/setups" element={<ProtectedRoute><Setups /></ProtectedRoute>} />
             <Route path="/visits" element={<ProtectedRoute><Visits /></ProtectedRoute>} />
             <Route path="/visits/new" element={<ProtectedRoute><NewVisitReport /></ProtectedRoute>} />
+            <Route path="/visits/:id" element={<ProtectedRoute><VisitDetail /></ProtectedRoute>} />
             <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
             <Route path="/inventory/:id" element={<ProtectedRoute><ItemDetail /></ProtectedRoute>} />
             <Route path="/locations" element={<ProtectedRoute><Locations /></ProtectedRoute>} />

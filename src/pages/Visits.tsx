@@ -463,7 +463,7 @@ export default function VisitsPage() {
                     <TableCell>{getStatusBadge(visit.status)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/visits/${visit.id}`)}>
                           <Eye className="w-4 h-4" />
                         </Button>
                         {isAdmin && visit.status !== 'reversed' && (
