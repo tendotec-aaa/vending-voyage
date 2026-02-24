@@ -34,6 +34,18 @@ const actionColors: Record<string, string> = {
   swap: "bg-chart-3/10 text-chart-3 border-chart-3/20",
 };
 
+const movementColors: Record<string, string> = {
+  receive: "bg-chart-2/10 text-chart-2 border-chart-2/20",
+  refill: "bg-primary/10 text-primary border-primary/20",
+  removal: "bg-chart-4/10 text-chart-4 border-chart-4/20",
+  swap_in: "bg-chart-2/10 text-chart-2 border-chart-2/20",
+  swap_out: "bg-chart-3/10 text-chart-3 border-chart-3/20",
+  reversal: "bg-destructive/10 text-destructive border-destructive/20",
+  adjustment: "bg-chart-4/10 text-chart-4 border-chart-4/20",
+  transfer: "bg-primary/10 text-primary border-primary/20",
+  initial: "bg-muted text-muted-foreground border-border",
+};
+
 export default function ItemDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -143,6 +155,25 @@ export default function ItemDetail() {
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
+    },
+    enabled: !!id,
+  });
+
+  const { data: ledgerEntries = [] } = useQuery({
+    queryKey: ["item-inventory-ledger", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("inventory_ledger" as any)
+        .select(`
+          id, created_at, movement_type, quantity, running_balance,
+          reference_id, reference_type, notes,
+          warehouse_id, slot_id, performed_by
+        `)
+        .eq("item_detail_id", id!)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return data as any[];
     },
     enabled: !!id,
   });
@@ -465,11 +496,68 @@ export default function ItemDetail() {
         })()}
 
         {/* ===== SECTION 4: Detailed History Tabs ===== */}
-        <Tabs defaultValue="logistics" className="w-full">
+        <Tabs defaultValue="ledger" className="w-full">
           <TabsList>
+            <TabsTrigger value="ledger">Inventory Ledger</TabsTrigger>
             <TabsTrigger value="logistics">Logistics History</TabsTrigger>
             <TabsTrigger value="acquisition">Acquisition History</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="ledger">
+            <Card>
+              <CardContent className="p-0">
+                {ledgerEntries.length === 0 ? (
+                  <p className="text-muted-foreground p-6">No ledger entries yet.</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">Balance</TableHead>
+                        <TableHead>Notes</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {ledgerEntries.map((entry: any) => {
+                        const locationLabel = entry.warehouse_id
+                          ? warehouseStock.find((w: any) => w.warehouse?.id === entry.warehouse_id)?.warehouse?.name || "Warehouse"
+                          : entry.slot_id
+                          ? machineStock.find((m: any) => m.machine)?.machine?.serial_number || "Machine Slot"
+                          : "—";
+                        return (
+                          <TableRow key={entry.id}>
+                            <TableCell className="text-sm">
+                              {entry.created_at ? format(new Date(entry.created_at), "MMM d, yyyy HH:mm") : "—"}
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={`text-xs ${movementColors[entry.movement_type] || ""}`}>
+                                {entry.movement_type.replace(/_/g, " ")}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {entry.warehouse_id ? "🏭 " : entry.slot_id ? "🎰 " : ""}{locationLabel}
+                            </TableCell>
+                            <TableCell className={`text-right text-sm font-medium ${entry.quantity > 0 ? "text-chart-2" : entry.quantity < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                              {entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}
+                            </TableCell>
+                            <TableCell className="text-right text-sm font-semibold text-foreground">
+                              {entry.running_balance.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                              {entry.notes || "—"}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="logistics">
             <Card>

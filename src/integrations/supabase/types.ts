@@ -212,6 +212,73 @@ export type Database = {
           },
         ]
       }
+      inventory_ledger: {
+        Row: {
+          created_at: string
+          id: string
+          item_detail_id: string
+          movement_type: string
+          notes: string | null
+          performed_by: string | null
+          quantity: number
+          reference_id: string | null
+          reference_type: string | null
+          running_balance: number
+          slot_id: string | null
+          warehouse_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_detail_id: string
+          movement_type: string
+          notes?: string | null
+          performed_by?: string | null
+          quantity: number
+          reference_id?: string | null
+          reference_type?: string | null
+          running_balance: number
+          slot_id?: string | null
+          warehouse_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_detail_id?: string
+          movement_type?: string
+          notes?: string | null
+          performed_by?: string | null
+          quantity?: number
+          reference_id?: string | null
+          reference_type?: string | null
+          running_balance?: number
+          slot_id?: string | null
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_ledger_item_detail_id_fkey"
+            columns: ["item_detail_id"]
+            isOneToOne: false
+            referencedRelation: "item_details"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_ledger_slot_id_fkey"
+            columns: ["slot_id"]
+            isOneToOne: false
+            referencedRelation: "machine_slots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_ledger_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       item_details: {
         Row: {
           category_id: string | null
