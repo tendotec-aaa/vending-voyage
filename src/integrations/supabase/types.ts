@@ -1200,6 +1200,7 @@ export type Database = {
         Row: {
           action_type: Database["public"]["Enums"]["visit_action_type"]
           cash_collected: number | null
+          computed_current_stock: number | null
           created_at: string | null
           false_coins: number
           id: string
@@ -1212,10 +1213,12 @@ export type Database = {
           quantity_removed: number | null
           slot_id: string | null
           spot_visit_id: string | null
+          units_sold: number | null
         }
         Insert: {
           action_type: Database["public"]["Enums"]["visit_action_type"]
           cash_collected?: number | null
+          computed_current_stock?: number | null
           created_at?: string | null
           false_coins?: number
           id?: string
@@ -1228,10 +1231,12 @@ export type Database = {
           quantity_removed?: number | null
           slot_id?: string | null
           spot_visit_id?: string | null
+          units_sold?: number | null
         }
         Update: {
           action_type?: Database["public"]["Enums"]["visit_action_type"]
           cash_collected?: number | null
+          computed_current_stock?: number | null
           created_at?: string | null
           false_coins?: number
           id?: string
@@ -1244,6 +1249,7 @@ export type Database = {
           quantity_removed?: number | null
           slot_id?: string | null
           spot_visit_id?: string | null
+          units_sold?: number | null
         }
         Relationships: [
           {
