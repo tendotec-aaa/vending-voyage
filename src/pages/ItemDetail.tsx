@@ -132,7 +132,7 @@ export default function ItemDetail() {
       const { data, error } = await supabase
         .from("visit_line_items")
         .select(`
-          id, action_type, quantity_added, quantity_removed,
+          id, spot_visit_id, action_type, quantity_added, quantity_removed,
           cash_collected, meter_reading, created_at,
           spot_visit:spot_visits(
             visit_date, status,
@@ -484,7 +484,7 @@ export default function ItemDetail() {
                         <TableHead>Location</TableHead>
                         <TableHead>Action</TableHead>
                         <TableHead className="text-right">Qty Change</TableHead>
-                        <TableHead className="text-right">Cash</TableHead>
+                        <TableHead className="text-right">Sales (units)</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -493,8 +493,15 @@ export default function ItemDetail() {
                         const spot = visit?.spot;
                         const location = spot?.location;
                         const qty = (row.quantity_added || 0) - (row.quantity_removed || 0);
+                        const unitsSold = row.meter_reading || 0;
                         return (
-                          <TableRow key={row.id}>
+                          <TableRow
+                            key={row.id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => {
+                              if (row.spot_visit_id) navigate(`/visits`);
+                            }}
+                          >
                             <TableCell className="text-sm">
                               {visit?.visit_date ? format(new Date(visit.visit_date), "MMM d, yyyy") : "—"}
                             </TableCell>
@@ -510,7 +517,7 @@ export default function ItemDetail() {
                               {qty > 0 ? `+${qty}` : qty}
                             </TableCell>
                             <TableCell className="text-right text-sm">
-                              {row.cash_collected ? `$${fmt2(Number(row.cash_collected))}` : "—"}
+                              {unitsSold > 0 ? unitsSold.toLocaleString() : "—"}
                             </TableCell>
                           </TableRow>
                         );
