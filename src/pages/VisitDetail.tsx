@@ -268,6 +268,7 @@ export default function VisitDetail() {
       fillPct,
       added,
       removed,
+      unitsSold,
       cashCollected: li.cash_collected || 0,
       falseCoins,
       jamStatus,
@@ -536,7 +537,11 @@ export default function VisitDetail() {
                     <Separator />
 
                     {/* Movement row */}
-                    <div className="grid grid-cols-4 gap-2 text-center">
+                    <div className="grid grid-cols-5 gap-2 text-center">
+                      <div>
+                        <span className="text-[10px] text-muted-foreground block">Sold</span>
+                        <span className="text-sm font-medium text-foreground">{slot.unitsSold}</span>
+                      </div>
                       <div>
                         <span className="text-[10px] text-muted-foreground block">Added</span>
                         <span className="text-sm font-medium text-green-600 dark:text-green-400">{slot.added > 0 ? `+${slot.added}` : "0"}</span>
