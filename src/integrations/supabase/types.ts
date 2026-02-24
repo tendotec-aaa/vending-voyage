@@ -1201,7 +1201,9 @@ export type Database = {
           action_type: Database["public"]["Enums"]["visit_action_type"]
           cash_collected: number | null
           created_at: string | null
+          false_coins: number
           id: string
+          jam_status: string
           machine_id: string | null
           meter_reading: number | null
           photo_url: string | null
@@ -1215,7 +1217,9 @@ export type Database = {
           action_type: Database["public"]["Enums"]["visit_action_type"]
           cash_collected?: number | null
           created_at?: string | null
+          false_coins?: number
           id?: string
+          jam_status?: string
           machine_id?: string | null
           meter_reading?: number | null
           photo_url?: string | null
@@ -1229,7 +1233,9 @@ export type Database = {
           action_type?: Database["public"]["Enums"]["visit_action_type"]
           cash_collected?: number | null
           created_at?: string | null
+          false_coins?: number
           id?: string
+          jam_status?: string
           machine_id?: string | null
           meter_reading?: number | null
           photo_url?: string | null

@@ -272,6 +272,8 @@ Deno.serve(async (req) => {
       cash_collected: s.cashCollected,
       meter_reading: s.auditedCount,
       photo_url: s.photoUrl,
+      false_coins: s.falseCoins || 0,
+      jam_status: s.jamStatus || "no_jam",
     }));
     const { error: lineErr } = await db
       .from("visit_line_items")
