@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -160,7 +161,7 @@ export default function Locations() {
   );
 
   const getSpotsForLocation = (locationId: string) =>
-    spots.filter((s) => s.location_id === locationId).sort((a, b) => a.name.localeCompare(b.name));
+    spots.filter((s) => s.location_id === locationId).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
   const getSetupForSpot = (spotId: string) => setups.find((s) => s.spot_id === spotId);
   const getMachinesForSetup = (setupId: string) => allMachines.filter((m) => m.setup_id === setupId).sort((a, b) => (a.position_on_setup || 0) - (b.position_on_setup || 0));
@@ -305,143 +306,160 @@ export default function Locations() {
 
               return (
                 <Card key={location.id}>
-                  <div className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <button
-                          className="text-lg font-semibold text-primary hover:underline text-left"
-                          onClick={() => navigate(`/locations/${location.id}`)}
-                        >
-                          {location.name}
-                        </button>
-                        <p className="text-sm text-muted-foreground">{location.address || "No address"}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary">{locationSpots.length}/{totalSpots} spots</Badge>
-                        <span className="text-sm text-foreground font-medium">${fmt2(Number(location.rent_amount || 0))}</span>
+                  <Collapsible>
+                    <div className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <button
+                            className="text-lg font-semibold text-primary hover:underline text-left"
+                            onClick={() => navigate(`/locations/${location.id}`)}
+                          >
+                            {location.name}
+                          </button>
+                          <p className="text-sm text-muted-foreground">{location.address || "No address"}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary">{locationSpots.length}/{totalSpots} spots</Badge>
+                          <span className="text-sm text-foreground font-medium">${fmt2(Number(location.rent_amount || 0))}</span>
+                          {locationSpots.length > 0 && (
+                            <CollapsibleTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <ChevronDown className="h-4 w-4 transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
+                              </Button>
+                            </CollapsibleTrigger>
+                          )}
+                        </div>
                       </div>
                     </div>
 
                     {locationSpots.length > 0 && (
-                      <Accordion type="multiple" className="w-full">
-                        {locationSpots.map((spot) => {
-                          const assignedSetup = getSetupForSpot(spot.id);
-                          const setupMachines = assignedSetup ? getMachinesForSetup(assignedSetup.id) : [];
+                      <CollapsibleContent>
+                        <div className="px-4 pb-4">
+                          <Accordion type="multiple" className="w-full">
+                            {locationSpots.map((spot) => {
+                              const assignedSetup = getSetupForSpot(spot.id);
+                              const setupMachines = assignedSetup ? getMachinesForSetup(assignedSetup.id) : [];
 
-                          // Calculate overall spot stock
-                          let spotTotalStock = 0;
-                          let spotTotalCapacity = 0;
-                          setupMachines.forEach((m) => {
-                            const slots = getSlotsForMachine(m.id);
-                            slots.forEach((s: any) => {
-                              spotTotalStock += s.current_stock || 0;
-                              spotTotalCapacity += s.capacity || 150;
-                            });
-                          });
-                          const spotStockPct = spotTotalCapacity > 0 ? (spotTotalStock / spotTotalCapacity) * 100 : 0;
+                              let spotTotalStock = 0;
+                              let spotTotalCapacity = 0;
+                              setupMachines.forEach((m) => {
+                                const slots = getSlotsForMachine(m.id);
+                                slots.forEach((s: any) => {
+                                  spotTotalStock += s.current_stock || 0;
+                                  spotTotalCapacity += s.capacity || 150;
+                                });
+                              });
+                              const spotStockPct = spotTotalCapacity > 0 ? (spotTotalStock / spotTotalCapacity) * 100 : 0;
 
-                          return (
-                            <AccordionItem key={spot.id} value={spot.id}>
-                              <AccordionTrigger className="py-2 px-3 hover:no-underline">
-                                <div className="flex items-center gap-3 flex-1 mr-2">
-                                  <Layers className="h-4 w-4 text-muted-foreground shrink-0" />
-                                  <span className="text-sm font-medium">{spot.name}</span>
-                                  <Badge variant={spot.status === "active" ? "default" : "secondary"} className="text-xs">{spot.status}</Badge>
-                                  {assignedSetup ? (
-                                    <Badge variant="outline" className="text-xs">{assignedSetup.name}</Badge>
-                                  ) : (
-                                    <Badge variant="secondary" className="text-xs">No setup</Badge>
-                                  )}
-                                  {assignedSetup && spotTotalCapacity > 0 && (
-                                    <div className="hidden sm:flex items-center gap-2 ml-auto">
-                                      <div className="w-20 h-2 rounded-full bg-muted overflow-hidden">
-                                        <div
-                                          className={`h-full rounded-full ${getStockColor(spotTotalStock, spotTotalCapacity)}`}
-                                          style={{ width: `${Math.min(spotStockPct, 100)}%` }}
-                                        />
-                                      </div>
-                                      <span className="text-xs text-muted-foreground">{Math.round(spotStockPct)}%</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </AccordionTrigger>
-                              <AccordionContent className="px-3 pb-3">
-                                {!assignedSetup ? (
-                                  <div className="space-y-2">
-                                    <p className="text-sm text-muted-foreground">No setup assigned to this spot.</p>
-                                    {unassignedSetups.length > 0 ? (
-                                      <Select onValueChange={(setupId) => assignSetupToSpot.mutate({ setupId, spotId: spot.id })}>
-                                        <SelectTrigger className="w-full sm:w-[250px]">
-                                          <SelectValue placeholder="Assign a setup..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {unassignedSetups.map((s) => (
-                                            <SelectItem key={s.id} value={s.id}>
-                                              {s.name} ({s.type})
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    ) : (
-                                      <p className="text-xs text-muted-foreground">No unassigned setups available. Create one in the Setups page.</p>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="space-y-3">
-                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                      <span>Setup: <strong className="text-foreground">{assignedSetup.name}</strong></span>
-                                      <Badge variant="outline" className="text-xs capitalize">{assignedSetup.type}</Badge>
-                                    </div>
-                                    {setupMachines.map((machine) => {
-                                      const slots = getSlotsForMachine(machine.id);
-                                      return (
-                                        <div key={machine.id} className="border rounded-md overflow-hidden">
-                                          <div
-                                            className="flex items-center justify-between p-2 bg-muted/30 cursor-pointer hover:bg-muted/50"
-                                            onClick={() => navigate(`/machines/${machine.id}`)}
-                                          >
-                                            <div className="flex items-center gap-2">
-                                              <Truck className="h-4 w-4 text-muted-foreground" />
-                                              <span className="text-sm font-medium">{machine.serial_number}</span>
-                                            </div>
-                                            {machine.position_on_setup && (
-                                              <Badge variant="outline" className="text-xs">Pos {machine.position_on_setup}</Badge>
-                                            )}
+                              return (
+                                <AccordionItem key={spot.id} value={spot.id}>
+                                  <AccordionTrigger className="py-2 px-3 hover:no-underline">
+                                    <div className="flex items-center gap-3 flex-1 mr-2">
+                                      <Layers className="h-4 w-4 text-muted-foreground shrink-0" />
+                                      <button
+                                        className="text-sm font-medium text-primary hover:underline text-left"
+                                        onClick={(e) => { e.stopPropagation(); navigate(`/spots/${spot.id}`); }}
+                                      >
+                                        {spot.name}
+                                      </button>
+                                      <Badge variant={spot.status === "active" ? "default" : "secondary"} className="text-xs">{spot.status}</Badge>
+                                      {assignedSetup ? (
+                                        <Badge variant="outline" className="text-xs">{assignedSetup.name}</Badge>
+                                      ) : (
+                                        <Badge variant="secondary" className="text-xs">No setup</Badge>
+                                      )}
+                                      {assignedSetup && spotTotalCapacity > 0 && (
+                                        <div className="hidden sm:flex items-center gap-2 ml-auto">
+                                          <div className="w-20 h-2 rounded-full bg-muted overflow-hidden">
+                                            <div
+                                              className={`h-full rounded-full ${getStockColor(spotTotalStock, spotTotalCapacity)}`}
+                                              style={{ width: `${Math.min(spotStockPct, 100)}%` }}
+                                            />
                                           </div>
-                                          {slots.length > 0 && (
-                                            <div className="p-2 space-y-2">
-                                              {slots.map((slot: any) => {
-                                                const stock = slot.current_stock || 0;
-                                                const capacity = slot.capacity || 150;
-                                                const pct = capacity > 0 ? (stock / capacity) * 100 : 0;
-                                                return (
-                                                  <div key={slot.id} className="flex items-center gap-3">
-                                                    <span className="text-xs text-muted-foreground w-10 shrink-0">S{slot.slot_number}</span>
-                                                    <span className="text-xs text-foreground w-24 truncate">{slot.item_details?.name || "Empty"}</span>
-                                                    <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                                                      <div
-                                                        className={`h-full rounded-full transition-all ${getStockColor(stock, capacity)}`}
-                                                        style={{ width: `${Math.min(pct, 100)}%` }}
-                                                      />
-                                                    </div>
-                                                    <span className="text-xs text-muted-foreground w-16 text-right">{stock}/{capacity}</span>
-                                                  </div>
-                                                );
-                                              })}
-                                            </div>
-                                          )}
+                                          <span className="text-xs text-muted-foreground">{Math.round(spotStockPct)}%</span>
                                         </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </AccordionContent>
-                            </AccordionItem>
-                          );
-                        })}
-                      </Accordion>
+                                      )}
+                                    </div>
+                                  </AccordionTrigger>
+                                  <AccordionContent className="px-3 pb-3">
+                                    {!assignedSetup ? (
+                                      <div className="space-y-2">
+                                        <p className="text-sm text-muted-foreground">No setup assigned to this spot.</p>
+                                        {unassignedSetups.length > 0 ? (
+                                          <Select onValueChange={(setupId) => assignSetupToSpot.mutate({ setupId, spotId: spot.id })}>
+                                            <SelectTrigger className="w-full sm:w-[250px]">
+                                              <SelectValue placeholder="Assign a setup..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {unassignedSetups.map((s) => (
+                                                <SelectItem key={s.id} value={s.id}>
+                                                  {s.name} ({s.type})
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        ) : (
+                                          <p className="text-xs text-muted-foreground">No unassigned setups available. Create one in the Setups page.</p>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-3">
+                                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                          <span>Setup: <strong className="text-foreground">{assignedSetup.name}</strong></span>
+                                          <Badge variant="outline" className="text-xs capitalize">{assignedSetup.type}</Badge>
+                                        </div>
+                                        {setupMachines.map((machine) => {
+                                          const slots = getSlotsForMachine(machine.id);
+                                          return (
+                                            <div key={machine.id} className="border rounded-md overflow-hidden">
+                                              <div
+                                                className="flex items-center justify-between p-2 bg-muted/30 cursor-pointer hover:bg-muted/50"
+                                                onClick={() => navigate(`/machines/${machine.id}`)}
+                                              >
+                                                <div className="flex items-center gap-2">
+                                                  <Truck className="h-4 w-4 text-muted-foreground" />
+                                                  <span className="text-sm font-medium">{machine.serial_number}</span>
+                                                </div>
+                                                {machine.position_on_setup && (
+                                                  <Badge variant="outline" className="text-xs">Pos {machine.position_on_setup}</Badge>
+                                                )}
+                                              </div>
+                                              {slots.length > 0 && (
+                                                <div className="p-2 space-y-2">
+                                                  {slots.map((slot: any) => {
+                                                    const stock = slot.current_stock || 0;
+                                                    const capacity = slot.capacity || 150;
+                                                    const pct = capacity > 0 ? (stock / capacity) * 100 : 0;
+                                                    return (
+                                                      <div key={slot.id} className="flex items-center gap-3">
+                                                        <span className="text-xs text-muted-foreground w-10 shrink-0">S{slot.slot_number}</span>
+                                                        <span className="text-xs text-foreground w-24 truncate">{slot.item_details?.name || "Empty"}</span>
+                                                        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                                                          <div
+                                                            className={`h-full rounded-full transition-all ${getStockColor(stock, capacity)}`}
+                                                            style={{ width: `${Math.min(pct, 100)}%` }}
+                                                          />
+                                                        </div>
+                                                        <span className="text-xs text-muted-foreground w-16 text-right">{stock}/{capacity}</span>
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </AccordionContent>
+                                </AccordionItem>
+                              );
+                            })}
+                          </Accordion>
+                        </div>
+                      </CollapsibleContent>
                     )}
-                  </div>
+                  </Collapsible>
                 </Card>
               );
             })}
