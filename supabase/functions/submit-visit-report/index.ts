@@ -213,8 +213,9 @@ Deno.serve(async (req) => {
       for (const s of slots) {
         if (s.auditedCount !== null && s.toyId) {
           const jamAdj = s.jamStatus === "by_coin" ? 1 : 0;
+          const falseCoinsAdj = s.falseCoins || 0;
           const expected =
-            s.lastStock - (s.unitsSold + jamAdj) + s.unitsRefilled - s.unitsRemoved;
+            s.lastStock - s.unitsSold + jamAdj - falseCoinsAdj + s.unitsRefilled - s.unitsRemoved;
           const diff = s.auditedCount - expected;
           if (diff !== 0) {
             adjustments.push({
@@ -297,7 +298,8 @@ Deno.serve(async (req) => {
                   s.auditedCount !== null &&
                   s.auditedCount !==
                     s.lastStock -
-                      (s.unitsSold + (s.jamStatus === "by_coin" ? 1 : 0)) +
+                      s.unitsSold + (s.jamStatus === "by_coin" ? 1 : 0) -
+                      (s.falseCoins || 0) +
                       s.unitsRefilled -
                       s.unitsRemoved
               ).length

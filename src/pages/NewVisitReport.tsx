@@ -185,6 +185,10 @@ export default function NewVisitReport() {
   
   // Photo & Sign Off state
   const [confirmAccurate, setConfirmAccurate] = useState(false);
+  const [visitPhotoFile, setVisitPhotoFile] = useState<File | null>(null);
+  const [visitPhotoUrl, setVisitPhotoUrl] = useState<string | null>(null);
+  const [observationPhotoFile, setObservationPhotoFile] = useState<File | null>(null);
+  const [observationPhotoUrl, setObservationPhotoUrl] = useState<string | null>(null);
 
   // 30-day warning dialog state
   const [show30DayWarning, setShow30DayWarning] = useState(false);
@@ -496,7 +500,10 @@ export default function NewVisitReport() {
         updated.currentStock = updated.auditedCount;
       } else {
         const jamAdjustment = updated.jamStatus === 'by_coin' ? 1 : 0;
-        updated.currentStock = updated.lastStock - (updated.unitsSold + jamAdjustment) + updated.unitsRefilled - updated.unitsRemoved;
+        const falseCoinsAdj = updated.falseCoins || 0;
+        // Jam By Coin: coin taken, toy NOT dispensed -> stock +1
+        // False Coins: no real coin, toy WAS dispensed -> stock -1
+        updated.currentStock = updated.lastStock - updated.unitsSold + jamAdjustment - falseCoinsAdj + updated.unitsRefilled - updated.unitsRemoved;
       }
       
       // Calculate cash collected
@@ -601,6 +608,37 @@ export default function NewVisitReport() {
             .update({ photo_url: url } as any)
             .eq('spot_visit_id', data.visitId)
             .eq('slot_id', slotId);
+        }
+
+        // Upload visit verification photo
+        if (visitPhotoFile) {
+          const visitPhotoPath = `visit-photos/${data.visitId}/verification.jpg`;
+          const { error: vpErr } = await supabase.storage
+            .from('item-photos')
+            .upload(visitPhotoPath, visitPhotoFile, { upsert: true });
+          if (!vpErr) {
+            const { data: vpUrl } = supabase.storage.from('item-photos').getPublicUrl(visitPhotoPath);
+            await supabase
+              .from('spot_visits')
+              .update({ verification_photo_url: vpUrl.publicUrl })
+              .eq('id', data.visitId);
+          }
+        }
+
+        // Upload observation photo
+        if (observationPhotoFile) {
+          const obsPhotoPath = `visit-photos/${data.visitId}/observation.jpg`;
+          const { error: opErr } = await supabase.storage
+            .from('item-photos')
+            .upload(obsPhotoPath, observationPhotoFile, { upsert: true });
+          if (!opErr) {
+            const { data: opUrl } = supabase.storage.from('item-photos').getPublicUrl(obsPhotoPath);
+            // Append observation photo URL to the notes
+            await supabase
+              .from('spot_visits')
+              .update({ notes: `${data.notes || ''}\n[Observation Photo](${opUrl.publicUrl})`.trim() } as any)
+              .eq('id', data.visitId);
+          }
         }
       }
 
@@ -1399,7 +1437,7 @@ export default function NewVisitReport() {
                   <SelectValue placeholder={selectedLocation ? "Select a spot..." : "Select location first"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {spots.map((spot) => (
+                  {[...spots].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map((spot) => (
                     <SelectItem key={spot.id} value={spot.id}>
                       {spot.name} {spot.description ? `- ${spot.description}` : ""}
                     </SelectItem>
@@ -1584,10 +1622,34 @@ export default function NewVisitReport() {
               </div>
               <div className="space-y-2">
                 <Label>Attach Image (Optional)</Label>
-                <Button variant="outline" className="gap-2">
-                  <ImagePlus className="w-4 h-4" />
-                  Upload Image
-                </Button>
+                {observationPhotoUrl ? (
+                  <div className="relative w-32 h-32">
+                    <img src={observationPhotoUrl} alt="Observation" className="w-full h-full object-cover rounded-md border" />
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="absolute -top-2 -right-2 h-6 w-6"
+                      onClick={() => { setObservationPhotoFile(null); setObservationPhotoUrl(null); }}
+                    >×</Button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      id="observation-photo-upload"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) { setObservationPhotoFile(file); setObservationPhotoUrl(URL.createObjectURL(file)); }
+                      }}
+                    />
+                    <Button variant="outline" className="gap-2" onClick={() => document.getElementById('observation-photo-upload')?.click()}>
+                      <ImagePlus className="w-4 h-4" />
+                      Upload Image
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1600,16 +1662,49 @@ export default function NewVisitReport() {
           <div className="space-y-6">
             <div className="space-y-2">
               <Label>Visit Photo</Label>
-              <div className="flex gap-3">
-                <Button variant="outline" className="gap-2">
-                  <Camera className="w-4 h-4" />
-                  Take Photo
-                </Button>
-                <Button variant="outline" className="gap-2">
-                  <Upload className="w-4 h-4" />
-                  Upload
-                </Button>
-              </div>
+              {visitPhotoUrl ? (
+                <div className="relative w-32 h-32">
+                  <img src={visitPhotoUrl} alt="Visit" className="w-full h-full object-cover rounded-md border" />
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute -top-2 -right-2 h-6 w-6"
+                    onClick={() => { setVisitPhotoFile(null); setVisitPhotoUrl(null); }}
+                  >×</Button>
+                </div>
+              ) : (
+                <div className="flex gap-3">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    id="visit-photo-camera"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) { setVisitPhotoFile(file); setVisitPhotoUrl(URL.createObjectURL(file)); }
+                    }}
+                  />
+                  <Button variant="outline" className="gap-2" onClick={() => document.getElementById('visit-photo-camera')?.click()}>
+                    <Camera className="w-4 h-4" />
+                    Take Photo
+                  </Button>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    id="visit-photo-upload"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) { setVisitPhotoFile(file); setVisitPhotoUrl(URL.createObjectURL(file)); }
+                    }}
+                  />
+                  <Button variant="outline" className="gap-2" onClick={() => document.getElementById('visit-photo-upload')?.click()}>
+                    <Upload className="w-4 h-4" />
+                    Upload
+                  </Button>
+                </div>
+              )}
             </div>
             
             <div className="flex items-start space-x-3 p-4 bg-muted rounded-lg">
