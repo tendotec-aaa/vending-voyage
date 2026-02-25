@@ -1,134 +1,96 @@
 
 
-# Visit Report Detail Page Redesign
+# Fix Inventory Tracking: Single Source of Truth
 
-## Overview
-A comprehensive redesign of the Visit Detail page (`/visits/:id`) to show complete slot-level audit data, profitability analytics, and a responsive card-based layout that works well on both desktop and mobile without horizontal scrolling.
+## Problem Summary
 
-## Current Problems
-- Missing columns: last stock, current stock, audited count, false coins, jam status, surplus/shortage
-- "Meter" column name is confusing -- it actually stores the audited physical count (often null)
-- "Action" column should match Visit Type naming
-- Wide table requires horizontal scrolling on mobile
-- Status badge has no color differentiation
-- No profitability analytics or rent cost context
-- No days-since-last-visit indicator
-- Swap events not clearly visible
+The system currently has **two disconnected paths** for modifying stock:
 
-## Database Migration Required
+1. **Stock Receiving** (`useReceiveStock.tsx`) -- updates `inventory.quantity_on_hand` directly but **never writes to `inventory_ledger`**
+2. **Visit Reports** (`submit-visit-report` edge function) -- updates both `inventory` and `inventory_ledger`
 
-Two columns are missing from `visit_line_items` and need to be added to persist data that's currently captured in the form but discarded on submission:
+This means the ledger is incomplete, the discrepancy formula uses wrong inputs (`quantity_ordered` instead of `quantity_received`), and there's no way to reconcile stock accurately.
 
-- `false_coins` (integer, default 0) -- number of false coins found
-- `jam_status` (text, default 'no_jam') -- jam type recorded during visit
+## Solution: 3-Part Fix
 
-The edge function also needs updating to save these two new fields.
+### Part 1: Add Ledger Entries to Stock Receiving
 
-## Plan
+Update `src/hooks/useReceiveStock.tsx` to write a `"receive"` entry to `inventory_ledger` for every warehouse allocation during stock receiving. Each entry records the quantity received and the new running balance.
 
-### 1. Database Migration: Add missing columns to visit_line_items
+This ensures every unit entering the system through purchases is tracked in the ledger.
 
-Add `false_coins` (integer, default 0) and `jam_status` (text, default 'no_jam') to the `visit_line_items` table so this data is persisted from now on.
+### Part 2: Fix the Discrepancy Alert Formula
 
-### 2. Update Edge Function (submit-visit-report)
+Update the discrepancy calculation in `src/pages/ItemDetail.tsx`:
 
-- Include `false_coins` and `jam_status` in the `SlotPayload` interface
-- Store them in the `visit_line_items` insert
-
-### 3. Redesign the Slot Activity Section as Card-Based List
-
-Replace the wide table with a **stacked card list** (one card per slot). Each card shows:
-
+**Current (wrong):**
 ```
-[Machine AA-01 | Slot #1]  [Visit Type Badge]
-Product: Pokemon           [Swapped badge if applicable]
---------------------------------------------------
-Last Stock    | Current Stock | Audited  | Fill %
-    150       |     131       |   --     |  73%
---------------------------------------------------
-Added | Removed | False Coins | Jam Status
-  80  |    5    |     0       | No Jam
---------------------------------------------------
-Sales (units): 91   |  Surplus/Shortage: --
+Expected = quantity_ordered - units_sold
 ```
 
-Key layout decisions:
-- 2-column grid on desktop, single column on mobile
-- Fill percentage shown as a mini progress bar
-- Surplus/Shortage = `audited_count - current_stock` (only shown if audited count exists)
-- Visit Type badge (e.g., "Routine Service", "Installation") replaces the old "Action" column
-- Swap events get a prominent colored badge with the previous product name
+**Fixed:**
+```
+Expected = quantity_received - units_sold - false_coins + units_removed_back_to_warehouse
+```
 
-### 4. Colored Status Badges
+- Use `quantity_received` (not `quantity_ordered`) from `purchase_items`
+- Subtract `false_coins` (lost units)  
+- The `units_removed` from visits go back to the warehouse, so they don't reduce total stock -- but `units_sold` and `false_coins` do leave the system entirely
 
-- **Completed**: Green background (`bg-green-500/20 text-green-700`)
-- **Reversed**: Red/destructive background (already done)
-- **Flagged**: Yellow/amber background (`bg-yellow-500/20 text-yellow-700`)
+More precisely:
+```
+Total Received  = SUM(purchase_items.quantity_received)
+Total Lost      = SUM(visit_line_items.units_sold) + SUM(visit_line_items.false_coins)  
+Expected Stock  = Total Received - Total Lost
+Actual Stock    = Warehouse Stock + Deployed Stock
+Discrepancy     = Actual - Expected
+```
 
-### 5. Enhanced Summary Cards Row
+### Part 3: Expandable Discrepancy Breakdown
 
-Expand the top summary section from 4 to include additional context:
+Replace the simple alert text with a collapsible section that shows each component:
 
-**Row 1 (existing, enhanced)**:
-- Date (with visit type label)
-- Operator
-- Cash Collected
-- Status (with proper colors)
+```
+Stock Discrepancy Detected: Shortage of 102 units
 
-**Row 2 (new analytics)**:
-- Days Since Last Visit (color-coded: green < 15, yellow 15-30, red > 30)
-- Monthly Rent Cost (from location data)
-- Rent Cost Since Last Visit (rent_amount / 30 x days_since_last_visit)
-- Net Profit This Visit (cash_collected - rent_since_last_visit)
-
-This requires fetching the **previous visit** for this spot and the **location's rent_amount**.
-
-### 6. Profitability Mini-Analysis Card
-
-A dedicated card below the summary showing:
-- Revenue this visit: $250.00
-- Rent accrued since last visit: $X.XX (daily rent x days)
-- Gross profit: Revenue - Rent
-- A simple colored indicator (green = profitable, red = loss)
-- Total units added vs removed
-
-### 7. Maintenance Tickets Section (always visible)
-
-Show the maintenance section always, with:
-- If tickets exist: display them with colored priority badges (already implemented)
-- If no tickets: show a small "No maintenance issues reported" message
-- This gives clear visibility into whether the visit flagged any problems
-
-### 8. Data Fetching Updates
-
-Update the visit detail query to also fetch:
-- `locations.rent_amount`, `locations.negotiation_type`, `locations.commission_percentage` (via spot -> location join, already partially there)
-- Previous completed visit for the same spot (to calculate days between visits)
-- Current `machine_slots.current_stock` and `machine_slots.capacity` for fill percentage
-
-### 9. Query Updates for Slot Snapshots
-
-Combine `visit_line_items` + `visit_slot_snapshots` to derive per-slot:
-- **Last Stock** = `snapshot.previous_stock`
-- **Current Stock** = `previous_stock - quantity_removed + quantity_added`
-- **Audited Count** = `meter_reading` (renamed from "Meter")
-- **Fill %** = `current_stock / snapshot.previous_capacity * 100`
-- **Surplus/Shortage** = `audited_count - current_stock` (when audited_count exists)
-- **False Coins** = from `visit_line_items.false_coins` (new column)
-- **Jam Status** = from `visit_line_items.jam_status` (new column)
-- **Swapped** = when `snapshot.previous_product_id !== line_item.product_id`
+[v] View Breakdown
+  Total Received (from purchases)    12,600
+  - Units Sold (from visits)           -171
+  - False Coins (lost)                  -15
+  ─────────────────────────────────────────
+  Expected Stock                     12,414
+  
+  Actual Stock Breakdown:
+    Warehouse                        11,905
+    Deployed in Machines                422
+  ─────────────────────────────────────────
+  Actual Stock                       12,327
+  
+  Discrepancy                          -87
+```
 
 ## Technical Details
 
-### Files to modify:
-1. **New migration SQL** -- add `false_coins` and `jam_status` to `visit_line_items`
-2. **`supabase/functions/submit-visit-report/index.ts`** -- persist `false_coins` and `jam_status`
-3. **`src/pages/VisitDetail.tsx`** -- complete rewrite of the page layout with card-based slots, analytics, and responsive design
-4. **`src/integrations/supabase/types.ts`** -- will auto-update after migration
+### Files Modified
 
-### Data flow:
-- Visit query already joins spot -> location (just need to add `rent_amount` to the select)
-- Add a query for the previous visit date for the same spot
-- Merge `visit_line_items` with `visit_slot_snapshots` by `slot_id` for the before/after data
-- Compute profitability client-side from rent and cash data
+1. **`src/hooks/useReceiveStock.tsx`**
+   - After each `upsertInventory()` call, insert a row into `inventory_ledger` with `movement_type: "receive"`, the quantity, and a running balance fetched from the current warehouse inventory
+   - Also create ledger entries for discrepancy allocations to the Unaccounted warehouse
+
+2. **`src/pages/ItemDetail.tsx`**
+   - Change `totalAcquired` to use `quantity_received` instead of `quantity_ordered` (line 315-317)
+   - Update the discrepancy computation (lines 491-510) to subtract both `units_sold` and `false_coins`
+   - Add a `Collapsible` component around the alert to show the full breakdown
+   - Import `Collapsible, CollapsibleTrigger, CollapsibleContent` from the UI library
+
+### No Database Changes Required
+
+The `inventory_ledger` table already exists with the correct schema. The fix is purely in application logic.
+
+### Impact on Existing Data
+
+- Existing ledger entries remain untouched
+- Future stock receiving operations will create proper ledger trails
+- The discrepancy formula will immediately show more accurate numbers using the corrected calculation
+- Historical visits that pre-date the ledger will still lack entries, but the discrepancy alert will be accurate because it uses `purchase_items` and `visit_line_items` directly (not the ledger)
 
