@@ -14,6 +14,117 @@ export type Database = {
   }
   public: {
     Tables: {
+      assemblies: {
+        Row: {
+          assembly_number: string
+          created_at: string
+          created_by: string | null
+          final_unit_cost: number
+          id: string
+          labor_cost_per_unit: number
+          notes: string | null
+          output_item_detail_id: string | null
+          output_quantity: number
+          status: string
+          total_component_cost: number
+          total_labor_cost: number
+          warehouse_id: string | null
+        }
+        Insert: {
+          assembly_number: string
+          created_at?: string
+          created_by?: string | null
+          final_unit_cost?: number
+          id?: string
+          labor_cost_per_unit?: number
+          notes?: string | null
+          output_item_detail_id?: string | null
+          output_quantity?: number
+          status?: string
+          total_component_cost?: number
+          total_labor_cost?: number
+          warehouse_id?: string | null
+        }
+        Update: {
+          assembly_number?: string
+          created_at?: string
+          created_by?: string | null
+          final_unit_cost?: number
+          id?: string
+          labor_cost_per_unit?: number
+          notes?: string | null
+          output_item_detail_id?: string | null
+          output_quantity?: number
+          status?: string
+          total_component_cost?: number
+          total_labor_cost?: number
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assemblies_output_item_detail_id_fkey"
+            columns: ["output_item_detail_id"]
+            isOneToOne: false
+            referencedRelation: "item_details"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assemblies_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assembly_components: {
+        Row: {
+          assembly_id: string
+          created_at: string
+          id: string
+          item_detail_id: string
+          quantity_per_unit: number
+          total_cost: number
+          total_quantity: number
+          unit_cost: number
+        }
+        Insert: {
+          assembly_id: string
+          created_at?: string
+          id?: string
+          item_detail_id: string
+          quantity_per_unit?: number
+          total_cost?: number
+          total_quantity?: number
+          unit_cost?: number
+        }
+        Update: {
+          assembly_id?: string
+          created_at?: string
+          id?: string
+          item_detail_id?: string
+          quantity_per_unit?: number
+          total_cost?: number
+          total_quantity?: number
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assembly_components_assembly_id_fkey"
+            columns: ["assembly_id"]
+            isOneToOne: false
+            referencedRelation: "assemblies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assembly_components_item_detail_id_fkey"
+            columns: ["item_detail_id"]
+            isOneToOne: false
+            referencedRelation: "item_details"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       categories: {
         Row: {
           created_at: string
@@ -286,6 +397,7 @@ export type Database = {
           created_at: string | null
           description: string | null
           id: string
+          item_type_id: string | null
           name: string
           photo_url: string | null
           sku: string
@@ -299,6 +411,7 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          item_type_id?: string | null
           name: string
           photo_url?: string | null
           sku: string
@@ -312,6 +425,7 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          item_type_id?: string | null
           name?: string
           photo_url?: string | null
           sku?: string
@@ -334,7 +448,32 @@ export type Database = {
             referencedRelation: "subcategories"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "item_details_item_type_id_fkey"
+            columns: ["item_type_id"]
+            isOneToOne: false
+            referencedRelation: "item_types"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      item_types: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
       }
       locations: {
         Row: {

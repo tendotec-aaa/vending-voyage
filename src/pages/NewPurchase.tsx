@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { usePurchases, type PurchaseLineItem, type GlobalFee, type DistributionMethod } from "@/hooks/usePurchases";
 import { useSuppliers } from "@/hooks/useSuppliers";
 import { useCategories } from "@/hooks/useCategories";
+import { useItemTypes } from "@/hooks/useItemTypes";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { CreatableCombobox } from "@/components/purchases/CreatableCombobox";
@@ -50,6 +51,7 @@ interface LineItem extends PurchaseLineItem {
   category_id?: string;
   subcategory_id?: string;
   item_detail_id?: string;
+  item_type_id?: string;
 }
 
 export default function NewPurchase() {
@@ -61,6 +63,7 @@ export default function NewPurchase() {
     createSubcategory,
     getSubcategoriesByCategory,
   } = useCategories();
+  const { itemTypes, createItemType } = useItemTypes();
   const { suppliers } = useSuppliers();
 
   // Order details state
@@ -77,7 +80,7 @@ export default function NewPurchase() {
 
   // Line items state
   const [lineItems, setLineItems] = useState<LineItem[]>([
-    { item_name: "", sku: "", quantity_ordered: 1, unit_cost: 0, cbm: 0, fees: [] },
+    { item_name: "", sku: Date.now().toString(36).toUpperCase(), quantity_ordered: 1, unit_cost: 0, cbm: 0, fees: [] },
   ]);
 
   // Global fees state
@@ -274,6 +277,7 @@ export default function NewPurchase() {
           item_detail_id: item.item_detail_id,
           category_id: item.category_id,
           subcategory_id: item.subcategory_id,
+          item_type_id: item.item_type_id,
           fees: item.fees,
         } as any)),
         global_fees: globalFees,
@@ -428,7 +432,7 @@ export default function NewPurchase() {
         {/* Line Items */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Line Items</CardTitle>
+            <CardTitle>Item Descriptions</CardTitle>
             <Button type="button" variant="outline" size="sm" onClick={addLineItem}>
               <Plus className="mr-2 h-4 w-4" />
               Add Item
@@ -535,6 +539,22 @@ export default function NewPurchase() {
                       searchPlaceholder="Search or create..."
                       emptyText="No subcategories"
                       disabled={!item.category_id}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Item Type</Label>
+                    <CreatableCombobox
+                      options={itemTypes.map((t) => ({ value: t.id, label: t.name }))}
+                      value={item.item_type_id}
+                      onChange={(value) => updateLineItem(index, "item_type_id", value)}
+                      onCreateNew={async (name) => {
+                        const created = await createItemType(name);
+                        return created ? { id: created.id, name: created.name } : undefined;
+                      }}
+                      placeholder="Select item type"
+                      searchPlaceholder="Search or create..."
+                      emptyText="No item types found"
                     />
                   </div>
 
@@ -720,7 +740,7 @@ export default function NewPurchase() {
               <>
                 <Separator />
                 <div className="space-y-2">
-                  <h4 className="font-medium text-sm">Per-Item Landed Costs</h4>
+                  <h4 className="font-medium text-sm">{orderType === "local" ? "Per-Item Cost" : "Per-Item Landed Costs"}</h4>
                   <div className="space-y-1">
                     {summary.landedCosts.map((lc, index) => (
                       lc.item_name && (
