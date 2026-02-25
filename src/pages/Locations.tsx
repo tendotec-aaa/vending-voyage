@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -17,7 +18,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Plus, MapPin, Search, Layers, ChevronDown, Truck, Calendar, DollarSign, Percent } from "lucide-react";
+import { Plus, MapPin, Search, Layers, ChevronDown, Truck, Calendar, DollarSign, Percent, Unlink } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
@@ -27,6 +28,10 @@ export default function Locations() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [expandedLocations, setExpandedLocations] = useState<Set<string>>(new Set());
+
+  // Confirmation states
+  const [assignConfirm, setAssignConfirm] = useState<{ setupId: string; setupName: string; spotId: string; spotName: string } | null>(null);
+  const [unassignConfirm, setUnassignConfirm] = useState<{ setupId: string; setupName: string; spotName: string } | null>(null);
 
   const [newName, setNewName] = useState("");
   const [newAddress, setNewAddress] = useState("");
@@ -95,20 +100,59 @@ export default function Locations() {
     },
   });
 
-  // All setups not assigned to any spot (for assignment dropdown)
   const unassignedSetups = setups.filter((s) => !s.spot_id);
 
   const assignSetupToSpot = useMutation({
     mutationFn: async ({ setupId, spotId }: { setupId: string; spotId: string }) => {
+      // Update machines status to deployed
+      const { data: setupMachines } = await supabase
+        .from("machines")
+        .select("id")
+        .eq("setup_id", setupId);
+      
+      if (setupMachines && setupMachines.length > 0) {
+        const machineIds = setupMachines.map(m => m.id);
+        await supabase.from("machines").update({ status: 'deployed' }).in("id", machineIds);
+      }
+
       const { error } = await supabase.from("setups").update({ spot_id: spotId }).eq("id", setupId);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["setups"] });
+      queryClient.invalidateQueries({ queryKey: ["machines"] });
+      queryClient.invalidateQueries({ queryKey: ["all-machines-for-locations"] });
       toast({ title: "Setup assigned to spot" });
     },
     onError: (error) => {
       toast({ title: "Error assigning setup", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const unassignSetupFromSpot = useMutation({
+    mutationFn: async ({ setupId }: { setupId: string }) => {
+      // Update machines status back to in_warehouse
+      const { data: setupMachines } = await supabase
+        .from("machines")
+        .select("id")
+        .eq("setup_id", setupId);
+      
+      if (setupMachines && setupMachines.length > 0) {
+        const machineIds = setupMachines.map(m => m.id);
+        await supabase.from("machines").update({ status: 'in_warehouse' }).in("id", machineIds);
+      }
+
+      const { error } = await supabase.from("setups").update({ spot_id: null }).eq("id", setupId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["setups"] });
+      queryClient.invalidateQueries({ queryKey: ["machines"] });
+      queryClient.invalidateQueries({ queryKey: ["all-machines-for-locations"] });
+      toast({ title: "Setup removed from spot" });
+    },
+    onError: (error) => {
+      toast({ title: "Error removing setup", description: error.message, variant: "destructive" });
     },
   });
 
@@ -416,7 +460,15 @@ export default function Locations() {
                                       <div className="space-y-2">
                                         <p className="text-sm text-muted-foreground">No setup assigned to this spot.</p>
                                         {unassignedSetups.length > 0 ? (
-                                          <Select onValueChange={(setupId) => assignSetupToSpot.mutate({ setupId, spotId: spot.id })}>
+                                          <Select onValueChange={(setupId) => {
+                                            const setup = unassignedSetups.find(s => s.id === setupId);
+                                            setAssignConfirm({
+                                              setupId,
+                                              setupName: setup?.name || "Unknown",
+                                              spotId: spot.id,
+                                              spotName: spot.name,
+                                            });
+                                          }}>
                                             <SelectTrigger className="w-full sm:w-[250px]">
                                               <SelectValue placeholder="Assign a setup..." />
                                             </SelectTrigger>
@@ -434,9 +486,27 @@ export default function Locations() {
                                       </div>
                                     ) : (
                                       <div className="space-y-3">
-                                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                          <span>Setup: <strong className="text-foreground">{assignedSetup.name}</strong></span>
-                                          <Badge variant="outline" className="text-xs capitalize">{assignedSetup.type}</Badge>
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                            <span>Setup: <strong className="text-foreground">{assignedSetup.name}</strong></span>
+                                            <Badge variant="outline" className="text-xs capitalize">{assignedSetup.type}</Badge>
+                                          </div>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="text-destructive hover:text-destructive gap-1"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setUnassignConfirm({
+                                                setupId: assignedSetup.id,
+                                                setupName: assignedSetup.name || "Unknown",
+                                                spotName: spot.name,
+                                              });
+                                            }}
+                                          >
+                                            <Unlink className="h-3 w-3" />
+                                            Remove
+                                          </Button>
                                         </div>
                                         {setupMachines.map((machine) => {
                                           const slots = getSlotsForMachine(machine.id);
@@ -496,6 +566,55 @@ export default function Locations() {
           </div>
         )}
       </div>
+
+      {/* Assign Setup Confirmation Dialog */}
+      <AlertDialog open={!!assignConfirm} onOpenChange={(open) => { if (!open) setAssignConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Setup Assignment</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to assign setup <strong>{assignConfirm?.setupName}</strong> to <strong>{assignConfirm?.spotName}</strong>? The machines in this setup will be marked as deployed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              if (assignConfirm) {
+                assignSetupToSpot.mutate({ setupId: assignConfirm.setupId, spotId: assignConfirm.spotId });
+                setAssignConfirm(null);
+              }
+            }}>
+              Yes, Assign Setup
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Unassign Setup Confirmation Dialog */}
+      <AlertDialog open={!!unassignConfirm} onOpenChange={(open) => { if (!open) setUnassignConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Setup from Spot</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove setup <strong>{unassignConfirm?.setupName}</strong> from <strong>{unassignConfirm?.spotName}</strong>? The machines will be returned to warehouse status.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (unassignConfirm) {
+                  unassignSetupFromSpot.mutate({ setupId: unassignConfirm.setupId });
+                  setUnassignConfirm(null);
+                }
+              }}
+            >
+              Yes, Remove Setup
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
