@@ -57,8 +57,29 @@ export function useCompanyInfo() {
         if (error) throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["company_info"] });
+
+      // Ensure the system warehouse exists (idempotent)
+      try {
+        const { data: existing } = await supabase
+          .from("warehouses")
+          .select("id")
+          .eq("is_system", true)
+          .maybeSingle();
+
+        if (!existing) {
+          await supabase.from("warehouses").insert({
+            name: "Unaccounted Inventory",
+            is_system: true,
+            description:
+              "System warehouse for items that were not accounted for during receiving. Do not delete.",
+          });
+        }
+      } catch (e) {
+        console.error("Failed to ensure system warehouse exists:", e);
+      }
+
       toast.success("Company information saved successfully");
     },
     onError: (error: any) => {
