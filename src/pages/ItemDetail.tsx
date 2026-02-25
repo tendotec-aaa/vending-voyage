@@ -15,10 +15,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ArrowLeft, Pencil, Save, X, Camera, Upload, Trash2, DollarSign, Warehouse, Truck, ShoppingCart, AlertTriangle, Copy, Check, ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useCategories } from "@/hooks/useCategories";
+import { useItemTypes } from "@/hooks/useItemTypes";
 import { format } from "date-fns";
 
 const typeColors: Record<string, string> = {
@@ -56,10 +61,15 @@ export default function ItemDetail() {
   const queryClient = useQueryClient();
   const { isAdmin } = useUserRole();
   const { categories, getSubcategoriesByCategory } = useCategories();
+  const { itemTypes, isLoading: itemTypesLoading } = useItemTypes();
   const [isEditing, setIsEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Item type editing state
+  const [pendingItemTypeId, setPendingItemTypeId] = useState<string | null>(null);
+  const [showItemTypeConfirm1, setShowItemTypeConfirm1] = useState(false);
+  const [showItemTypeConfirm2, setShowItemTypeConfirm2] = useState(false);
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -317,6 +327,49 @@ export default function ItemDetail() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const updateItemType = useMutation({
+    mutationFn: async (newItemTypeId: string) => {
+      const { error } = await supabase
+        .from("item_details")
+        .update({ item_type_id: newItemTypeId } as any)
+        .eq("id", id!);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["item-detail", id] });
+      queryClient.invalidateQueries({ queryKey: ["item_types"] });
+      toast({ title: "Item type updated successfully" });
+      setPendingItemTypeId(null);
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleItemTypeChange = (newItemTypeId: string) => {
+    if (newItemTypeId === (item?.item_type_id || "")) return;
+    setPendingItemTypeId(newItemTypeId);
+    setShowItemTypeConfirm1(true);
+  };
+
+  const handleConfirm1 = () => {
+    setShowItemTypeConfirm1(false);
+    setShowItemTypeConfirm2(true);
+  };
+
+  const handleConfirm2 = () => {
+    setShowItemTypeConfirm2(false);
+    if (pendingItemTypeId) {
+      updateItemType.mutate(pendingItemTypeId);
+    }
+  };
+
+  const handleCancelItemType = () => {
+    setShowItemTypeConfirm1(false);
+    setShowItemTypeConfirm2(false);
+    setPendingItemTypeId(null);
+  };
+
   if (isLoading)
     return (
       <AppLayout>
@@ -406,6 +459,68 @@ export default function ItemDetail() {
             </div>
           )}
         </div>
+
+        {/* Item Type Selector */}
+        {isAdmin && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <Label className="text-sm text-muted-foreground whitespace-nowrap">Item Type:</Label>
+            <Select
+              value={item.item_type_id || ""}
+              onValueChange={handleItemTypeChange}
+            >
+              <SelectTrigger className="w-48 h-8 text-sm">
+                <SelectValue placeholder="Select item type" />
+              </SelectTrigger>
+              <SelectContent>
+                {itemTypes.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {item.item_type_id && (
+              <Badge variant="outline" className="text-xs">
+                {itemTypes.find((t) => t.id === item.item_type_id)?.name || "Unknown"}
+              </Badge>
+            )}
+          </div>
+        )}
+
+        {/* Double Confirmation Dialogs for Item Type Change */}
+        <AlertDialog open={showItemTypeConfirm1} onOpenChange={(open) => { if (!open) handleCancelItemType(); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Change Item Type?</AlertDialogTitle>
+              <AlertDialogDescription>
+                You are about to change the item type for <strong>{item.name}</strong> to{" "}
+                <strong>{itemTypes.find((t) => t.id === pendingItemTypeId)?.name || "Unknown"}</strong>.
+                This may affect how this item is categorized and displayed throughout the system.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={handleCancelItemType}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirm1}>Continue</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={showItemTypeConfirm2} onOpenChange={(open) => { if (!open) handleCancelItemType(); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This is a permanent change. The item type for <strong>{item.name}</strong> will be updated to{" "}
+                <strong>{itemTypes.find((t) => t.id === pendingItemTypeId)?.name || "Unknown"}</strong>.
+                This action cannot be easily undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={handleCancelItemType}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirm2} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Yes, Change Item Type
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Edit form (shown only when editing) */}
         {isEditing && (
