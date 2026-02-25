@@ -133,6 +133,8 @@ export function usePurchases() {
       // Generate PO number
       const poNumber = `PO-${Date.now()}`;
 
+      const isLocal = purchaseData.type === "local";
+
       // Create purchase
       const { data: purchase, error: purchaseError } = await supabase
         .from("purchases")
@@ -144,13 +146,16 @@ export function usePurchases() {
           local_tax_rate: purchaseData.local_tax_rate || 0,
           currency: purchaseData.currency || "USD",
           total_amount: purchaseData.total_amount,
-          status: "pending" as PurchaseStatus,
+          status: (isLocal ? "arrived" : "pending") as PurchaseStatus,
           received_inventory: false,
+          received_at: isLocal ? new Date().toISOString() : null,
         })
         .select()
         .single();
 
       if (purchaseError) throw purchaseError;
+
+      let createdLines: any[] = [];
 
       // Create line items
       if (purchaseData.line_items.length > 0) {
@@ -165,9 +170,9 @@ export function usePurchases() {
               sku: item.sku || Date.now().toString(36).toUpperCase(),
               type: "merchandise" as const,
             };
-            // Include category and subcategory if provided
             if ((item as any).category_id) insertData.category_id = (item as any).category_id;
             if ((item as any).subcategory_id) insertData.subcategory_id = (item as any).subcategory_id;
+            if ((item as any).item_type_id) insertData.item_type_id = (item as any).item_type_id;
 
             const { data: newItem, error: newItemError } = await supabase
               .from("item_details")
@@ -191,12 +196,13 @@ export function usePurchases() {
           });
         }
 
-        const { data: createdLines, error: linesError } = await supabase
+        const { data: lines, error: linesError } = await supabase
           .from("purchase_items")
           .insert(lineItems)
           .select();
 
         if (linesError) throw linesError;
+        createdLines = lines || [];
 
         // Create line item fees
         for (let i = 0; i < purchaseData.line_items.length; i++) {
@@ -231,6 +237,74 @@ export function usePurchases() {
           .insert(globalFees);
 
         if (globalFeesError) throw globalFeesError;
+      }
+
+      // Calculate costs at creation time
+      if (createdLines.length > 0) {
+        // Re-fetch all fees
+        const { data: savedGlobalFees } = await supabase
+          .from("purchase_global_fees")
+          .select("*")
+          .eq("purchase_id", purchase.id);
+
+        const itemIds = createdLines.map((l: any) => l.id);
+        const { data: savedLineFees } = await supabase
+          .from("purchase_line_fees")
+          .select("*")
+          .in("purchase_line_id", itemIds);
+
+        const currentGlobalFees = savedGlobalFees || [];
+        const currentLineFees = savedLineFees || [];
+
+        const itemsSubtotal = createdLines.reduce((sum: number, i: any) => sum + i.quantity_ordered * i.unit_cost, 0);
+        const totalQuantity = createdLines.reduce((sum: number, i: any) => sum + i.quantity_ordered, 0);
+        const totalCbm = createdLines.reduce((sum: number, i: any) => sum + (i.cbm || 0), 0);
+        const taxRate = purchaseData.type === "local" && purchaseData.local_tax_rate ? purchaseData.local_tax_rate / 100 : 0;
+
+        for (const item of createdLines) {
+          const itemLineFees = currentLineFees.filter((f) => f.purchase_line_id === item.id);
+          const lineFeesTotal = itemLineFees.reduce((sum, f) => sum + (f.amount || 0), 0);
+
+          const itemValue = item.quantity_ordered * item.unit_cost;
+          let distributedGlobalFees = 0;
+          for (const gf of currentGlobalFees) {
+            switch (gf.distribution_method) {
+              case "by_value":
+                distributedGlobalFees += itemsSubtotal > 0 ? (itemValue / itemsSubtotal) * gf.amount : 0;
+                break;
+              case "by_quantity":
+                distributedGlobalFees += totalQuantity > 0 ? (item.quantity_ordered / totalQuantity) * gf.amount : 0;
+                break;
+              case "by_cbm":
+                distributedGlobalFees += totalCbm > 0 ? ((item.cbm || 0) / totalCbm) * gf.amount : 0;
+                break;
+            }
+          }
+
+          const taxAllocated = (itemValue + lineFeesTotal + distributedGlobalFees) * taxRate;
+          const totalItemCost = itemValue + lineFeesTotal + distributedGlobalFees + taxAllocated;
+          const landedUnitCost = item.quantity_ordered > 0 ? totalItemCost / item.quantity_ordered : 0;
+          const finalUnitCost = landedUnitCost;
+
+          await supabase
+            .from("purchase_items")
+            .update({
+              line_fees_total: Math.round(lineFeesTotal * 1000) / 1000,
+              global_fees_allocated: Math.round(distributedGlobalFees * 1000) / 1000,
+              tax_allocated: Math.round(taxAllocated * 1000) / 1000,
+              landed_unit_cost: Math.round(landedUnitCost * 1000) / 1000,
+              final_unit_cost: Math.round(finalUnitCost * 1000) / 1000,
+            } as any)
+            .eq("id", item.id);
+
+          // Update item_details.cost_price
+          if (item.item_detail_id) {
+            await supabase
+              .from("item_details")
+              .update({ cost_price: Math.round(finalUnitCost * 1000) / 1000 } as any)
+              .eq("id", item.item_detail_id);
+          }
+        }
       }
 
       return purchase;

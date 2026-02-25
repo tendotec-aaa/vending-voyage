@@ -312,6 +312,14 @@ export default function PurchaseDetail() {
             final_unit_cost: Math.round(finalUnitCost * 1000) / 1000,
           } as any)
           .eq("id", item.id);
+
+        // Update item_details.cost_price
+        if (item.item_detail_id) {
+          await supabase
+            .from("item_details")
+            .update({ cost_price: Math.round(finalUnitCost * 1000) / 1000 } as any)
+            .eq("id", item.item_detail_id);
+        }
       }
 
       const allLineFeesTotal = currentLineFees.reduce((sum, f) => sum + (f.amount || 0), 0);
@@ -352,7 +360,11 @@ export default function PurchaseDetail() {
       const { error } = await supabase.from("purchases").update(updateData).eq("id", id!);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: async (_, variables) => {
+      // Auto-calculate costs when marked as arrived
+      if (variables.status === "arrived") {
+        await applyFeesMutation.mutateAsync();
+      }
       queryClient.invalidateQueries({ queryKey: ["purchase-detail", id] });
       queryClient.invalidateQueries({ queryKey: ["purchases"] });
       toast({ title: "Status updated" });
@@ -432,7 +444,7 @@ export default function PurchaseDetail() {
 
         {/* Line Items */}
         <Card>
-          <CardHeader><CardTitle>Line Items ({items.length})</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Item Descriptions ({items.length})</CardTitle></CardHeader>
           <CardContent>
             {items.length === 0 ? (
               <p className="text-muted-foreground">No items in this order.</p>
@@ -643,6 +655,21 @@ export default function PurchaseDetail() {
             <div className="flex justify-between font-semibold text-lg"><span className="text-foreground">Total</span><span className="text-foreground">${fmt2(total)}</span></div>
           </CardContent>
         </Card>
+
+        {/* Per-Item Cost Breakdown */}
+        {items.length > 0 && (
+          <Card>
+            <CardHeader><CardTitle>{purchase.type === "local" ? "Per-Item Cost" : "Per-Item Landed Costs"}</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {items.map((item: any) => (
+                <div key={item.id} className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">{item.item_detail?.name || "Unnamed"}</span>
+                  <span className="text-foreground font-medium">${fmt3(item.final_unit_cost || item.landed_unit_cost || 0)} /unit</span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Arrived Date Dialog */}

@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Package, Warehouse as WarehouseIcon, Loader2 } from "lucide-react";
+import { Search, Package, Warehouse as WarehouseIcon, Loader2, Plus } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -50,6 +51,10 @@ export default function Warehouse() {
       subtitle="Manage inventory across your warehouses"
       actions={
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate("/warehouse/assembly/new")}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Assembly
+          </Button>
           <AddWarehouseItemDialog />
           <CreateWarehouseDialog onCreate={createWarehouse} isCreating={isCreatingWarehouse} />
         </div>
