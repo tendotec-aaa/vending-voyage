@@ -11,12 +11,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { ReceiveStockDialog } from "@/components/inventory/ReceiveStockDialog";
+import { Badge } from "@/components/ui/badge";
 
 interface InventoryItem {
   id: string;
   sku: string;
   name: string;
   category: string;
+  type: string;
   warehouseQty: number;
   inMachinesQty: number;
   total: number;
@@ -27,10 +29,11 @@ function useConsolidatedInventory() {
   return useQuery({
     queryKey: ["consolidated-inventory"],
     queryFn: async (): Promise<InventoryItem[]> => {
+      // Fetch all item types (merchandise + machine_model)
       const { data: items, error: itemsError } = await supabase
         .from("item_details")
         .select(`id, sku, name, cost_price, type, category_id, categories (name)`)
-        .eq("type", "merchandise");
+        .in("type", ["merchandise", "machine_model"]);
       if (itemsError) throw itemsError;
 
       const { data: inventory, error: invError } = await supabase
@@ -50,7 +53,40 @@ function useConsolidatedInventory() {
         .eq("active_item", true);
       if (batchError) throw batchError;
 
+      // Fetch machines for machine_model deployed/warehouse counts
+      const { data: machines, error: machinesError } = await supabase
+        .from("machines")
+        .select("model_id, status");
+      if (machinesError) throw machinesError;
+
       return (items || []).map((item: any) => {
+        if (item.type === "machine_model") {
+          // For machine models, count by machine status
+          const itemMachines = (machines || []).filter((m: any) => m.model_id === item.id);
+          const warehouseQty = itemMachines.filter((m: any) => m.status === "in_warehouse" || m.status === "maintenance").length;
+          const deployedQty = itemMachines.filter((m: any) => m.status === "deployed").length;
+          const totalQty = itemMachines.filter((m: any) => m.status !== "retired").length;
+
+          const itemBatches = (purchaseBatches || []).filter((b: any) => b.item_detail_id === item.id);
+          const totalInventoryCost = itemBatches.reduce((sum: number, b: any) => {
+            const costPerUnit = b.final_unit_cost || b.landed_unit_cost || 0;
+            return sum + ((b.quantity_remaining || 0) * costPerUnit);
+          }, 0);
+
+          return {
+            id: item.id,
+            sku: item.sku,
+            name: item.name,
+            category: item.categories?.name || "Uncategorized",
+            type: item.type,
+            warehouseQty,
+            inMachinesQty: deployedQty,
+            total: totalQty,
+            totalInventoryCost,
+          };
+        }
+
+        // Merchandise items - original logic
         const warehouseQty = (inventory || [])
           .filter((inv: any) => inv.item_detail_id === item.id && inv.warehouse_id)
           .reduce((sum: number, inv: any) => sum + (inv.quantity_on_hand || 0), 0);
@@ -61,7 +97,6 @@ function useConsolidatedInventory() {
 
         const totalQty = warehouseQty + inMachinesQty;
 
-        // Calculate total inventory cost from active FIFO batches
         const itemBatches = (purchaseBatches || []).filter((b: any) => b.item_detail_id === item.id);
         const totalInventoryCost = itemBatches.reduce((sum: number, b: any) => {
           const costPerUnit = b.final_unit_cost || b.landed_unit_cost || 0;
@@ -73,6 +108,7 @@ function useConsolidatedInventory() {
           sku: item.sku,
           name: item.name,
           category: item.categories?.name || "Uncategorized",
+          type: item.type,
           warehouseQty,
           inMachinesQty,
           total: totalQty,
@@ -187,7 +223,14 @@ export default function InventoryPage() {
                   onClick={() => navigate(`/inventory/${item.id}`)}
                 >
                   <TableCell className="font-mono text-sm text-primary">{item.sku}</TableCell>
-                  <TableCell className="font-medium text-foreground">{item.name}</TableCell>
+                  <TableCell className="font-medium text-foreground">
+                    <div className="flex items-center gap-2">
+                      {item.name}
+                      {item.type === "machine_model" && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">Machine</Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{item.category}</TableCell>
                   <TableCell className="text-right text-foreground">{item.warehouseQty.toLocaleString()}</TableCell>
                   <TableCell className="text-right text-foreground">{item.inMachinesQty.toLocaleString()}</TableCell>

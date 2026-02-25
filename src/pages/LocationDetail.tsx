@@ -11,7 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ArrowLeft, Pencil, Save, X, MapPin, ChevronDown, Truck } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { ArrowLeft, Pencil, Save, X, MapPin, ChevronDown, Truck, Unlink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
 import type { Database } from "@/integrations/supabase/types";
@@ -27,6 +28,7 @@ export default function LocationDetail() {
   const { isAdmin } = useUserRole();
   const [isEditing, setIsEditing] = useState(false);
   const [expandedSpots, setExpandedSpots] = useState<Set<string>>(new Set());
+  const [unassignConfirm, setUnassignConfirm] = useState<{ setupId: string; setupName: string; spotName: string } | null>(null);
   const [form, setForm] = useState({
     name: "", address: "", contact_person_name: "", contact_person_number: "",
     contact_person_email: "", negotiation_type: "fixed_rent" as NegotiationType,
@@ -140,6 +142,34 @@ export default function LocationDetail() {
     },
     onError: (error) => {
       toast({ title: "Error updating location", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const unassignSetupFromSpot = useMutation({
+    mutationFn: async ({ setupId }: { setupId: string }) => {
+      // Update machines status back to in_warehouse
+      const { data: setupMachines } = await supabase
+        .from("machines")
+        .select("id")
+        .eq("setup_id", setupId);
+      
+      if (setupMachines && setupMachines.length > 0) {
+        const machineIds = setupMachines.map(m => m.id);
+        await supabase.from("machines").update({ status: 'in_warehouse' }).in("id", machineIds);
+      }
+
+      const { error } = await supabase.from("setups").update({ spot_id: null }).eq("id", setupId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["location-setups", id] });
+      queryClient.invalidateQueries({ queryKey: ["location-machines", id] });
+      queryClient.invalidateQueries({ queryKey: ["setups"] });
+      queryClient.invalidateQueries({ queryKey: ["machines"] });
+      toast({ title: "Setup removed from spot" });
+    },
+    onError: (error) => {
+      toast({ title: "Error removing setup", description: error.message, variant: "destructive" });
     },
   });
 
@@ -307,11 +337,31 @@ export default function LocationDetail() {
                             <Badge variant={spot.status === "active" ? "default" : "secondary"}>{spot.status}</Badge>
                             {spotSetup && <Badge variant="outline">{spotSetup.name}</Badge>}
                           </div>
-                          <CollapsibleTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7">
-                              <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                            </Button>
-                          </CollapsibleTrigger>
+                          <div className="flex items-center gap-1">
+                            {spotSetup && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setUnassignConfirm({
+                                    setupId: spotSetup.id,
+                                    setupName: spotSetup.name || "Unknown",
+                                    spotName: spot.name,
+                                  });
+                                }}
+                                title="Remove setup from spot"
+                              >
+                                <Unlink className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                            <CollapsibleTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7">
+                                <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                              </Button>
+                            </CollapsibleTrigger>
+                          </div>
                         </div>
                         <CollapsibleContent>
                           {spotMachines.length === 0 ? (
@@ -348,10 +398,10 @@ export default function LocationDetail() {
                                         <TableBody>
                                           {slots.map((slot: any) => (
                                             <TableRow key={slot.id}>
-                                              <TableCell className="py-1 text-xs">{slot.slot_number}</TableCell>
-                                              <TableCell className="py-1 text-xs">{slot.item_details?.name || "—"}</TableCell>
-                                              <TableCell className="py-1 text-xs text-right">{slot.current_stock ?? 0}</TableCell>
-                                              <TableCell className="py-1 text-xs text-right">{slot.capacity ?? 150}</TableCell>
+                                              <TableCell className="text-xs py-1">Slot {slot.slot_number}</TableCell>
+                                              <TableCell className="text-xs py-1">{slot.item_details?.name || "Empty"}</TableCell>
+                                              <TableCell className="text-xs py-1 text-right">{slot.current_stock ?? 0}</TableCell>
+                                              <TableCell className="text-xs py-1 text-right">{slot.capacity ?? 150}</TableCell>
                                             </TableRow>
                                           ))}
                                         </TableBody>
@@ -372,6 +422,32 @@ export default function LocationDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Unassign Setup Confirmation Dialog */}
+      <AlertDialog open={!!unassignConfirm} onOpenChange={(open) => { if (!open) setUnassignConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Setup from Spot</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove setup <strong>{unassignConfirm?.setupName}</strong> from <strong>{unassignConfirm?.spotName}</strong>? The machines will be returned to warehouse status.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (unassignConfirm) {
+                  unassignSetupFromSpot.mutate({ setupId: unassignConfirm.setupId });
+                  setUnassignConfirm(null);
+                }
+              }}
+            >
+              Yes, Remove Setup
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
