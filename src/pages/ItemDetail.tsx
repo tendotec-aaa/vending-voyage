@@ -45,6 +45,8 @@ const movementColors: Record<string, string> = {
   adjustment: "bg-chart-4/10 text-chart-4 border-chart-4/20",
   transfer: "bg-primary/10 text-primary border-primary/20",
   initial: "bg-muted text-muted-foreground border-border",
+  assembly_production: "bg-chart-2/10 text-chart-2 border-chart-2/20",
+  assembly_consumption: "bg-chart-3/10 text-chart-3 border-chart-3/20",
 };
 
 export default function ItemDetail() {
@@ -115,10 +117,26 @@ export default function ItemDetail() {
         .select(`
           id, quantity_ordered, quantity_received, quantity_remaining,
           unit_cost, landed_unit_cost, active_item, arrival_order, final_unit_cost,
+          purchase_id,
           purchase:purchases(id, purchase_order_number, status, created_at, received_at)
         `)
         .eq("item_detail_id", id!)
         .order("arrival_order", { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
+
+  // Fetch assemblies that produced this item (for assembled items)
+  const { data: itemAssemblies = [] } = useQuery({
+    queryKey: ["item-assemblies", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("assemblies")
+        .select("id, assembly_number, created_at, status, output_quantity, final_unit_cost")
+        .eq("output_item_detail_id", id!)
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
     },
@@ -340,6 +358,14 @@ export default function ItemDetail() {
 
   const typeLabel = item.type?.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || "—";
   const categoryLabel = (item as any).category?.name || null;
+
+  // Determine if this item is assembled (has purchase_items with no purchase_id)
+  const isAssembledItem = itemAssemblies.length > 0 || purchaseBatches.some((b: any) => !b.purchase_id);
+  // Build a map from assembly reference_id to assembly data for display
+  const assemblyMap: Record<string, any> = {};
+  for (const asm of itemAssemblies) {
+    assemblyMap[asm.id] = asm;
+  }
 
   return (
     <AppLayout>
@@ -581,7 +607,9 @@ export default function ItemDetail() {
           <TabsList>
             <TabsTrigger value="ledger">Inventory Ledger</TabsTrigger>
             <TabsTrigger value="logistics">Logistics History</TabsTrigger>
-            <TabsTrigger value="acquisition">Acquisition History</TabsTrigger>
+            <TabsTrigger value="acquisition">
+              {isAssembledItem ? "Assembly History" : "Acquisition History"}
+            </TabsTrigger>
           </TabsList>
 
           {/* ── Inventory Ledger Tab ── */}
@@ -786,15 +814,18 @@ export default function ItemDetail() {
             <Card>
               <CardContent className="p-0">
                 {purchaseBatches.length === 0 ? (
-                  <p className="text-muted-foreground p-6">No purchase history.</p>
+                  <p className="text-muted-foreground p-6">
+                    {isAssembledItem ? "No assembly history." : "No purchase history."}
+                  </p>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Date</TableHead>
-                        <TableHead>PO Number</TableHead>
+                        <TableHead>{isAssembledItem ? "Assembly #" : "PO Number"}</TableHead>
+                        <TableHead>Source</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Ordered</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
                         <TableHead className="text-right">Received</TableHead>
                         <TableHead className="text-right">Remaining</TableHead>
                         <TableHead className="text-right">Unit Cost</TableHead>
@@ -802,40 +833,67 @@ export default function ItemDetail() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {purchaseBatches.map((pi: any) => (
-                        <TableRow
-                          key={pi.id}
-                          className={`cursor-pointer ${!pi.active_item ? "opacity-60" : ""}`}
-                          onClick={() => pi.purchase && navigate(`/purchases/${pi.purchase.id}`)}
-                        >
-                          <TableCell className="text-sm">
-                            {pi.purchase?.received_at
-                              ? format(new Date(pi.purchase.received_at), "MMM d, yyyy")
-                              : pi.purchase?.created_at
-                              ? format(new Date(pi.purchase.created_at), "MMM d, yyyy")
-                              : "—"}
-                          </TableCell>
-                          <TableCell className="font-medium text-sm">
-                            {pi.purchase?.purchase_order_number || "—"}
-                          </TableCell>
-                          <TableCell>
-                            {pi.active_item ? (
-                              <Badge variant="secondary" className="text-xs">Active</Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-xs">Depleted</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right text-sm">{pi.quantity_ordered}</TableCell>
-                          <TableCell className="text-right text-sm">{pi.quantity_received || 0}</TableCell>
-                          <TableCell className="text-right text-sm">{pi.quantity_remaining || 0}</TableCell>
-                          <TableCell className="text-right text-sm">${fmt3(Number(pi.final_unit_cost))}</TableCell>
-                          <TableCell className="text-right text-sm font-medium">
-                            {pi.active_item && (pi.quantity_remaining || 0) > 0
-                              ? `$${fmt2((pi.quantity_remaining || 0) * (pi.final_unit_cost || 0))}`
-                              : "—"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {purchaseBatches.map((pi: any) => {
+                        const isFromAssembly = !pi.purchase_id;
+                        const matchedAssembly = isFromAssembly
+                          ? itemAssemblies.find((a: any) =>
+                              a.output_quantity === pi.quantity_ordered &&
+                              Math.abs(Number(a.final_unit_cost) - Number(pi.final_unit_cost)) < 0.01
+                            ) || itemAssemblies[0]
+                          : null;
+
+                        return (
+                          <TableRow
+                            key={pi.id}
+                            className={`cursor-pointer ${!pi.active_item ? "opacity-60" : ""}`}
+                            onClick={() => {
+                              if (!isFromAssembly && pi.purchase) {
+                                navigate(`/purchases/${pi.purchase.id}`);
+                              }
+                            }}
+                          >
+                            <TableCell className="text-sm">
+                              {isFromAssembly
+                                ? matchedAssembly?.created_at
+                                  ? format(new Date(matchedAssembly.created_at), "MMM d, yyyy")
+                                  : pi.created_at
+                                  ? format(new Date(pi.created_at), "MMM d, yyyy")
+                                  : "—"
+                                : pi.purchase?.received_at
+                                ? format(new Date(pi.purchase.received_at), "MMM d, yyyy")
+                                : pi.purchase?.created_at
+                                ? format(new Date(pi.purchase.created_at), "MMM d, yyyy")
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="font-medium text-sm">
+                              {isFromAssembly
+                                ? matchedAssembly?.assembly_number || "Assembly"
+                                : pi.purchase?.purchase_order_number || "—"}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-[10px]">
+                                {isFromAssembly ? "Assembly" : "Purchase"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {pi.active_item ? (
+                                <Badge variant="secondary" className="text-xs">Active</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs">Depleted</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right text-sm">{pi.quantity_ordered}</TableCell>
+                            <TableCell className="text-right text-sm">{pi.quantity_received || 0}</TableCell>
+                            <TableCell className="text-right text-sm">{pi.quantity_remaining || 0}</TableCell>
+                            <TableCell className="text-right text-sm">${fmt3(Number(pi.final_unit_cost))}</TableCell>
+                            <TableCell className="text-right text-sm font-medium">
+                              {pi.active_item && (pi.quantity_remaining || 0) > 0
+                                ? `$${fmt2((pi.quantity_remaining || 0) * (pi.final_unit_cost || 0))}`
+                                : "—"}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 )}
