@@ -193,6 +193,24 @@ export default function ItemDetail() {
     enabled: !!id,
   });
 
+  // Machine deployment history for machine_model items
+  const { data: machineDeployments = [] } = useQuery({
+    queryKey: ["item-machine-deployments", id],
+    queryFn: async () => {
+      const { data: machines, error } = await supabase
+        .from("machines")
+        .select(`
+          id, serial_number, status, created_at,
+          setup:setups(id, name, spot:spots(id, name, location:locations(id, name)))
+        `)
+        .eq("model_id", id!)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return machines;
+    },
+    enabled: !!id && item?.type === "machine_model",
+  });
+
   useEffect(() => {
     if (item) {
       setForm({
@@ -626,86 +644,139 @@ export default function ItemDetail() {
           <TabsContent value="logistics">
             <Card>
               <CardContent className="p-2 sm:p-4">
-                {logisticsHistory.length === 0 ? (
-                  <p className="text-muted-foreground p-4">No logistics history yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {logisticsHistory.map((row: any) => {
-                      const visit = row.spot_visit;
-                      const spot = visit?.spot;
-                      const location = spot?.location;
-                      const snap = snapshots.find(
-                        (s: any) => s.visit_id === row.spot_visit_id && s.slot_id === row.slot_id
-                      );
-                      const lastStock = snap?.previous_stock ?? null;
-                      const currentStock = row.computed_current_stock ?? null;
-                      const unitsSold = row.units_sold ?? 0;
-                      const added = row.quantity_added || 0;
-                      const removed = row.quantity_removed || 0;
-                      const falseCoins = row.false_coins ?? 0;
-                      const jamStatus = row.jam_status ?? "no_jam";
-                      const auditedCount = row.meter_reading;
-                      const jamLabel = jamStatus === "by_coin" ? "Jam (+1)" : jamStatus === "mechanical" ? "Jam (mech)" : "—";
-
-                      return (
-                        <div
-                          key={row.id}
-                          className="rounded-lg border border-border/60 p-3 hover:bg-muted/30 cursor-pointer transition-colors"
-                          onClick={() => row.spot_visit_id && navigate(`/visits/${row.spot_visit_id}`)}
-                        >
-                          {/* Header row: location + date + action */}
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Badge className={`text-[10px] px-1.5 py-0 shrink-0 ${actionColors[row.action_type] || ""}`}>
-                                {row.action_type}
-                              </Badge>
-                              <span className="text-xs text-muted-foreground truncate">
-                                {location?.name ? `${location.name} › ${spot?.name || ""}` : spot?.name || "—"}
+                {item.type === "machine_model" ? (
+                  machineDeployments.length === 0 ? (
+                    <p className="text-muted-foreground p-4">No machines created from this model yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {machineDeployments.map((machine: any) => {
+                        const setup = machine.setup;
+                        const spot = setup?.spot;
+                        const location = spot?.location;
+                        const statusColors: Record<string, string> = {
+                          deployed: "bg-chart-2/10 text-chart-2 border-chart-2/20",
+                          in_warehouse: "bg-primary/10 text-primary border-primary/20",
+                          maintenance: "bg-chart-4/10 text-chart-4 border-chart-4/20",
+                          retired: "bg-muted text-muted-foreground border-border",
+                        };
+                        return (
+                          <div
+                            key={machine.id}
+                            className="rounded-lg border border-border/60 p-3 hover:bg-muted/30 cursor-pointer transition-colors"
+                            onClick={() => navigate(`/machines/${machine.id}`)}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Badge className={`text-[10px] px-1.5 py-0 shrink-0 ${statusColors[machine.status] || ""}`}>
+                                  {machine.status?.replace(/_/g, " ")}
+                                </Badge>
+                                <span className="text-sm font-medium text-foreground truncate">
+                                  {machine.serial_number}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-muted-foreground shrink-0">
+                                {machine.created_at ? format(new Date(machine.created_at), "MMM d, yyyy") : "—"}
                               </span>
                             </div>
-                            <span className="text-[11px] text-muted-foreground shrink-0">
-                              {visit?.visit_date ? format(new Date(visit.visit_date), "MMM d, yyyy") : "—"}
-                            </span>
-                          </div>
-                          {/* Movement breakdown grid */}
-                          <div className="grid grid-cols-4 sm:grid-cols-8 gap-x-2 gap-y-1 text-center">
-                            <div>
-                              <p className="text-[10px] text-muted-foreground">Last</p>
-                              <p className="text-sm font-medium text-foreground">{lastStock ?? "—"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-muted-foreground">Current</p>
-                              <p className="text-sm font-medium text-foreground">{currentStock ?? "—"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-muted-foreground">Audited</p>
-                              <p className="text-sm font-medium text-foreground">{auditedCount ?? "—"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-muted-foreground">Sold</p>
-                              <p className="text-sm font-medium text-primary">{unitsSold || "—"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-muted-foreground">Added</p>
-                              <p className="text-sm font-medium text-chart-2">{added > 0 ? `+${added}` : "—"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-muted-foreground">Removed</p>
-                              <p className="text-sm font-medium text-destructive">{removed > 0 ? `-${removed}` : "—"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-muted-foreground">False</p>
-                              <p className="text-sm font-medium text-chart-4">{falseCoins || "—"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-muted-foreground">Jam</p>
-                              <p className="text-[11px] font-medium text-muted-foreground">{jamLabel}</p>
+                            <div className="grid grid-cols-3 gap-x-2 text-center">
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Setup</p>
+                                <p className="text-sm font-medium text-foreground">{setup?.name || "—"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Spot</p>
+                                <p className="text-sm font-medium text-foreground">{spot?.name || "—"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Location</p>
+                                <p className="text-sm font-medium text-foreground">{location?.name || "—"}</p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : (
+                  logisticsHistory.length === 0 ? (
+                    <p className="text-muted-foreground p-4">No logistics history yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {logisticsHistory.map((row: any) => {
+                        const visit = row.spot_visit;
+                        const spot = visit?.spot;
+                        const location = spot?.location;
+                        const snap = snapshots.find(
+                          (s: any) => s.visit_id === row.spot_visit_id && s.slot_id === row.slot_id
+                        );
+                        const lastStock = snap?.previous_stock ?? null;
+                        const currentStock = row.computed_current_stock ?? null;
+                        const unitsSold = row.units_sold ?? 0;
+                        const added = row.quantity_added || 0;
+                        const removed = row.quantity_removed || 0;
+                        const falseCoins = row.false_coins ?? 0;
+                        const jamStatus = row.jam_status ?? "no_jam";
+                        const auditedCount = row.meter_reading;
+                        const jamLabel = jamStatus === "by_coin" ? "Jam (+1)" : jamStatus === "mechanical" ? "Jam (mech)" : "—";
+
+                        return (
+                          <div
+                            key={row.id}
+                            className="rounded-lg border border-border/60 p-3 hover:bg-muted/30 cursor-pointer transition-colors"
+                            onClick={() => row.spot_visit_id && navigate(`/visits/${row.spot_visit_id}`)}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Badge className={`text-[10px] px-1.5 py-0 shrink-0 ${actionColors[row.action_type] || ""}`}>
+                                  {row.action_type}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground truncate">
+                                  {location?.name ? `${location.name} › ${spot?.name || ""}` : spot?.name || "—"}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-muted-foreground shrink-0">
+                                {visit?.visit_date ? format(new Date(visit.visit_date), "MMM d, yyyy") : "—"}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-4 sm:grid-cols-8 gap-x-2 gap-y-1 text-center">
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Last</p>
+                                <p className="text-sm font-medium text-foreground">{lastStock ?? "—"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Current</p>
+                                <p className="text-sm font-medium text-foreground">{currentStock ?? "—"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Audited</p>
+                                <p className="text-sm font-medium text-foreground">{auditedCount ?? "—"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Sold</p>
+                                <p className="text-sm font-medium text-primary">{unitsSold || "—"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Added</p>
+                                <p className="text-sm font-medium text-chart-2">{added > 0 ? `+${added}` : "—"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Removed</p>
+                                <p className="text-sm font-medium text-destructive">{removed > 0 ? `-${removed}` : "—"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">False</p>
+                                <p className="text-sm font-medium text-chart-4">{falseCoins || "—"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Jam</p>
+                                <p className="text-[11px] font-medium text-muted-foreground">{jamLabel}</p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
                 )}
               </CardContent>
             </Card>
