@@ -4,6 +4,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, Pencil, Save, X, Camera, Upload, Trash2, DollarSign, Warehouse, Truck, ShoppingCart, AlertTriangle, Copy, Check } from "lucide-react";
+import { ArrowLeft, Pencil, Save, X, Camera, Upload, Trash2, DollarSign, Warehouse, Truck, ShoppingCart, AlertTriangle, Copy, Check, ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useCategories } from "@/hooks/useCategories";
@@ -130,7 +131,7 @@ export default function ItemDetail() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("visit_line_items")
-        .select("units_sold, cash_collected, quantity_added, quantity_removed")
+        .select("units_sold, cash_collected, quantity_added, quantity_removed, false_coins")
         .eq("product_id", id!);
       if (error) throw error;
       return data;
@@ -312,8 +313,11 @@ export default function ItemDetail() {
   );
   const grossProfit = totalRevenue - totalInventoryCost;
   const marginPct = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
-  const totalAcquired = purchaseBatches.reduce(
-    (sum: number, b: any) => sum + (b.quantity_ordered || 0), 0
+  const totalReceived = purchaseBatches.reduce(
+    (sum: number, b: any) => sum + (b.quantity_received || 0), 0
+  );
+  const totalFalseCoins = (salesData || []).reduce(
+    (sum, s) => sum + (s.false_coins || 0), 0
   );
 
   const typeLabel = item.type?.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || "—";
@@ -460,8 +464,8 @@ export default function ItemDetail() {
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 text-center">
               <div>
-                <p className="text-sm text-muted-foreground">Total Acquired</p>
-                <p className="text-lg font-semibold text-foreground">{totalAcquired.toLocaleString()}</p>
+                <p className="text-sm text-muted-foreground">Total Received</p>
+                <p className="text-lg font-semibold text-foreground">{totalReceived.toLocaleString()}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Inventory Value</p>
@@ -488,21 +492,66 @@ export default function ItemDetail() {
         </Card>
 
         {/* Discrepancy alert (stock vs computed) */}
-        {totalStock > 0 && totalAcquired > 0 && (() => {
-          const totalDispatched = totalUnitsSold;
-          const expectedStock = totalAcquired - totalDispatched;
+        {totalStock > 0 && totalReceived > 0 && (() => {
+          const totalLost = totalUnitsSold + totalFalseCoins;
+          const expectedStock = totalReceived - totalLost;
           const diff = totalStock - expectedStock;
           if (diff !== 0) {
             return (
               <Alert className="border-chart-4/50 bg-chart-4/5">
                 <AlertTriangle className="h-4 w-4 text-chart-4" />
-                <AlertTitle className="text-chart-4">Stock Discrepancy Detected</AlertTitle>
-                <AlertDescription className="text-muted-foreground">
-                  Expected {expectedStock.toLocaleString()} units based on acquisitions and sales, but found {totalStock.toLocaleString()} units.
-                  {diff > 0
-                    ? ` Surplus of ${diff.toLocaleString()} units.`
-                    : ` Shortage of ${Math.abs(diff).toLocaleString()} units.`}
-                </AlertDescription>
+                <AlertTitle className="text-chart-4">
+                  Stock Discrepancy Detected: {diff > 0 ? `Surplus of ${diff.toLocaleString()}` : `Shortage of ${Math.abs(diff).toLocaleString()}`} units
+                </AlertTitle>
+                <Collapsible>
+                  <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mt-1 transition-colors">
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    View Breakdown
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="mt-3 space-y-1 text-sm font-mono">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Total Received (purchases)</span>
+                        <span className="text-foreground">{totalReceived.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">− Units Sold (visits)</span>
+                        <span className="text-destructive">−{totalUnitsSold.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">− False Coins (lost)</span>
+                        <span className="text-destructive">−{totalFalseCoins.toLocaleString()}</span>
+                      </div>
+                      <div className="border-t border-border my-1" />
+                      <div className="flex justify-between font-semibold">
+                        <span className="text-foreground">Expected Stock</span>
+                        <span className="text-foreground">{expectedStock.toLocaleString()}</span>
+                      </div>
+
+                      <div className="mt-3 flex justify-between">
+                        <span className="text-muted-foreground pl-2">Warehouse</span>
+                        <span className="text-foreground">{totalWarehouse.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground pl-2">Deployed in Machines</span>
+                        <span className="text-foreground">{totalMachine.toLocaleString()}</span>
+                      </div>
+                      <div className="border-t border-border my-1" />
+                      <div className="flex justify-between font-semibold">
+                        <span className="text-foreground">Actual Stock</span>
+                        <span className="text-foreground">{totalStock.toLocaleString()}</span>
+                      </div>
+
+                      <div className="border-t border-border my-1" />
+                      <div className="flex justify-between font-bold">
+                        <span className={diff > 0 ? "text-chart-2" : "text-destructive"}>Discrepancy</span>
+                        <span className={diff > 0 ? "text-chart-2" : "text-destructive"}>
+                          {diff > 0 ? "+" : ""}{diff.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
               </Alert>
             );
           }
