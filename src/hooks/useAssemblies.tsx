@@ -216,6 +216,31 @@ export function useAssemblies() {
         .update({ cost_price: Math.round(finalUnitCost * 1000) / 1000 } as any)
         .eq("id", outputItemDetailId);
 
+      // 8. Create a purchase_items record for FIFO costing of assembled output
+      // This ensures inventory cost, unit cost, and total received are tracked
+      const { data: maxArrival } = await supabase
+        .from("purchase_items")
+        .select("arrival_order")
+        .eq("item_detail_id", outputItemDetailId)
+        .order("arrival_order", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const nextArrivalOrder = ((maxArrival as any)?.arrival_order || 0) + 1;
+
+      await supabase.from("purchase_items").insert({
+        item_detail_id: outputItemDetailId,
+        purchase_id: null,
+        quantity_ordered: data.output_quantity,
+        quantity_received: data.output_quantity,
+        quantity_remaining: data.output_quantity,
+        unit_cost: Math.round(finalUnitCost * 1000) / 1000,
+        final_unit_cost: Math.round(finalUnitCost * 1000) / 1000,
+        landed_unit_cost: Math.round(finalUnitCost * 1000) / 1000,
+        active_item: true,
+        arrival_order: nextArrivalOrder,
+      });
+
       return assembly;
     },
     onSuccess: () => {
