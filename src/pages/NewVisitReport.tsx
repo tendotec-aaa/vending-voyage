@@ -56,6 +56,7 @@ import {
   Lightbulb,
 } from "lucide-react";
 import { VisitDraftsDropdown, saveDraft, type VisitDraft } from "@/components/visits/VisitDraftsDropdown";
+import { ToyPicker } from "@/components/visits/ToyPicker";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { format, differenceInDays, startOfDay } from "date-fns";
@@ -348,17 +349,30 @@ export default function NewVisitReport() {
     enabled: !!selectedSpot,
   });
 
-  // Fetch products (merchandise type items)
+  // Fetch products (merchandise type items) with category_id
   const { data: products = [] } = useQuery({
     queryKey: ['products'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('item_details')
-        .select('id, name, sku, type')
+        .select('id, name, sku, type, category_id')
         .eq('type', 'merchandise')
         .order('name');
       if (error) throw error;
-      return (data || []) as ItemDetailBasic[];
+      return (data || []) as (ItemDetailBasic & { category_id: string | null })[];
+    },
+  });
+
+  // Fetch categories for toy picker filter
+  const { data: toyCategories = [] } = useQuery({
+    queryKey: ['categories-for-visit'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('id, name')
+        .order('name');
+      if (error) throw error;
+      return data;
     },
   });
 
@@ -1028,27 +1042,14 @@ export default function NewVisitReport() {
           {/* Installation View */}
           {isInstallation && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Assign Toy</Label>
-                <Select
-                  value={slot.toyId}
-                  onValueChange={(value) => {
-                    const product = products.find(p => p.id === value);
-                    updateSlot(slot.id, { toyId: value, toyName: product?.name || "" });
-                  }}
-                >
-                  <SelectTrigger className="bg-card">
-                    <SelectValue placeholder="Select toy" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {products.map((product) => (
-                      <SelectItem key={product.id} value={product.id}>
-                        {product.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <ToyPicker
+                products={products}
+                categories={toyCategories}
+                value={slot.toyId}
+                onSelect={(id, name) => updateSlot(slot.id, { toyId: id, toyName: name })}
+                label="Assign Toy"
+                placeholder="Search toy..."
+              />
               <div className="space-y-2">
                 <Label>Toy Capacity</Label>
                 <Input
@@ -1112,26 +1113,15 @@ export default function NewVisitReport() {
 
               {/* Product swap selector */}
               {slot.replaceAllToys && (
-                <div className="space-y-2 mb-4 p-3 bg-muted/50 rounded-md border border-border">
-                  <Label>New Product</Label>
-                  <Select
+                <div className="mb-4 p-3 bg-muted/50 rounded-md border border-border">
+                  <ToyPicker
+                    products={products}
+                    categories={toyCategories}
                     value={slot.toyId}
-                    onValueChange={(value) => {
-                      const product = products.find(p => p.id === value);
-                      updateSlot(slot.id, { toyId: value, toyName: product?.name || "" });
-                    }}
-                  >
-                    <SelectTrigger className="bg-card">
-                      <SelectValue placeholder="Select replacement toy" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {products.map((product) => (
-                        <SelectItem key={product.id} value={product.id}>
-                          {product.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onSelect={(id, name) => updateSlot(slot.id, { toyId: id, toyName: name })}
+                    label="New Product"
+                    placeholder="Search replacement toy..."
+                  />
                 </div>
               )}
               
@@ -1283,26 +1273,15 @@ export default function NewVisitReport() {
 
               {/* Product swap selector for audit */}
               {slot.replaceAllToys && (
-                <div className="space-y-2 mb-4 p-3 bg-muted/50 rounded-md border border-border">
-                  <Label>New Product</Label>
-                  <Select
+                <div className="mb-4 p-3 bg-muted/50 rounded-md border border-border">
+                  <ToyPicker
+                    products={products}
+                    categories={toyCategories}
                     value={slot.toyId}
-                    onValueChange={(value) => {
-                      const product = products.find(p => p.id === value);
-                      updateSlot(slot.id, { toyId: value, toyName: product?.name || "" });
-                    }}
-                  >
-                    <SelectTrigger className="bg-card">
-                      <SelectValue placeholder="Select replacement toy" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {products.map((product) => (
-                        <SelectItem key={product.id} value={product.id}>
-                          {product.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onSelect={(id, name) => updateSlot(slot.id, { toyId: id, toyName: name })}
+                    label="New Product"
+                    placeholder="Search replacement toy..."
+                  />
                 </div>
               )}
               
