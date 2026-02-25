@@ -42,6 +42,7 @@ export default function Warehouse() {
   }, [inventory, searchQuery, categoryFilter]);
 
   const totalItems = filteredInventory.reduce((sum, item) => sum + (item.quantity_on_hand || 0), 0);
+  const activeSKUs = filteredInventory.filter((item) => (item.quantity_on_hand || 0) > 0).length;
   const userWarehouses = warehouses.filter((w) => !w.is_system);
   const systemWarehouses = warehouses.filter((w) => w.is_system);
 
@@ -104,8 +105,8 @@ export default function Warehouse() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <Card className="p-4">
-          <p className="text-sm text-muted-foreground">Total SKUs</p>
-          <p className="text-2xl font-bold text-foreground">{filteredInventory.length}</p>
+          <p className="text-sm text-muted-foreground">Active SKUs / Total SKUs</p>
+          <p className="text-2xl font-bold text-foreground">{activeSKUs} <span className="text-muted-foreground font-normal text-lg">/ {filteredInventory.length}</span></p>
         </Card>
         <Card className="p-4">
           <p className="text-sm text-muted-foreground">Total Items</p>
@@ -166,10 +167,12 @@ export default function Warehouse() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredInventory.map((item) => (
+              {filteredInventory.map((item) => {
+                const isInactive = (item.quantity_on_hand || 0) <= 0;
+                return (
                 <TableRow
                   key={item.id}
-                  className="cursor-pointer hover:bg-muted/50"
+                  className={`cursor-pointer hover:bg-muted/50 ${isInactive ? "opacity-40" : ""}`}
                   onClick={() => item.item_detail?.id && navigate(`/inventory/${item.item_detail.id}`)}
                 >
                   <TableCell className="font-medium text-foreground">{item.item_detail?.name || "Unknown"}</TableCell>
@@ -183,7 +186,8 @@ export default function Warehouse() {
                     {item.last_updated ? new Date(item.last_updated).toLocaleDateString() : "—"}
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         )}

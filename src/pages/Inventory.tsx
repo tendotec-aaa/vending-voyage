@@ -137,9 +137,10 @@ export default function InventoryPage() {
   }, [inventory, searchQuery]);
 
   const stats = useMemo(() => {
-    if (!inventory) return { totalSKUs: 0, warehouseStock: 0, deployed: 0, totalCost: 0 };
+    if (!inventory) return { totalSKUs: 0, activeSKUs: 0, warehouseStock: 0, deployed: 0, totalCost: 0 };
     return {
       totalSKUs: inventory.length,
+      activeSKUs: inventory.filter((item) => item.total > 0).length,
       warehouseStock: inventory.reduce((sum, item) => sum + item.warehouseQty, 0),
       deployed: inventory.reduce((sum, item) => sum + item.inMachinesQty, 0),
       totalCost: inventory.reduce((sum, item) => sum + item.totalInventoryCost, 0),
@@ -160,8 +161,8 @@ export default function InventoryPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <Card className="p-4">
-          <p className="text-sm text-muted-foreground">Total SKUs</p>
-          <p className="text-2xl font-bold text-foreground">{stats.totalSKUs}</p>
+          <p className="text-sm text-muted-foreground">Active SKUs / Total SKUs</p>
+          <p className="text-2xl font-bold text-foreground">{stats.activeSKUs} <span className="text-muted-foreground font-normal text-lg">/ {stats.totalSKUs}</span></p>
         </Card>
         <Card className="p-4">
           <p className="text-sm text-muted-foreground">Warehouse Stock</p>
@@ -216,10 +217,12 @@ export default function InventoryPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredInventory.map((item) => (
+              {filteredInventory.map((item) => {
+                const isInactive = item.total <= 0;
+                return (
                 <TableRow
                   key={item.id}
-                  className="cursor-pointer hover:bg-muted/50"
+                  className={`cursor-pointer hover:bg-muted/50 ${isInactive ? "opacity-40" : ""}`}
                   onClick={() => navigate(`/inventory/${item.id}`)}
                 >
                   <TableCell className="font-mono text-sm text-primary">{item.sku}</TableCell>
@@ -241,7 +244,8 @@ export default function InventoryPage() {
                     ${item.totalInventoryCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
               {filteredInventory.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
