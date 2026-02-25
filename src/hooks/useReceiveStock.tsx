@@ -106,7 +106,7 @@ export function useReceiveStock() {
 
         if (updateError) throw updateError;
 
-        // 2. Create receiving_allocations and update inventory for each warehouse
+        // 2. Create receiving_allocations and update inventory + ledger for each warehouse
         for (const alloc of item.allocations) {
           const { error: allocError } = await supabase
             .from("receiving_allocations")
@@ -119,7 +119,21 @@ export function useReceiveStock() {
 
           if (allocError) throw allocError;
 
-          await upsertInventory(item.itemDetailId, alloc.warehouseId, alloc.quantity);
+          const newBalance = await upsertInventory(item.itemDetailId, alloc.warehouseId, alloc.quantity);
+
+          // Write ledger entry for this receive
+          if (item.itemDetailId) {
+            await supabase.from("inventory_ledger").insert({
+              item_detail_id: item.itemDetailId,
+              warehouse_id: alloc.warehouseId,
+              movement_type: "receive",
+              quantity: alloc.quantity,
+              running_balance: newBalance,
+              reference_id: payload.purchaseId,
+              reference_type: "purchase",
+              notes: `Received from PO`,
+            });
+          }
         }
 
         // 3. Handle discrepancy
@@ -140,7 +154,21 @@ export function useReceiveStock() {
           if (noteError) throw noteError;
 
           if (systemWarehouseId) {
-            await upsertInventory(item.itemDetailId, systemWarehouseId, difference);
+            const sysBalance = await upsertInventory(item.itemDetailId, systemWarehouseId, difference);
+
+            // Ledger entry for discrepancy allocation
+            if (item.itemDetailId) {
+              await supabase.from("inventory_ledger").insert({
+                item_detail_id: item.itemDetailId,
+                warehouse_id: systemWarehouseId,
+                movement_type: "receive",
+                quantity: difference,
+                running_balance: sysBalance,
+                reference_id: payload.purchaseId,
+                reference_type: "purchase",
+                notes: `Discrepancy: ${difference} unit(s) routed to ${systemWarehouseName}`,
+              });
+            }
 
             const { error: unaccountedAllocError } = await supabase
               .from("receiving_allocations")
@@ -200,10 +228,9 @@ async function upsertInventory(
   itemDetailId: string | null,
   warehouseId: string,
   quantity: number
-) {
-  if (!itemDetailId) return;
+): Promise<number> {
+  if (!itemDetailId) return 0;
 
-  // Check if inventory row already exists
   const { data: existing } = await supabase
     .from("inventory")
     .select("id, quantity_on_hand")
@@ -211,15 +238,16 @@ async function upsertInventory(
     .eq("warehouse_id", warehouseId)
     .maybeSingle();
 
+  const newBalance = (existing?.quantity_on_hand || 0) + quantity;
+
   if (existing) {
     const { error } = await supabase
       .from("inventory")
       .update({
-        quantity_on_hand: (existing.quantity_on_hand || 0) + quantity,
+        quantity_on_hand: newBalance,
         last_updated: new Date().toISOString(),
       })
       .eq("id", existing.id);
-
     if (error) throw error;
   } else {
     const { error } = await supabase
@@ -229,7 +257,8 @@ async function upsertInventory(
         warehouse_id: warehouseId,
         quantity_on_hand: quantity,
       });
-
     if (error) throw error;
   }
+
+  return newBalance;
 }
