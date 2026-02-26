@@ -522,7 +522,7 @@ export default function NewVisitReport() {
     if (machineSlots.length > 0 && selectedSpot && visitType) {
       const generatedSlots: SlotEntry[] = machineSlots.map((slot) => {
         const machine = machines.find(m => m.id === slot.machine_id);
-        const product = products.find(p => p.id === slot.current_product_id);
+        const product = products.length > 0 ? products.find(p => p.id === slot.current_product_id) : undefined;
         
         return {
           id: slot.id,
@@ -530,7 +530,7 @@ export default function NewVisitReport() {
           machineSerialNo: machine?.serial_number || 'Unknown',
           slotId: slot.id,
           slotNumber: slot.slot_number,
-          toyName: product?.name || "Unassigned",
+          toyName: product?.name || (slot.current_product_id ? "Loading..." : "Unassigned"),
           toyId: slot.current_product_id || "",
           replaceAllToys: false,
           lastStock: slot.current_stock || 0,
@@ -573,7 +573,8 @@ export default function NewVisitReport() {
             severity: cs.severity || "",
             replaceAllToys: cs.replaceAllToys || false,
             toyId: cs.toyId || slot.toyId,
-            toyName: cs.toyName || slot.toyName,
+            // Always prefer the freshly resolved name from products over cached "Unassigned"
+            toyName: slot.toyName !== "Unassigned" ? slot.toyName : (cs.toyName && cs.toyName !== "Unassigned" ? cs.toyName : slot.toyName),
             pricePerUnit: cs.pricePerUnit || slot.pricePerUnit,
             capacity: cs.capacity || slot.capacity,
             toyCapacity: cs.toyCapacity || slot.toyCapacity,
