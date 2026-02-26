@@ -1,203 +1,72 @@
 
 
-# Comprehensive Plan: Item Types, Purchase Fixes, and Assembly Feature
+## Plan: Assembly Category Filter, Visit Report ToyPicker Redesign, Sorting, and Inventory Ledger Fix
 
-This is a large set of changes spanning database schema, purchase workflow fixes, UI renames, and an entirely new Assembly feature. Here is the full breakdown.
+### 1. New Assembly Page — Category Filter for Components
 
----
+**Problem**: The component dropdown shows all inventory items regardless of category, making it hard to find what you need.
 
-## Part 1: New `item_types` Table and Combobox
+**Solution**: Add a category filter dropdown above the component selector, similar to what was done for the Visit Report ToyPicker. The inventory query already fetches `item_detail` with joined fields but doesn't include `category_id`. Changes:
 
-### Problem
-The current `item_details.type` column uses a hardcoded Postgres enum (`machine_model`, `merchandise`, `spare_part`, `supply`). The user wants a dynamic, user-managed table so they can create/delete item types freely.
-
-### Database Changes
-- Create `item_types` table: `id (uuid PK)`, `name (text, unique)`, `created_at`
-- Add `item_type_id (uuid FK → item_types.id)` column to `item_details`
-- Seed default rows: "Machine Model", "Merchandise", "Spare Part", "Supply" (matching existing enum values)
-- Backfill `item_type_id` on existing `item_details` rows based on their current `type` enum value
-- RLS: authenticated users can CRUD
-
-### Frontend Changes
-- **New hook `src/hooks/useItemTypes.tsx`**: CRUD operations for `item_types`, including a delete check that queries `item_details` for linked items before allowing deletion
-- **NewPurchase.tsx**: Add `CreatableCombobox` for "Item Type" next to the Category combobox. Store `item_type_id` on the line item and pass it through to `usePurchases` when creating `item_details`
-- **Delete protection dialog**: When deleting an item type that has linked items, show a dialog listing those items so the user can reassign them first
-
-### Files Modified
-- New migration SQL
-- New: `src/hooks/useItemTypes.tsx`
-- Modified: `src/pages/NewPurchase.tsx` (add Item Type combobox)
-- Modified: `src/hooks/usePurchases.tsx` (pass `item_type_id` when creating item_details)
+- Modify the inventory query (line 78) to include `category_id` in the `item_details` join: `item_detail:item_details(id, name, sku, cost_price, category_id)`
+- Add a `componentCategoryFilter` state variable (default `"all"`)
+- Add a category `Select` dropdown above the component selector, populated from the existing `categories` hook
+- Filter `availableComponents` memo to respect the selected category
+- Layout: Category dropdown on one row, component selector below it (full width)
 
 ---
 
-## Part 2: UI Renames (Quick Fixes)
+### 2. New Visit Report — ToyPicker Redesign
 
-### Changes
-1. **NewPurchase.tsx line 723**: "Per-Item Landed Costs" → "Per-Item Cost" (only when `orderType === "local"`, keep "Per-Item Landed Costs" for import)
-2. **NewPurchase.tsx line 431**: "Line Items" → "Item Descriptions"
-3. **PurchaseDetail.tsx line 435**: "Line Items" → "Item Descriptions"
+**Problem**: The ToyPicker (category dropdown + search combobox) is crammed inside each slot card's grid, making the search box too small and looking messy. It's also repeated per slot.
 
----
+**Solution**: Move the category filter to the **Visit Details card** (below Visit Type), so it's selected once for the entire visit. The individual slot cards will only show the searchable combobox (without the category dropdown), giving it full width.
 
-## Part 3: Fix First Line Item SKU Not Showing
-
-### Problem
-The first line item is initialized with `sku: ""` (line 80), while subsequent items get `sku: generateSku()` (line 106).
-
-### Fix
-Change line 80 initialization to also call `generateSku()`:
-```typescript
-{ item_name: "", sku: generateSku(), quantity_ordered: 1, unit_cost: 0, cbm: 0, fees: [] }
-```
-But `generateSku` is defined on line 100, after the state init on line 79. Since `useState` uses lazy init, we just need to call the function inline or use `Date.now().toString(36).toUpperCase()` directly.
+- Add a `toyCategoryFilter` state variable in `NewVisitReport`
+- Add a "Product Category" `Select` dropdown in the Visit Details card (lines 1604-1686), in the grid alongside Visit Type and Visit Date
+- Filter the `products` list passed to `ToyPicker` based on `toyCategoryFilter` before passing it down
+- Update `ToyPicker` component: when used in the visit report, skip the inline category filter (either remove it from ToyPicker or add a prop like `hideCategory`). The simplest approach is to just pass the already-filtered products and remove the category filter from inside ToyPicker by adding a `showCategoryFilter` prop (default `true`) 
+- This gives the combobox full width in each slot card
 
 ---
 
-## Part 4: Fix Local Purchase Cost Calculations
+### 3. Inventory Page — Sort by Highest Inventory Cost
 
-### Problem
-When creating a purchase order, the `usePurchases.tsx` `createPurchaseMutation` never calculates or saves `line_fees_total`, `global_fees_allocated`, `tax_allocated`, `landed_unit_cost`, or `final_unit_cost` on `purchase_items`. It also never updates `item_details.cost_price`.
+**Problem**: Items are not sorted by cost.
 
-### Root Cause
-The `createPurchaseMutation` in `usePurchases.tsx` only inserts raw line items without computing costs. The cost calculation only happens in `PurchaseDetail.tsx` via `applyFeesMutation` — but that requires the user to manually click "Apply Fee Changes" on the detail page.
-
-### Fix: Calculate costs at creation time
-After inserting line items and fees in `createPurchaseMutation`, run the same cost calculation logic that `applyFeesMutation` uses:
-1. For each purchase item, compute `line_fees_total`, `global_fees_allocated`, `tax_allocated`, `landed_unit_cost`, `final_unit_cost`
-2. Update each `purchase_items` row with these values
-3. Update `item_details.cost_price` with the `final_unit_cost`
-
-### Fix: Auto-calculate on status change to "arrived"
-In `PurchaseDetail.tsx`, when the status is changed to "arrived", automatically trigger the cost recalculation (same logic as `applyFeesMutation`). This ensures costs are always computed even if the user didn't manually click "Apply".
+**Solution**: Add `.sort((a, b) => b.totalInventoryCost - a.totalInventoryCost)` to the `filteredInventory` memo in `Inventory.tsx` (after the filter, before return).
 
 ---
 
-## Part 5: Local Purchases Auto-Marked as Arrived
+### 4. Warehouse Page — Sort by Highest Quantity
 
-### Problem
-Local purchases are bought locally so they don't need an "in transit" → "arrived" flow.
+**Problem**: Items are not sorted by quantity.
 
-### Fix
-In `usePurchases.tsx` `createPurchaseMutation`, when `type === "local"`:
-- Set initial status to `"arrived"` instead of `"pending"`
-- Set `received_at` to the current timestamp
-- This makes the purchase immediately eligible for receiving
+**Solution**: Add `.sort((a, b) => (b.quantity_on_hand || 0) - (a.quantity_on_hand || 0))` to the `filteredInventory` memo in `Warehouse.tsx`.
 
 ---
 
-## Part 6: Per-Item Cost Breakdown in PurchaseDetail
+### 5. Inventory Ledger — Diagnosis and Fix
 
-### Problem
-The PurchaseDetail page shows individual item cost breakdowns inline but doesn't have a dedicated summary section at the bottom like NewPurchase does.
+**Investigation findings**:
+- The `inventory_ledger` table has 6 rows (all from assembly and stock receiving backfill operations).
+- The edge function `submit-visit-report` has proper ledger logic with `appendLedger()`, but this function **silently swallows errors** — it calls `await db.from("inventory_ledger").insert(...)` without checking the result.
+- The visit that exists in the system (`ea06d6f3...`) has zero corresponding ledger entries (`reference_type = 'visit'`), confirming ledger inserts are failing silently during visit submission.
+- RLS policies are permissive and the edge function uses the service role key, so RLS is not the issue.
+- The check constraints allow the correct movement types (`refill`, `removal`, `swap_in`, `swap_out`, `adjustment`) and reference types (`visit`).
+- **Root cause**: The `getClaims` method used in the edge function (line 199) may not be available in the Supabase JS SDK version imported (`@supabase/supabase-js@2`). If auth fails, `userId` would be undefined but processing continues. However, the visit itself is created successfully, so auth isn't the primary issue. More likely, the `appendLedger` inserts are failing because the `getRunningBalance` helper queries with strict `warehouse_id`/`slot_id` equality using `.eq()` and `.is()` — if the conditions don't match existing rows, it returns 0, which is fine. Let me look more carefully...
+  
+  Actually, reviewing the edge function code again: the `appendLedger` function does `await db.from("inventory_ledger").insert(...)` but **does not check for errors**. If any insert fails (e.g., a constraint violation we haven't caught, or a timing issue), it's silently ignored and the visit still completes.
 
-### Fix
-Add a "Per-Item Cost" card at the bottom of `PurchaseDetail.tsx` (after the Cost Summary card) that shows each item's final unit cost in a clean summary format, similar to the NewPurchase summary section.
+**Fix**: Update the `appendLedger` helper in the edge function to capture and throw errors from the insert operation. Add `const { error } = await db.from(...)` and `if (error) throw error`. This will surface any hidden issues and ensure ledger entries are actually written. Also add error logging so we can debug any remaining issues.
 
----
+Additionally, for **stock receiving** (`useReceiveStock.tsx`), the hook already writes ledger entries directly from the client. These work because we can see "receive" entries in the DB. The assembly hook (`useAssemblies.tsx`) also writes ledger entries and those exist too. So the only broken path is the visit report edge function.
 
-## Part 7: Assembly Feature (New Tables + Page)
-
-### Database Changes
-
-**`assemblies` table:**
-- `id` (uuid PK)
-- `assembly_number` (text, auto-generated like PO numbers: `ASM-{timestamp}`)
-- `output_item_detail_id` (uuid FK → item_details.id)
-- `output_quantity` (integer)
-- `labor_cost_per_unit` (numeric, default 0)
-- `total_labor_cost` (numeric, default 0)
-- `total_component_cost` (numeric, default 0)
-- `final_unit_cost` (numeric, default 0)
-- `status` (text: 'draft' | 'completed', default 'draft')
-- `notes` (text, nullable)
-- `created_at`, `created_by` (uuid)
-
-**`assembly_components` table:**
-- `id` (uuid PK)
-- `assembly_id` (uuid FK → assemblies.id, ON DELETE CASCADE)
-- `item_detail_id` (uuid FK → item_details.id)
-- `quantity_per_unit` (integer) — how many of this component per 1 output unit
-- `total_quantity` (integer) — quantity_per_unit × output_quantity
-- `unit_cost` (numeric) — captured at time of assembly from FIFO
-- `total_cost` (numeric)
-- `created_at`
-
-RLS: authenticated users can CRUD on both tables.
-
-### Frontend Changes
-
-**New page: `src/pages/NewAssembly.tsx`**
-Three sections mirroring the PO workflow:
-
-1. **Assembly Header**: Output item (new or link existing via CreatableCombobox), category, subcategory, item type, output quantity
-2. **Component Selection**: Search/select existing inventory items, specify quantity per unit, auto-fetch current FIFO cost, show subtotal
-3. **Labor & Overhead**: Toggle between per-unit or batch labor cost entry, live calculation summary
-
-**New hook: `src/hooks/useAssemblies.tsx`**
-- Create assembly mutation that:
-  1. Creates/links output item in `item_details`
-  2. Inserts `assemblies` record
-  3. Inserts `assembly_components` records
-  4. Depletes component inventory (FIFO: reduces `quantity_remaining` on oldest `purchase_items`, updates `inventory.quantity_on_hand`)
-  5. Adds output item to warehouse inventory
-  6. Creates ledger entries for both consumption and production
-  7. Sets `final_unit_cost` = (component total + labor) / output quantity
-
-**Routing & Navigation:**
-- Add route `/warehouse/assembly/new` in `App.tsx`
-- Add "New Assembly" button on `Warehouse.tsx` page header
-
-### Files Created
-- `src/pages/NewAssembly.tsx`
-- `src/hooks/useAssemblies.tsx`
-- `src/hooks/useItemTypes.tsx`
-- New migration SQL (item_types, assemblies, assembly_components)
-
-### Files Modified
-- `src/App.tsx` (add route)
-- `src/pages/Warehouse.tsx` (add button)
-- `src/pages/NewPurchase.tsx` (Item Type combobox, SKU fix, renames)
-- `src/pages/PurchaseDetail.tsx` (renames, per-item cost section, auto-calc on arrived)
-- `src/hooks/usePurchases.tsx` (cost calc at creation, local auto-arrived, item_type_id support)
-
----
-
-## Technical Details Summary
-
-```text
-Database Changes:
-  ┌─────────────────┐     ┌──────────────────────┐
-  │   item_types     │◄────│ item_details          │
-  │ id, name         │     │ + item_type_id (new)  │
-  └─────────────────┘     └──────────────────────┘
-
-  ┌─────────────────┐     ┌──────────────────────┐
-  │   assemblies     │◄────│ assembly_components   │
-  │ id, number,      │     │ id, assembly_id,      │
-  │ output_item_id,  │     │ item_detail_id,       │
-  │ output_qty,      │     │ qty_per_unit,         │
-  │ labor, cost      │     │ total_qty, cost       │
-  └─────────────────┘     └──────────────────────┘
-
-Files Created (4):
-  - src/hooks/useItemTypes.tsx
-  - src/hooks/useAssemblies.tsx  
-  - src/pages/NewAssembly.tsx
-  - Migration SQL
-
-Files Modified (5):
-  - src/pages/NewPurchase.tsx
-  - src/pages/PurchaseDetail.tsx
-  - src/hooks/usePurchases.tsx
-  - src/pages/Warehouse.tsx
-  - src/App.tsx
-```
-
-### Execution Order
-1. Database migration first (item_types + seed + backfill, assemblies tables)
-2. Hooks (useItemTypes, useAssemblies)
-3. Purchase fixes (cost calc, SKU, renames, auto-arrived for local)
-4. PurchaseDetail fixes (renames, per-item cost section, auto-calc on arrived)
-5. Assembly page + Warehouse button + routing
+**Files to modify**:
+1. `src/pages/NewAssembly.tsx` — Add category filter for components
+2. `src/components/visits/ToyPicker.tsx` — Add `showCategoryFilter` prop
+3. `src/pages/NewVisitReport.tsx` — Move category filter to Visit Details card, pass filtered products
+4. `src/pages/Inventory.tsx` — Sort by inventory cost descending
+5. `src/pages/Warehouse.tsx` — Sort by quantity descending
+6. `supabase/functions/submit-visit-report/index.ts` — Add error handling to `appendLedger`
 
