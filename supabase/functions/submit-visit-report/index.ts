@@ -29,6 +29,14 @@ interface SlotPayload {
   photoUrl: string | null;
   previousProductId: string | null;
   previousStock: number;
+  // Swap fields
+  newToyId: string;
+  newToyName: string;
+  newToyCapacity: number;
+  newUnitsRefilled: number;
+  newPricePerUnit: number;
+  newCurrentStock: number;
+  swapSurplusShortage: number;
 }
 
 interface VisitPayload {
@@ -269,9 +277,9 @@ Deno.serve(async (req) => {
       spot_visit_id: visitId,
       machine_id: s.machineId,
       slot_id: s.slotId,
-      product_id: s.toyId || null,
+      product_id: s.replaceAllToys && s.newToyId ? s.newToyId : (s.toyId || null),
       action_type: s.replaceAllToys ? "swap" : actionType,
-      quantity_added: s.unitsRefilled,
+      quantity_added: s.replaceAllToys ? s.newUnitsRefilled : s.unitsRefilled,
       quantity_removed: s.unitsRemoved,
       cash_collected: s.cashCollected,
       meter_reading: s.auditedCount,
@@ -287,15 +295,22 @@ Deno.serve(async (req) => {
     if (lineErr)
       throw new Error(`visit_line_items insert: ${lineErr.message}`);
 
-    // ── Step 4: Update machine_slots (True-Up) ──
+    // ── Step 4: Update machine_slots ──
     for (const s of slots) {
       const updateData: Record<string, unknown> = {
         current_stock: s.currentStock,
       };
-      if (s.toyId) updateData.current_product_id = s.toyId;
-      if (visitType === "installation") {
-        updateData.capacity = s.capacity;
-        updateData.coin_acceptor = s.pricePerUnit;
+      if (s.replaceAllToys && s.newToyId) {
+        updateData.current_product_id = s.newToyId;
+        updateData.current_stock = s.newCurrentStock;
+        updateData.capacity = s.newToyCapacity;
+        updateData.coin_acceptor = s.newPricePerUnit;
+      } else {
+        if (s.toyId) updateData.current_product_id = s.toyId;
+        if (visitType === "installation") {
+          updateData.capacity = s.capacity;
+          updateData.coin_acceptor = s.pricePerUnit;
+        }
       }
       const { error } = await db
         .from("machine_slots")
@@ -307,14 +322,117 @@ Deno.serve(async (req) => {
 
     // ── Step 5: Connected Inventory Ledger + Warehouse Updates ──
     for (const s of slots) {
+      if (s.replaceAllToys) {
+        // === SWAP FLOW ===
+        const oldProductId = s.toyId || s.previousProductId;
+        const newProductId = s.newToyId;
+
+        // -- Old product: slot ledger (remove all from slot) --
+        if (oldProductId && s.previousStock > 0) {
+          await appendLedger(db, {
+            item_detail_id: oldProductId,
+            slot_id: s.slotId,
+            movement_type: "swap_out",
+            quantity: -s.previousStock,
+            running_balance: 0,
+            reference_id: visitId,
+            reference_type: "visit",
+            performed_by: userId,
+            notes: `Old product removed during swap — ${s.toyName}`,
+          });
+        }
+
+        // -- Old product: return removed units to warehouse --
+        if (oldProductId && s.unitsRemoved > 0 && sourceWarehouseId) {
+          await upsertInventory(db, oldProductId, sourceWarehouseId, s.unitsRemoved);
+          const whBal = await getRunningBalance(db, oldProductId, sourceWarehouseId, null);
+          await appendLedger(db, {
+            item_detail_id: oldProductId,
+            warehouse_id: sourceWarehouseId,
+            movement_type: "swap_out",
+            quantity: s.unitsRemoved,
+            running_balance: whBal + s.unitsRemoved,
+            reference_id: visitId,
+            reference_type: "visit",
+            performed_by: userId,
+            notes: `Swap return from slot — ${s.toyName}`,
+          });
+        }
+
+        // -- Old product: surplus/shortage adjustment --
+        if (oldProductId && s.swapSurplusShortage !== 0) {
+          await appendLedger(db, {
+            item_detail_id: oldProductId,
+            slot_id: s.slotId,
+            movement_type: "adjustment",
+            quantity: s.swapSurplusShortage,
+            running_balance: 0,
+            reference_id: visitId,
+            reference_type: "visit",
+            performed_by: userId,
+            notes: `Swap ${s.swapSurplusShortage > 0 ? "surplus" : "shortage"}: ${s.swapSurplusShortage}`,
+          });
+          // Record in inventory_adjustments table
+          const expected = s.lastStock - s.unitsSold - s.unitsRemoved - (s.falseCoins || 0) + (s.jamStatus === "by_coin" ? 1 : 0);
+          await db.from("inventory_adjustments").insert({
+            visit_id: visitId,
+            item_detail_id: oldProductId,
+            slot_id: s.slotId,
+            adjustment_type: s.swapSurplusShortage > 0 ? "surplus" : "shortage",
+            expected_quantity: 0,
+            actual_quantity: s.swapSurplusShortage,
+            difference: s.swapSurplusShortage,
+          });
+        }
+
+        // -- New product: deduct from warehouse --
+        if (newProductId && s.newUnitsRefilled > 0 && sourceWarehouseId) {
+          const deducted = await deductInventory(db, newProductId, sourceWarehouseId, s.newUnitsRefilled);
+          const whBal = await getRunningBalance(db, newProductId, sourceWarehouseId, null);
+          await appendLedger(db, {
+            item_detail_id: newProductId,
+            warehouse_id: sourceWarehouseId,
+            movement_type: "refill",
+            quantity: -s.newUnitsRefilled,
+            running_balance: whBal - s.newUnitsRefilled,
+            reference_id: visitId,
+            reference_type: "visit",
+            performed_by: userId,
+            notes: `Swap refill to field — ${s.newToyName}`,
+          });
+          if (!deducted) {
+            warnings.push(
+              `Insufficient warehouse stock for "${s.newToyName}" — refill of ${s.newUnitsRefilled} recorded but warehouse may go negative`
+            );
+          }
+        }
+
+        // -- New product: slot ledger (add to slot) --
+        if (newProductId && s.newCurrentStock > 0) {
+          await appendLedger(db, {
+            item_detail_id: newProductId,
+            slot_id: s.slotId,
+            movement_type: "swap_in",
+            quantity: s.newCurrentStock,
+            running_balance: s.newCurrentStock,
+            reference_id: visitId,
+            reference_type: "visit",
+            performed_by: userId,
+            notes: `New product loaded during swap — ${s.newToyName}`,
+          });
+        }
+
+        continue; // Skip normal flow for swap slots
+      }
+
+      // === NORMAL (NON-SWAP) FLOW ===
       if (!s.toyId) continue;
 
       // --- Slot ledger: record the net stock change on the machine slot ---
       const slotBalance = s.currentStock;
       const slotQtyChange = s.currentStock - s.lastStock;
       if (slotQtyChange !== 0) {
-        const movementType = s.replaceAllToys ? "swap_in" : 
-          (slotQtyChange > 0 ? "refill" : "removal");
+        const movementType = slotQtyChange > 0 ? "refill" : "removal";
         await appendLedger(db, {
           item_detail_id: s.toyId,
           slot_id: s.slotId,
@@ -330,38 +448,6 @@ Deno.serve(async (req) => {
 
       // --- Warehouse ledger + inventory updates ---
       if (sourceWarehouseId) {
-        // Handle product swap: return old product stock to warehouse
-        if (s.replaceAllToys && s.previousProductId && s.previousProductId !== s.toyId) {
-          const returnQty = s.previousStock;
-          if (returnQty > 0) {
-            await upsertInventory(db, s.previousProductId, sourceWarehouseId, returnQty);
-            const prevBal = await getRunningBalance(db, s.previousProductId, sourceWarehouseId, null);
-            await appendLedger(db, {
-              item_detail_id: s.previousProductId,
-              warehouse_id: sourceWarehouseId,
-              movement_type: "swap_out",
-              quantity: returnQty,
-              running_balance: prevBal + returnQty,
-              reference_id: visitId,
-              reference_type: "visit",
-              performed_by: userId,
-              notes: `Swap return from slot`,
-            });
-            // Also record the slot losing old product
-            await appendLedger(db, {
-              item_detail_id: s.previousProductId,
-              slot_id: s.slotId,
-              movement_type: "swap_out",
-              quantity: -s.previousStock,
-              running_balance: 0,
-              reference_id: visitId,
-              reference_type: "visit",
-              performed_by: userId,
-              notes: `Old product removed during swap`,
-            });
-          }
-        }
-
         // Deduct refilled units from warehouse
         if (s.unitsRefilled > 0) {
           const deducted = await deductInventory(db, s.toyId, sourceWarehouseId, s.unitsRefilled);
@@ -384,8 +470,8 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Return removed units to warehouse (non-swap removals)
-        if (s.unitsRemoved > 0 && !s.replaceAllToys) {
+        // Return removed units to warehouse
+        if (s.unitsRemoved > 0) {
           await upsertInventory(db, s.toyId, sourceWarehouseId, s.unitsRemoved);
           const whBal = await getRunningBalance(db, s.toyId, sourceWarehouseId, null);
           await appendLedger(db, {
@@ -407,6 +493,7 @@ Deno.serve(async (req) => {
     if (visitType === "inventory_audit") {
       const adjustments: Array<Record<string, unknown>> = [];
       for (const s of slots) {
+        if (s.replaceAllToys) continue; // Already handled in swap flow
         if (s.auditedCount !== null && s.toyId) {
           const jamAdj = s.jamStatus === "by_coin" ? 1 : 0;
           const falseCoinsAdj = s.falseCoins || 0;
@@ -447,10 +534,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ── Step 7: Automatic Maintenance Loop ──
+    // ── Step 7: Automatic Maintenance Loop + Jam Auto-Tickets ──
     const tickets: Array<Record<string, unknown>> = [];
 
     for (const s of slots) {
+      // Slot-level reported issues
       if (s.reportIssue && s.issueDescription) {
         tickets.push({
           location_id: locationId,
@@ -465,6 +553,30 @@ Deno.serve(async (req) => {
           priority: s.severity || "medium",
           reporter_id: userId,
           status: "pending",
+        });
+      }
+
+      // Auto-create jam tickets (auto-resolved)
+      if (s.jamStatus && s.jamStatus !== "no_jam") {
+        const jamDesc = s.jamStatus === "by_coin"
+          ? "Jam by coin (+1 stock adjustment) — resolved during visit"
+          : s.jamStatus === "with_coins"
+          ? "Jam with coins found — resolved during visit"
+          : "Jam without coins — resolved during visit";
+        tickets.push({
+          location_id: locationId,
+          spot_id: spotId,
+          machine_id: s.machineId,
+          slot_id: s.slotId,
+          setup_id: setupId,
+          product_id: s.replaceAllToys && s.newToyId ? s.newToyId : (s.toyId || null),
+          visit_id: visitId,
+          issue_type: "Jam",
+          description: jamDesc,
+          priority: "low",
+          reporter_id: userId,
+          status: "completed",
+          resolved_at: new Date().toISOString(),
         });
       }
     }
@@ -502,6 +614,7 @@ Deno.serve(async (req) => {
           visitType === "inventory_audit"
             ? slots.filter(
                 (s) =>
+                  !s.replaceAllToys &&
                   s.auditedCount !== null &&
                   s.auditedCount !==
                     s.lastStock -
