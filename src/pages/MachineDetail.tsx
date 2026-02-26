@@ -333,138 +333,103 @@ export default function MachineDetail() {
           </CardContent>
         </Card>
 
-        {/* Slots */}
-        <Card>
-          <CardHeader><CardTitle>Machine Slots ({slots.length})</CardTitle></CardHeader>
-          <CardContent>
-            {slots.length === 0 ? (
-              <p className="text-muted-foreground">No slots configured.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Slot #</TableHead>
-                    <TableHead>Product</TableHead>
-                    <TableHead className="text-right">Stock</TableHead>
-                    <TableHead className="text-right">Capacity</TableHead>
-                    <TableHead className="text-right">Coin</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {slots.map((slot: any) => (
-                    <TableRow key={slot.id}>
-                      <TableCell className="font-medium">{slot.slot_number}</TableCell>
+        {/* Per-Slot Cards */}
+        {slots.map((slot: any) => {
+          const slotVisitLines = visitLineItems.filter((li: any) => li.slot?.slot_number === slot.slot_number);
+          const slotTickets = tickets.filter((t) => t.id && false); // tickets don't have slot filtering currently
+          return (
+            <Card key={slot.id}>
+              <CardHeader><CardTitle>Machine Slot #{slot.slot_number}</CardTitle></CardHeader>
+              <CardContent className="space-y-6">
+                {/* Slot Info */}
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead className="text-right">Stock</TableHead>
+                      <TableHead className="text-right">Capacity</TableHead>
+                      <TableHead className="text-right">Coin</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
                       <TableCell>{slot.item_details?.name || "—"}</TableCell>
                       <TableCell className="text-right">{slot.current_stock ?? 0}</TableCell>
                       <TableCell className="text-right">{slot.capacity ?? 150}</TableCell>
                       <TableCell className="text-right">${fmt2(Number(slot.coin_acceptor ?? 1))}</TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+                  </TableBody>
+                </Table>
 
-        {/* History Tabs */}
-        <Card>
-          <CardHeader><CardTitle>History</CardTitle></CardHeader>
-          <CardContent>
-            <Tabs defaultValue="logistics">
-              <TabsList className="mb-4">
-                <TabsTrigger value="logistics">Logistics History ({visitLineItems.length})</TabsTrigger>
-                <TabsTrigger value="maintenance">Maintenance ({tickets.length})</TabsTrigger>
-              </TabsList>
+                {/* Slot History */}
+                <Tabs defaultValue="logistics">
+                  <TabsList className="mb-4">
+                    <TabsTrigger value="logistics">Logistics History ({slotVisitLines.length})</TabsTrigger>
+                    <TabsTrigger value="maintenance">Maintenance (0)</TabsTrigger>
+                  </TabsList>
 
-              <TabsContent value="logistics">
-                {visitLineItems.length === 0 ? (
-                  <p className="text-muted-foreground">No visit records for this machine.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Slot</TableHead>
-                          <TableHead>Product</TableHead>
-                          <TableHead className="text-right">Last Stock</TableHead>
-                          <TableHead className="text-right">Current</TableHead>
-                          <TableHead className="text-right">Sold</TableHead>
-                          <TableHead className="text-right">Added</TableHead>
-                          <TableHead className="text-right">Removed</TableHead>
-                          <TableHead className="text-right">Cash</TableHead>
-                          <TableHead className="text-right">False</TableHead>
-                          <TableHead>Jam</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {visitLineItems.map((li: any) => {
-                          const lastStock = (li.computed_current_stock ?? 0) - (li.quantity_added ?? 0) + (li.quantity_removed ?? 0) + (li.units_sold ?? 0);
-                          return (
-                            <TableRow key={li.id} className="cursor-pointer hover:bg-muted/50" onClick={() => li.visit?.id && navigate(`/visits/${li.visit.id}`)}>
-                              <TableCell className="text-xs whitespace-nowrap">
-                                {li.visit?.visit_date ? format(new Date(li.visit.visit_date), "MMM d, yyyy") : "—"}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="secondary" className="text-xs">{li.action_type}</Badge>
-                              </TableCell>
-                              <TableCell>#{li.slot?.slot_number ?? "?"}</TableCell>
-                              <TableCell className="max-w-[120px] truncate">{li.product?.name || "—"}</TableCell>
-                              <TableCell className="text-right">{lastStock}</TableCell>
-                              <TableCell className="text-right font-medium">{li.computed_current_stock ?? 0}</TableCell>
-                              <TableCell className="text-right">{li.units_sold ?? 0}</TableCell>
-                              <TableCell className="text-right text-green-600">{li.quantity_added ? `+${li.quantity_added}` : "0"}</TableCell>
-                              <TableCell className="text-right text-red-600">{li.quantity_removed ? `-${li.quantity_removed}` : "0"}</TableCell>
-                              <TableCell className="text-right">${fmt2(Number(li.cash_collected ?? 0))}</TableCell>
-                              <TableCell className="text-right">{li.false_coins ?? 0}</TableCell>
-                              <TableCell>
-                                {li.jam_status && li.jam_status !== "no_jam" ? (
-                                  <Badge variant="destructive" className="text-xs">{li.jam_status}</Badge>
-                                ) : "—"}
-                              </TableCell>
+                  <TabsContent value="logistics">
+                    {slotVisitLines.length === 0 ? (
+                      <p className="text-muted-foreground">No visit records for this slot.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Date</TableHead>
+                              <TableHead>Type</TableHead>
+                              <TableHead>Product</TableHead>
+                              <TableHead className="text-right">Last Stock</TableHead>
+                              <TableHead className="text-right">Current</TableHead>
+                              <TableHead className="text-right">Sold</TableHead>
+                              <TableHead className="text-right">Added</TableHead>
+                              <TableHead className="text-right">Removed</TableHead>
+                              <TableHead className="text-right">Cash</TableHead>
+                              <TableHead className="text-right">False</TableHead>
+                              <TableHead>Jam</TableHead>
                             </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="maintenance">
-                {tickets.length === 0 ? (
-                  <p className="text-muted-foreground">No maintenance records.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {tickets.map((ticket) => (
-                      <div key={ticket.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <Wrench className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <span className="font-medium text-foreground">{ticket.issue_type}</span>
-                            {ticket.description && <p className="text-xs text-muted-foreground truncate max-w-[200px]">{ticket.description}</p>}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant={ticket.priority === "urgent" || ticket.priority === "high" ? "destructive" : "secondary"}>
-                            {ticket.priority}
-                          </Badge>
-                          <Badge variant={ticket.status === "completed" ? "default" : "outline"}>
-                            {ticket.status}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(ticket.created_at), "MMM d, yyyy")}
-                          </span>
-                        </div>
+                          </TableHeader>
+                          <TableBody>
+                            {slotVisitLines.map((li: any) => {
+                              const lastStock = (li.computed_current_stock ?? 0) - (li.quantity_added ?? 0) + (li.quantity_removed ?? 0) + (li.units_sold ?? 0);
+                              return (
+                                <TableRow key={li.id} className="cursor-pointer hover:bg-muted/50" onClick={() => li.visit?.id && navigate(`/visits/${li.visit.id}`)}>
+                                  <TableCell className="text-xs whitespace-nowrap">
+                                    {li.visit?.visit_date ? format(new Date(li.visit.visit_date), "MMM d, yyyy") : "—"}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="secondary" className="text-xs">{li.action_type}</Badge>
+                                  </TableCell>
+                                  <TableCell className="max-w-[120px] truncate">{li.product?.name || "—"}</TableCell>
+                                  <TableCell className="text-right">{lastStock}</TableCell>
+                                  <TableCell className="text-right font-medium">{li.computed_current_stock ?? 0}</TableCell>
+                                  <TableCell className="text-right">{li.units_sold ?? 0}</TableCell>
+                                  <TableCell className="text-right text-green-600">{li.quantity_added ? `+${li.quantity_added}` : "0"}</TableCell>
+                                  <TableCell className="text-right text-red-600">{li.quantity_removed ? `-${li.quantity_removed}` : "0"}</TableCell>
+                                  <TableCell className="text-right">${fmt2(Number(li.cash_collected ?? 0))}</TableCell>
+                                  <TableCell className="text-right">{li.false_coins ?? 0}</TableCell>
+                                  <TableCell>
+                                    {li.jam_status && li.jam_status !== "no_jam" ? (
+                                      <Badge variant="destructive" className="text-xs">{li.jam_status}</Badge>
+                                    ) : "—"}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="maintenance">
+                    <p className="text-muted-foreground">No maintenance records for this slot.</p>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          );
+        })}
 
         {/* Status Actions */}
         {isAdmin && (
