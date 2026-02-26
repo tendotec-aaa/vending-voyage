@@ -30,15 +30,17 @@ export default function Warehouse() {
   const handleCategoryChange = (value: string) => setCategoryFilter(value);
 
   const filteredInventory = useMemo(() => {
-    return inventory.filter((item) => {
-      const itemName = item.item_detail?.name?.toLowerCase() || "";
-      const sku = item.item_detail?.sku?.toLowerCase() || "";
-      const q = searchQuery.toLowerCase();
-      const matchesSearch = itemName.includes(q) || sku.includes(q);
-      const matchesCategory =
-        categoryFilter === "all" || item.item_detail?.category_id === categoryFilter;
-      return matchesSearch && matchesCategory;
-    });
+    return inventory
+      .filter((item) => {
+        const itemName = item.item_detail?.name?.toLowerCase() || "";
+        const sku = item.item_detail?.sku?.toLowerCase() || "";
+        const q = searchQuery.toLowerCase();
+        const matchesSearch = itemName.includes(q) || sku.includes(q);
+        const matchesCategory =
+          categoryFilter === "all" || item.item_detail?.category_id === categoryFilter;
+        return matchesSearch && matchesCategory;
+      })
+      .sort((a, b) => (b.quantity_on_hand || 0) - (a.quantity_on_hand || 0));
   }, [inventory, searchQuery, categoryFilter]);
 
   const totalItems = filteredInventory.reduce((sum, item) => sum + (item.quantity_on_hand || 0), 0);

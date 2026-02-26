@@ -55,6 +55,7 @@ export default function NewAssembly() {
 
   // Components
   const [components, setComponents] = useState<ComponentLine[]>([]);
+  const [componentCategoryFilter, setComponentCategoryFilter] = useState("all");
 
   // Fetch products for linking
   const { data: products = [] } = useQuery({
@@ -75,7 +76,7 @@ export default function NewAssembly() {
     queryFn: async () => {
       let query = supabase
         .from("inventory")
-        .select("item_detail_id, quantity_on_hand, item_detail:item_details(id, name, sku, cost_price)")
+        .select("item_detail_id, quantity_on_hand, item_detail:item_details(id, name, sku, cost_price, category_id)")
         .not("warehouse_id", "is", null)
         .gt("quantity_on_hand", 0);
       if (warehouseId) {
@@ -91,7 +92,11 @@ export default function NewAssembly() {
   const availableComponents = useMemo(() => {
     const selectedIds = new Set(components.map((c) => c.item_detail_id));
     return inventoryItems
-      .filter((inv: any) => inv.item_detail && !selectedIds.has(inv.item_detail_id))
+      .filter((inv: any) => {
+        if (!inv.item_detail || selectedIds.has(inv.item_detail_id)) return false;
+        if (componentCategoryFilter !== "all" && (inv.item_detail as any)?.category_id !== componentCategoryFilter) return false;
+        return true;
+      })
       .map((inv: any) => ({
         id: inv.item_detail_id,
         name: (inv.item_detail as any)?.name || "Unknown",
@@ -99,7 +104,7 @@ export default function NewAssembly() {
         cost_price: (inv.item_detail as any)?.cost_price || 0,
         available_qty: inv.quantity_on_hand || 0,
       }));
-  }, [inventoryItems, components]);
+  }, [inventoryItems, components, componentCategoryFilter]);
 
   const addComponent = (itemId: string) => {
     const inv = inventoryItems.find((i: any) => i.item_detail_id === itemId) as any;
@@ -289,10 +294,19 @@ export default function NewAssembly() {
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Add component */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label>Add Component from Inventory</Label>
+              <Select value={componentCategoryFilter} onValueChange={setComponentCategoryFilter}>
+                <SelectTrigger className="w-full sm:w-[200px]"><SelectValue placeholder="Filter by category" /></SelectTrigger>
+                <SelectContent className="bg-popover">
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select value="" onValueChange={(val) => addComponent(val)}>
-                <SelectTrigger><SelectValue placeholder="Search and select..." /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Search and select component..." /></SelectTrigger>
                 <SelectContent className="bg-popover">
                   {availableComponents.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
