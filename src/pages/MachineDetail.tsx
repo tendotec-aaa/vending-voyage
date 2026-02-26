@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Pencil, Save, X, Truck, Wrench } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -105,6 +106,28 @@ export default function MachineDetail() {
         .eq("machine_id", id!)
         .order("created_at", { ascending: false })
         .limit(20);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
+
+  const { data: visitLineItems = [] } = useQuery({
+    queryKey: ["machine-visit-lines", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("visit_line_items")
+        .select(`
+          id, created_at, action_type, quantity_added, quantity_removed,
+          cash_collected, meter_reading, false_coins, jam_status,
+          computed_current_stock, units_sold, photo_url,
+          product:item_details!visit_line_items_product_id_fkey(id, name),
+          slot:machine_slots!visit_line_items_slot_id_fkey(slot_number),
+          visit:spot_visits!visit_line_items_spot_visit_id_fkey(id, visit_date, visit_type)
+        `)
+        .eq("machine_id", id!)
+        .order("created_at", { ascending: false })
+        .limit(50);
       if (error) throw error;
       return data;
     },
@@ -343,38 +366,103 @@ export default function MachineDetail() {
           </CardContent>
         </Card>
 
-        {/* Maintenance History */}
+        {/* History Tabs */}
         <Card>
-          <CardHeader><CardTitle>Maintenance History ({tickets.length})</CardTitle></CardHeader>
+          <CardHeader><CardTitle>History</CardTitle></CardHeader>
           <CardContent>
-            {tickets.length === 0 ? (
-              <p className="text-muted-foreground">No maintenance records.</p>
-            ) : (
-              <div className="space-y-2">
-                {tickets.map((ticket) => (
-                  <div key={ticket.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <Wrench className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <span className="font-medium text-foreground">{ticket.issue_type}</span>
-                        {ticket.description && <p className="text-xs text-muted-foreground truncate max-w-[200px]">{ticket.description}</p>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={ticket.priority === "urgent" || ticket.priority === "high" ? "destructive" : "secondary"}>
-                        {ticket.priority}
-                      </Badge>
-                      <Badge variant={ticket.status === "completed" ? "default" : "outline"}>
-                        {ticket.status}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {format(new Date(ticket.created_at), "MMM d, yyyy")}
-                      </span>
-                    </div>
+            <Tabs defaultValue="logistics">
+              <TabsList className="mb-4">
+                <TabsTrigger value="logistics">Logistics History ({visitLineItems.length})</TabsTrigger>
+                <TabsTrigger value="maintenance">Maintenance ({tickets.length})</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="logistics">
+                {visitLineItems.length === 0 ? (
+                  <p className="text-muted-foreground">No visit records for this machine.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Slot</TableHead>
+                          <TableHead>Product</TableHead>
+                          <TableHead className="text-right">Last Stock</TableHead>
+                          <TableHead className="text-right">Current</TableHead>
+                          <TableHead className="text-right">Sold</TableHead>
+                          <TableHead className="text-right">Added</TableHead>
+                          <TableHead className="text-right">Removed</TableHead>
+                          <TableHead className="text-right">Cash</TableHead>
+                          <TableHead className="text-right">False</TableHead>
+                          <TableHead>Jam</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visitLineItems.map((li: any) => {
+                          const lastStock = (li.computed_current_stock ?? 0) - (li.quantity_added ?? 0) + (li.quantity_removed ?? 0) + (li.units_sold ?? 0);
+                          return (
+                            <TableRow key={li.id} className="cursor-pointer hover:bg-muted/50" onClick={() => li.visit?.id && navigate(`/visits/${li.visit.id}`)}>
+                              <TableCell className="text-xs whitespace-nowrap">
+                                {li.visit?.visit_date ? format(new Date(li.visit.visit_date), "MMM d, yyyy") : "—"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary" className="text-xs">{li.action_type}</Badge>
+                              </TableCell>
+                              <TableCell>#{li.slot?.slot_number ?? "?"}</TableCell>
+                              <TableCell className="max-w-[120px] truncate">{li.product?.name || "—"}</TableCell>
+                              <TableCell className="text-right">{lastStock}</TableCell>
+                              <TableCell className="text-right font-medium">{li.computed_current_stock ?? 0}</TableCell>
+                              <TableCell className="text-right">{li.units_sold ?? 0}</TableCell>
+                              <TableCell className="text-right text-green-600">{li.quantity_added ? `+${li.quantity_added}` : "0"}</TableCell>
+                              <TableCell className="text-right text-red-600">{li.quantity_removed ? `-${li.quantity_removed}` : "0"}</TableCell>
+                              <TableCell className="text-right">${fmt2(Number(li.cash_collected ?? 0))}</TableCell>
+                              <TableCell className="text-right">{li.false_coins ?? 0}</TableCell>
+                              <TableCell>
+                                {li.jam_status && li.jam_status !== "no_jam" ? (
+                                  <Badge variant="destructive" className="text-xs">{li.jam_status}</Badge>
+                                ) : "—"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
                   </div>
-                ))}
-              </div>
-            )}
+                )}
+              </TabsContent>
+
+              <TabsContent value="maintenance">
+                {tickets.length === 0 ? (
+                  <p className="text-muted-foreground">No maintenance records.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {tickets.map((ticket) => (
+                      <div key={ticket.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <Wrench className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <span className="font-medium text-foreground">{ticket.issue_type}</span>
+                            {ticket.description && <p className="text-xs text-muted-foreground truncate max-w-[200px]">{ticket.description}</p>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={ticket.priority === "urgent" || ticket.priority === "high" ? "destructive" : "secondary"}>
+                            {ticket.priority}
+                          </Badge>
+                          <Badge variant={ticket.status === "completed" ? "default" : "outline"}>
+                            {ticket.status}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(ticket.created_at), "MMM d, yyyy")}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
 
