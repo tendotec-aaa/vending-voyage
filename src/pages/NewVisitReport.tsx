@@ -151,6 +151,14 @@ interface SlotEntry {
   // For evidence lock
   swapPhotoUrl: string | null;
   swapPhotoFile: File | null;
+  // Phase 2: New product fields (for swap)
+  newToyId: string;
+  newToyName: string;
+  newToyCapacity: number;
+  newUnitsRefilled: number;
+  newPricePerUnit: number;
+  newCurrentStock: number;
+  swapSurplusShortage: number;
 }
 
 interface PerformanceGrade {
@@ -552,6 +560,13 @@ export default function NewVisitReport() {
           previousStock: slot.current_stock || 0,
           swapPhotoUrl: null,
           swapPhotoFile: null,
+          newToyId: "",
+          newToyName: "",
+          newToyCapacity: slot.capacity || 150,
+          newUnitsRefilled: 0,
+          newPricePerUnit: 1,
+          newCurrentStock: 0,
+          swapSurplusShortage: 0,
         };
       });
       
@@ -629,15 +644,21 @@ export default function NewVisitReport() {
         updated.currentStock = updated.unitsRefilled;
       } else if (visitType === 'inventory_audit' && updated.auditedCount !== null) {
         updated.currentStock = updated.auditedCount;
+      } else if (updated.replaceAllToys) {
+        // For swap: old product current stock should reach 0
+        const jamAdjustment = updated.jamStatus === 'by_coin' ? 1 : 0;
+        const falseCoinsAdj = updated.falseCoins || 0;
+        updated.currentStock = updated.lastStock - updated.unitsSold + jamAdjustment - falseCoinsAdj - updated.unitsRemoved;
+        updated.swapSurplusShortage = updated.currentStock; // anything != 0 is surplus/shortage
+        // New product stock
+        updated.newCurrentStock = updated.newUnitsRefilled;
       } else {
         const jamAdjustment = updated.jamStatus === 'by_coin' ? 1 : 0;
         const falseCoinsAdj = updated.falseCoins || 0;
-        // Jam By Coin: coin taken, toy NOT dispensed -> stock +1
-        // False Coins: no real coin, toy WAS dispensed -> stock -1
         updated.currentStock = updated.lastStock - updated.unitsSold + jamAdjustment - falseCoinsAdj + updated.unitsRefilled - updated.unitsRemoved;
       }
       
-      // Calculate cash collected
+      // Calculate cash collected (always from old product sales)
       const jamAdj = updated.jamStatus === 'by_coin' ? 1 : 0;
       updated.cashCollected = (updated.unitsSold + jamAdj) * updated.pricePerUnit;
       
@@ -704,21 +725,28 @@ export default function NewVisitReport() {
           replaceAllToys: s.replaceAllToys,
           lastStock: s.lastStock,
           unitsSold: s.unitsSold,
-          unitsRefilled: s.unitsRefilled,
+          unitsRefilled: s.replaceAllToys ? 0 : s.unitsRefilled,
           unitsRemoved: s.unitsRemoved,
           falseCoins: s.falseCoins,
           auditedCount: s.auditedCount,
-          currentStock: s.currentStock,
+          currentStock: s.replaceAllToys ? s.newCurrentStock : s.currentStock,
           pricePerUnit: s.pricePerUnit,
           jamStatus: s.jamStatus,
-          capacity: s.capacity,
+          capacity: s.replaceAllToys ? s.newToyCapacity : s.capacity,
           reportIssue: s.reportIssue,
           issueDescription: s.issueDescription,
           severity: s.severity,
           cashCollected: s.cashCollected,
-          photoUrl: null, // Will be updated after upload
+          photoUrl: null,
           previousProductId: s.previousProductId,
           previousStock: s.previousStock,
+          newToyId: s.newToyId || "",
+          newToyName: s.newToyName || "",
+          newToyCapacity: s.newToyCapacity || 150,
+          newUnitsRefilled: s.newUnitsRefilled || 0,
+          newPricePerUnit: s.newPricePerUnit || 1,
+          newCurrentStock: s.newCurrentStock || 0,
+          swapSurplusShortage: s.replaceAllToys ? s.swapSurplusShortage : 0,
         })),
       };
 
@@ -1120,108 +1148,166 @@ export default function NewVisitReport() {
                 <Label htmlFor={`replace-${slot.id}`}>Replace all toys in this slot</Label>
               </div>
 
-              {/* Product swap selector */}
-              {slot.replaceAllToys && (
-                <div className="mb-4 p-3 bg-muted/50 rounded-md border border-border">
-                   <ToyPicker
-                    products={filteredProducts}
-                    categories={toyCategories}
-                    value={slot.toyId}
-                    onSelect={(id, name) => updateSlot(slot.id, { toyId: id, toyName: name })}
-                    label="New Product"
-                    placeholder="Search replacement toy..."
-                    showCategoryFilter={false}
-                  />
-                </div>
-              )}
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <Label>Last Stock</Label>
-                  <div className="p-2 bg-muted rounded-md text-foreground font-medium">
-                    {slot.lastStock}
+              {slot.replaceAllToys ? (
+                <>
+                  {/* Phase 1: Closing Out Old Product */}
+                  <div className="p-3 rounded-md border border-border bg-muted/30 space-y-4 mb-4">
+                    <p className="text-sm font-semibold text-muted-foreground">Closing Out: {slot.toyName}</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="space-y-2">
+                        <Label>Last Stock</Label>
+                        <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.lastStock}</div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Units Sold</Label>
+                        <Input type="number" min="0" value={slot.unitsSold || ""} onChange={(e) => updateSlot(slot.id, { unitsSold: parseInt(e.target.value) || 0 })} className="bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Units Removed</Label>
+                        <Input type="number" min="0" value={slot.unitsRemoved || ""} onChange={(e) => updateSlot(slot.id, { unitsRemoved: parseInt(e.target.value) || 0 })} className="bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>False Coins</Label>
+                        <Input type="number" min="0" value={slot.falseCoins || ""} onChange={(e) => updateSlot(slot.id, { falseCoins: parseInt(e.target.value) || 0 })} className="bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Price/Unit</Label>
+                        <div className="p-2 bg-muted rounded-md text-foreground font-medium">${fmt2(slot.pricePerUnit)}</div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Jam Status</Label>
+                        <Select value={slot.jamStatus} onValueChange={(value) => updateSlot(slot.id, { jamStatus: value })}>
+                          <SelectTrigger className="bg-card"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {jamStatusOptions.map((option) => (
+                              <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Current Stock</Label>
+                        <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.currentStock}</div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Surplus / Shortage</Label>
+                        <div className={cn(
+                          "p-2 rounded-md font-medium",
+                          slot.swapSurplusShortage > 0 ? "bg-green-500/20 text-green-700 dark:text-green-400" :
+                          slot.swapSurplusShortage < 0 ? "bg-red-500/20 text-red-700 dark:text-red-400" :
+                          "bg-muted text-foreground"
+                        )}>
+                          {slot.swapSurplusShortage > 0 ? `+${slot.swapSurplusShortage} surplus` : slot.swapSurplusShortage < 0 ? `${slot.swapSurplusShortage} shortage` : "0"}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Units Sold</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={slot.unitsSold || ""}
-                    onChange={(e) => updateSlot(slot.id, { unitsSold: parseInt(e.target.value) || 0 })}
-                    className="bg-card"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Units Refilled</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={slot.unitsRefilled || ""}
-                    onChange={(e) => updateSlot(slot.id, { unitsRefilled: parseInt(e.target.value) || 0 })}
-                    className="bg-card"
-                  />
-                  {renderRestockSuggestion(slot)}
-                </div>
-                <div className="space-y-2">
-                  <Label>Units Removed</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={slot.unitsRemoved || ""}
-                    onChange={(e) => updateSlot(slot.id, { unitsRemoved: parseInt(e.target.value) || 0 })}
-                    className="bg-card"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>False Coins</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={slot.falseCoins || ""}
-                    onChange={(e) => updateSlot(slot.id, { falseCoins: parseInt(e.target.value) || 0 })}
-                    className="bg-card"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Current Stock</Label>
-                  <div className="p-2 bg-muted rounded-md text-foreground font-medium">
-                    {slot.currentStock}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Price/Unit</Label>
-                  <div className="p-2 bg-muted rounded-md text-foreground font-medium">
-                    ${fmt2(slot.pricePerUnit)}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Jam Status</Label>
-                  <Select
-                    value={slot.jamStatus}
-                    onValueChange={(value) => updateSlot(slot.id, { jamStatus: value })}
-                  >
-                    <SelectTrigger className="bg-card">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {jamStatusOptions.map((option) => (
-                        <SelectItem key={option.id} value={option.id}>
-                          {option.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              <div className="mt-2 space-y-2">
-                <Label>Capacity</Label>
-                {renderCapacityIndicator(slot)}
-              </div>
 
-              {/* Swap Photo Upload (Feature 4) */}
-              {renderSwapPhotoUpload(slot)}
+                  {/* Phase 2: New Product Setup */}
+                  <div className="p-3 rounded-md border-2 border-primary/30 bg-primary/5 space-y-4">
+                    <p className="text-sm font-semibold text-primary">New Product Setup</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <ToyPicker
+                        products={filteredProducts}
+                        categories={toyCategories}
+                        value={slot.newToyId}
+                        onSelect={(id, name) => updateSlot(slot.id, { newToyId: id, newToyName: name })}
+                        label="Assign Toy"
+                        placeholder="Search toy..."
+                        showCategoryFilter={false}
+                      />
+                      <div className="space-y-2">
+                        <Label>Toy Capacity</Label>
+                        <Input type="number" min="0" value={slot.newToyCapacity || ""} onChange={(e) => updateSlot(slot.id, { newToyCapacity: parseInt(e.target.value) || 0 })} className="bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Units Refilled</Label>
+                        <Input type="number" min="0" value={slot.newUnitsRefilled || ""} onChange={(e) => updateSlot(slot.id, { newUnitsRefilled: parseInt(e.target.value) || 0 })} className="bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Price/Unit ($)</Label>
+                        <Input type="number" min="0" step="0.01" value={slot.newPricePerUnit || ""} onChange={(e) => updateSlot(slot.id, { newPricePerUnit: parseFloat(e.target.value) || 0 })} className="bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Current Stock</Label>
+                        <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.newCurrentStock}</div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Capacity</Label>
+                        {(() => {
+                          const pct = slot.newToyCapacity > 0 ? Math.round((slot.newCurrentStock / slot.newToyCapacity) * 100) : 0;
+                          const colorClass = pct <= 25 ? "bg-red-500" : pct <= 50 ? "bg-yellow-500" : pct <= 75 ? "bg-blue-500" : "bg-green-500";
+                          return (
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground">{slot.newCurrentStock} / {slot.newToyCapacity}</span>
+                                <span className="font-semibold">{pct}%</span>
+                              </div>
+                              <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-secondary">
+                                <div className={cn("h-full rounded-full transition-all", colorClass)} style={{ width: `${Math.min(pct, 100)}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Swap Photo Upload */}
+                  {renderSwapPhotoUpload(slot)}
+                </>
+              ) : (
+                /* Normal routine view (no swap) */
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="space-y-2">
+                      <Label>Last Stock</Label>
+                      <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.lastStock}</div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Units Sold</Label>
+                      <Input type="number" min="0" value={slot.unitsSold || ""} onChange={(e) => updateSlot(slot.id, { unitsSold: parseInt(e.target.value) || 0 })} className="bg-card" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Units Refilled</Label>
+                      <Input type="number" min="0" value={slot.unitsRefilled || ""} onChange={(e) => updateSlot(slot.id, { unitsRefilled: parseInt(e.target.value) || 0 })} className="bg-card" />
+                      {renderRestockSuggestion(slot)}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Units Removed</Label>
+                      <Input type="number" min="0" value={slot.unitsRemoved || ""} onChange={(e) => updateSlot(slot.id, { unitsRemoved: parseInt(e.target.value) || 0 })} className="bg-card" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>False Coins</Label>
+                      <Input type="number" min="0" value={slot.falseCoins || ""} onChange={(e) => updateSlot(slot.id, { falseCoins: parseInt(e.target.value) || 0 })} className="bg-card" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Current Stock</Label>
+                      <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.currentStock}</div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Price/Unit</Label>
+                      <div className="p-2 bg-muted rounded-md text-foreground font-medium">${fmt2(slot.pricePerUnit)}</div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Jam Status</Label>
+                      <Select value={slot.jamStatus} onValueChange={(value) => updateSlot(slot.id, { jamStatus: value })}>
+                        <SelectTrigger className="bg-card"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {jamStatusOptions.map((option) => (
+                            <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-2 space-y-2">
+                    <Label>Capacity</Label>
+                    {renderCapacityIndicator(slot)}
+                  </div>
+                </>
+              )}
 
               {/* Issue Reporting */}
               <div className="border-t border-border pt-4 mt-4">
@@ -1281,142 +1367,193 @@ export default function NewVisitReport() {
                 <Label htmlFor={`replace-${slot.id}`}>Replace all toys in this slot</Label>
               </div>
 
-              {/* Product swap selector for audit */}
-              {slot.replaceAllToys && (
-                <div className="mb-4 p-3 bg-muted/50 rounded-md border border-border">
-                   <ToyPicker
-                    products={filteredProducts}
-                    categories={toyCategories}
-                    value={slot.toyId}
-                    onSelect={(id, name) => updateSlot(slot.id, { toyId: id, toyName: name })}
-                    label="New Product"
-                    placeholder="Search replacement toy..."
-                    showCategoryFilter={false}
-                  />
-                </div>
-              )}
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <Label>Last Stock</Label>
-                  <div className="p-2 bg-muted rounded-md text-foreground font-medium">
-                    {slot.lastStock}
+              {slot.replaceAllToys ? (
+                <>
+                  {/* Phase 1: Closing Out Old Product */}
+                  <div className="p-3 rounded-md border border-border bg-muted/30 space-y-4 mb-4">
+                    <p className="text-sm font-semibold text-muted-foreground">Closing Out: {slot.toyName}</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="space-y-2">
+                        <Label>Last Stock</Label>
+                        <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.lastStock}</div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Units Sold</Label>
+                        <Input type="number" min="0" value={slot.unitsSold || ""} onChange={(e) => updateSlot(slot.id, { unitsSold: parseInt(e.target.value) || 0 })} className="bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Units Removed</Label>
+                        <Input type="number" min="0" value={slot.unitsRemoved || ""} onChange={(e) => updateSlot(slot.id, { unitsRemoved: parseInt(e.target.value) || 0 })} className="bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>False Coins</Label>
+                        <Input type="number" min="0" value={slot.falseCoins || ""} onChange={(e) => updateSlot(slot.id, { falseCoins: parseInt(e.target.value) || 0 })} className="bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Price/Unit</Label>
+                        <div className="p-2 bg-muted rounded-md text-foreground font-medium">${fmt2(slot.pricePerUnit)}</div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Jam Status</Label>
+                        <Select value={slot.jamStatus} onValueChange={(value) => updateSlot(slot.id, { jamStatus: value })}>
+                          <SelectTrigger className="bg-card"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {jamStatusOptions.map((option) => (
+                              <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Current Stock</Label>
+                        <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.currentStock}</div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Surplus / Shortage</Label>
+                        <div className={cn(
+                          "p-2 rounded-md font-medium",
+                          slot.swapSurplusShortage > 0 ? "bg-green-500/20 text-green-700 dark:text-green-400" :
+                          slot.swapSurplusShortage < 0 ? "bg-red-500/20 text-red-700 dark:text-red-400" :
+                          "bg-muted text-foreground"
+                        )}>
+                          {slot.swapSurplusShortage > 0 ? `+${slot.swapSurplusShortage} surplus` : slot.swapSurplusShortage < 0 ? `${slot.swapSurplusShortage} shortage` : "0"}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Units Sold</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={slot.unitsSold || ""}
-                    onChange={(e) => updateSlot(slot.id, { unitsSold: parseInt(e.target.value) || 0 })}
-                    className="bg-card"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Units Refilled</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={slot.unitsRefilled || ""}
-                    onChange={(e) => updateSlot(slot.id, { unitsRefilled: parseInt(e.target.value) || 0 })}
-                    className="bg-card"
-                  />
-                  {renderRestockSuggestion(slot)}
-                </div>
-                <div className="space-y-2">
-                  <Label>Units Removed</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={slot.unitsRemoved || ""}
-                    onChange={(e) => updateSlot(slot.id, { unitsRemoved: parseInt(e.target.value) || 0 })}
-                    className="bg-card"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>False Coins</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={slot.falseCoins || ""}
-                    onChange={(e) => updateSlot(slot.id, { falseCoins: parseInt(e.target.value) || 0 })}
-                    className="bg-card"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Audited Count (Physical)</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    placeholder="Enter count"
-                    value={slot.auditedCount ?? ""}
-                    onChange={(e) => updateSlot(slot.id, { 
-                      auditedCount: e.target.value ? parseInt(e.target.value) : null 
-                    })}
-                    className="bg-card"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Current Stock</Label>
-                  <div className={cn(
-                    "p-2 rounded-md font-medium",
-                    slot.auditedCount !== null && slot.auditedCount !== (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)
-                      ? "bg-warning/20 text-warning-foreground border border-warning"
-                      : "bg-muted text-foreground"
-                  )}>
-                    {slot.auditedCount !== null ? (
-                      <>
-                        {slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved} / AC: {slot.auditedCount}
-                        {slot.auditedCount !== (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved) && (
-                          <span className="text-xs block">
-                            {slot.auditedCount > (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved) 
-                              ? `+${slot.auditedCount - (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)} surplus`
-                              : `${slot.auditedCount - (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)} shortage`
-                            }
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      slot.currentStock
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Price/Unit</Label>
-                  <div className="p-2 bg-muted rounded-md text-foreground font-medium">
-                    ${fmt2(slot.pricePerUnit)}
-                  </div>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                <div className="space-y-2">
-                  <Label>Jam Status</Label>
-                  <Select
-                    value={slot.jamStatus}
-                    onValueChange={(value) => updateSlot(slot.id, { jamStatus: value })}
-                  >
-                    <SelectTrigger className="bg-card">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {jamStatusOptions.map((option) => (
-                        <SelectItem key={option.id} value={option.id}>
-                          {option.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Capacity</Label>
-                  {renderCapacityIndicator(slot)}
-                </div>
-              </div>
 
-              {/* Swap Photo Upload (Feature 4) */}
-              {renderSwapPhotoUpload(slot)}
+                  {/* Phase 2: New Product Setup */}
+                  <div className="p-3 rounded-md border-2 border-primary/30 bg-primary/5 space-y-4">
+                    <p className="text-sm font-semibold text-primary">New Product Setup</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <ToyPicker
+                        products={filteredProducts}
+                        categories={toyCategories}
+                        value={slot.newToyId}
+                        onSelect={(id, name) => updateSlot(slot.id, { newToyId: id, newToyName: name })}
+                        label="Assign Toy"
+                        placeholder="Search toy..."
+                        showCategoryFilter={false}
+                      />
+                      <div className="space-y-2">
+                        <Label>Toy Capacity</Label>
+                        <Input type="number" min="0" value={slot.newToyCapacity || ""} onChange={(e) => updateSlot(slot.id, { newToyCapacity: parseInt(e.target.value) || 0 })} className="bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Units Refilled</Label>
+                        <Input type="number" min="0" value={slot.newUnitsRefilled || ""} onChange={(e) => updateSlot(slot.id, { newUnitsRefilled: parseInt(e.target.value) || 0 })} className="bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Price/Unit ($)</Label>
+                        <Input type="number" min="0" step="0.01" value={slot.newPricePerUnit || ""} onChange={(e) => updateSlot(slot.id, { newPricePerUnit: parseFloat(e.target.value) || 0 })} className="bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Current Stock</Label>
+                        <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.newCurrentStock}</div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Capacity</Label>
+                        {(() => {
+                          const pct = slot.newToyCapacity > 0 ? Math.round((slot.newCurrentStock / slot.newToyCapacity) * 100) : 0;
+                          const colorClass = pct <= 25 ? "bg-red-500" : pct <= 50 ? "bg-yellow-500" : pct <= 75 ? "bg-blue-500" : "bg-green-500";
+                          return (
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground">{slot.newCurrentStock} / {slot.newToyCapacity}</span>
+                                <span className="font-semibold">{pct}%</span>
+                              </div>
+                              <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-secondary">
+                                <div className={cn("h-full rounded-full transition-all", colorClass)} style={{ width: `${Math.min(pct, 100)}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Swap Photo Upload */}
+                  {renderSwapPhotoUpload(slot)}
+                </>
+              ) : (
+                /* Normal audit view (no swap) */
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="space-y-2">
+                      <Label>Last Stock</Label>
+                      <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.lastStock}</div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Units Sold</Label>
+                      <Input type="number" min="0" value={slot.unitsSold || ""} onChange={(e) => updateSlot(slot.id, { unitsSold: parseInt(e.target.value) || 0 })} className="bg-card" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Units Refilled</Label>
+                      <Input type="number" min="0" value={slot.unitsRefilled || ""} onChange={(e) => updateSlot(slot.id, { unitsRefilled: parseInt(e.target.value) || 0 })} className="bg-card" />
+                      {renderRestockSuggestion(slot)}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Units Removed</Label>
+                      <Input type="number" min="0" value={slot.unitsRemoved || ""} onChange={(e) => updateSlot(slot.id, { unitsRemoved: parseInt(e.target.value) || 0 })} className="bg-card" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>False Coins</Label>
+                      <Input type="number" min="0" value={slot.falseCoins || ""} onChange={(e) => updateSlot(slot.id, { falseCoins: parseInt(e.target.value) || 0 })} className="bg-card" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Audited Count (Physical)</Label>
+                      <Input type="number" min="0" placeholder="Enter count" value={slot.auditedCount ?? ""} onChange={(e) => updateSlot(slot.id, { auditedCount: e.target.value ? parseInt(e.target.value) : null })} className="bg-card" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Current Stock</Label>
+                      <div className={cn(
+                        "p-2 rounded-md font-medium",
+                        slot.auditedCount !== null && slot.auditedCount !== (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)
+                          ? "bg-warning/20 text-warning-foreground border border-warning"
+                          : "bg-muted text-foreground"
+                      )}>
+                        {slot.auditedCount !== null ? (
+                          <>
+                            {slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved} / AC: {slot.auditedCount}
+                            {slot.auditedCount !== (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved) && (
+                              <span className="text-xs block">
+                                {slot.auditedCount > (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved) 
+                                  ? `+${slot.auditedCount - (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)} surplus`
+                                  : `${slot.auditedCount - (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)} shortage`
+                                }
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          slot.currentStock
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Price/Unit</Label>
+                      <div className="p-2 bg-muted rounded-md text-foreground font-medium">${fmt2(slot.pricePerUnit)}</div>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div className="space-y-2">
+                      <Label>Jam Status</Label>
+                      <Select value={slot.jamStatus} onValueChange={(value) => updateSlot(slot.id, { jamStatus: value })}>
+                        <SelectTrigger className="bg-card"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {jamStatusOptions.map((option) => (
+                            <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Capacity</Label>
+                      {renderCapacityIndicator(slot)}
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Issue Reporting */}
               <div className="border-t border-border pt-4 mt-4">
