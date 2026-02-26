@@ -126,14 +126,13 @@ export default function InventoryPage() {
 
   const filteredInventory = useMemo(() => {
     if (!inventory) return [];
-    if (!searchQuery) return inventory;
-    const query = searchQuery.toLowerCase();
-    return inventory.filter(
-      (item) =>
-        item.name.toLowerCase().includes(query) ||
+    const items = !searchQuery ? inventory : inventory.filter((item) => {
+      const query = searchQuery.toLowerCase();
+      return item.name.toLowerCase().includes(query) ||
         item.sku.toLowerCase().includes(query) ||
-        item.category.toLowerCase().includes(query)
-    );
+        item.category.toLowerCase().includes(query);
+    });
+    return items.sort((a, b) => b.totalInventoryCost - a.totalInventoryCost);
   }, [inventory, searchQuery]);
 
   const stats = useMemo(() => {

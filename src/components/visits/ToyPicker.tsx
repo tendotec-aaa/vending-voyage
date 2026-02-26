@@ -43,6 +43,7 @@ interface ToyPickerProps {
   onSelect: (productId: string, productName: string) => void;
   placeholder?: string;
   label?: string;
+  showCategoryFilter?: boolean;
 }
 
 export function ToyPicker({
@@ -52,6 +53,7 @@ export function ToyPicker({
   onSelect,
   placeholder = "Search toy...",
   label,
+  showCategoryFilter = true,
 }: ToyPickerProps) {
   const [open, setOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -67,19 +69,21 @@ export function ToyPicker({
     <div className="space-y-2">
       {label && <Label>{label}</Label>}
       <div className="flex gap-2">
-        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-[140px] bg-card shrink-0">
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id}>
-                {cat.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {showCategoryFilter && (
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-[140px] bg-card shrink-0">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat.id} value={cat.id}>
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>

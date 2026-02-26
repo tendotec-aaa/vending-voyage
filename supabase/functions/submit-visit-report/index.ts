@@ -92,7 +92,7 @@ async function appendLedger(
     notes?: string | null;
   }
 ) {
-  await db.from("inventory_ledger").insert({
+  const { error } = await db.from("inventory_ledger").insert({
     item_detail_id: entry.item_detail_id,
     warehouse_id: entry.warehouse_id || null,
     slot_id: entry.slot_id || null,
@@ -104,6 +104,10 @@ async function appendLedger(
     performed_by: entry.performed_by || null,
     notes: entry.notes || null,
   });
+  if (error) {
+    console.error("appendLedger error:", JSON.stringify(error));
+    throw new Error(`inventory_ledger insert failed: ${error.message}`);
+  }
 }
 
 // ── Helper: upsert inventory (add quantity) ──

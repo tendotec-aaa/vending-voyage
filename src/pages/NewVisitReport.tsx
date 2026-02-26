@@ -204,6 +204,7 @@ export default function NewVisitReport() {
   // Visit Details state
   const [visitType, setVisitType] = useState(cached?.visitType || "");
   const [visitDate, setVisitDate] = useState<Date>(cached?.visitDate ? new Date(cached.visitDate) : new Date());
+  const [toyCategoryFilter, setToyCategoryFilter] = useState("all");
   
   // Slots state
   const [slots, setSlots] = useState<SlotEntry[]>([]);
@@ -456,6 +457,12 @@ export default function NewVisitReport() {
     },
     enabled: !!selectedSpot,
   });
+
+  // Filtered products based on category filter
+  const filteredProducts = useMemo(() => {
+    if (toyCategoryFilter === "all") return products;
+    return products.filter((p) => p.category_id === toyCategoryFilter);
+  }, [products, toyCategoryFilter]);
 
   // Calculate days since last visit (using startOfDay for accurate calendar-day count)
   const selectedLocation_ = locations.find(l => l.id === selectedLocation);
@@ -1042,13 +1049,14 @@ export default function NewVisitReport() {
           {/* Installation View */}
           {isInstallation && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <ToyPicker
-                products={products}
+               <ToyPicker
+                products={filteredProducts}
                 categories={toyCategories}
                 value={slot.toyId}
                 onSelect={(id, name) => updateSlot(slot.id, { toyId: id, toyName: name })}
                 label="Assign Toy"
                 placeholder="Search toy..."
+                showCategoryFilter={false}
               />
               <div className="space-y-2">
                 <Label>Toy Capacity</Label>
@@ -1114,13 +1122,14 @@ export default function NewVisitReport() {
               {/* Product swap selector */}
               {slot.replaceAllToys && (
                 <div className="mb-4 p-3 bg-muted/50 rounded-md border border-border">
-                  <ToyPicker
-                    products={products}
+                   <ToyPicker
+                    products={filteredProducts}
                     categories={toyCategories}
                     value={slot.toyId}
                     onSelect={(id, name) => updateSlot(slot.id, { toyId: id, toyName: name })}
                     label="New Product"
                     placeholder="Search replacement toy..."
+                    showCategoryFilter={false}
                   />
                 </div>
               )}
@@ -1274,13 +1283,14 @@ export default function NewVisitReport() {
               {/* Product swap selector for audit */}
               {slot.replaceAllToys && (
                 <div className="mb-4 p-3 bg-muted/50 rounded-md border border-border">
-                  <ToyPicker
-                    products={products}
+                   <ToyPicker
+                    products={filteredProducts}
                     categories={toyCategories}
                     value={slot.toyId}
                     onSelect={(id, name) => updateSlot(slot.id, { toyId: id, toyName: name })}
                     label="New Product"
                     placeholder="Search replacement toy..."
+                    showCategoryFilter={false}
                   />
                 </div>
               )}
@@ -1616,6 +1626,20 @@ export default function NewVisitReport() {
                     <SelectItem key={type.id} value={type.id}>
                       {type.name}
                     </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Product Category</Label>
+              <Select value={toyCategoryFilter} onValueChange={setToyCategoryFilter}>
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder="All Categories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {toyCategories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
