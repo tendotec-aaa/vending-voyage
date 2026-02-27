@@ -152,6 +152,22 @@ export default function VisitDetail() {
     enabled: !!id,
   });
 
+  // Fetch sibling spot count to divide rent (must be before any early returns)
+  const locationId = (visit as any)?.spot?.location?.id;
+  const { data: spotCountData } = useQuery({
+    queryKey: ["spot-count", locationId],
+    queryFn: async () => {
+      if (!locationId) return 1;
+      const { count, error } = await supabase
+        .from("spots")
+        .select("id", { count: "exact", head: true })
+        .eq("location_id", locationId);
+      if (error) return 1;
+      return count || 1;
+    },
+    enabled: !!locationId,
+  });
+
   // --- Derived data ---
   const getStatusBadge = (status: string) => {
     if (status === "reversed")
@@ -218,22 +234,6 @@ export default function VisitDetail() {
   const daysSinceLastVisit = previousVisit?.visit_date && visit.visit_date
     ? differenceInDays(new Date(visit.visit_date), new Date(previousVisit.visit_date))
     : null;
-
-  // Fetch sibling spot count to divide rent
-  const locationId = (visit as any)?.spot?.location?.id;
-  const { data: spotCountData } = useQuery({
-    queryKey: ["spot-count", locationId],
-    queryFn: async () => {
-      if (!locationId) return 1;
-      const { count, error } = await supabase
-        .from("spots")
-        .select("id", { count: "exact", head: true })
-        .eq("location_id", locationId);
-      if (error) return 1;
-      return count || 1;
-    },
-    enabled: !!locationId,
-  });
 
   // Rent analytics
   const location = (visit as any)?.spot?.location;
