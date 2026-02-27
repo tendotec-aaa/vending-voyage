@@ -219,9 +219,27 @@ export default function VisitDetail() {
     ? differenceInDays(new Date(visit.visit_date), new Date(previousVisit.visit_date))
     : null;
 
+  // Fetch sibling spot count to divide rent
+  const locationId = (visit as any)?.spot?.location?.id;
+  const { data: spotCountData } = useQuery({
+    queryKey: ["spot-count", locationId],
+    queryFn: async () => {
+      if (!locationId) return 1;
+      const { count, error } = await supabase
+        .from("spots")
+        .select("id", { count: "exact", head: true })
+        .eq("location_id", locationId);
+      if (error) return 1;
+      return count || 1;
+    },
+    enabled: !!locationId,
+  });
+
   // Rent analytics
   const location = (visit as any)?.spot?.location;
-  const monthlyRent = location?.rent_amount || 0;
+  const totalLocationRent = location?.rent_amount || 0;
+  const spotCount = spotCountData || 1;
+  const monthlyRent = totalLocationRent / spotCount;
   const dailyRent = monthlyRent / 30;
   const rentSinceLastVisit = daysSinceLastVisit !== null ? dailyRent * daysSinceLastVisit : null;
   const netProfit = rentSinceLastVisit !== null ? totalCash - rentSinceLastVisit : null;
@@ -352,7 +370,7 @@ export default function VisitDetail() {
           <Card>
             <CardContent className="p-4 flex flex-col gap-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Building className="w-3 h-3" /> Monthly Rent
+                <Building className="w-3 h-3" /> Monthly Rent (per spot)
               </span>
               <span className="text-sm font-medium text-foreground">${fmt2(monthlyRent)}</span>
             </CardContent>

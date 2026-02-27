@@ -19,7 +19,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Plus, MapPin, Search, Layers, ChevronDown, Truck, Calendar, DollarSign, Percent, Unlink } from "lucide-react";
-import { format } from "date-fns";
+import { format, differenceInDays } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -64,6 +64,24 @@ export default function Locations() {
       const { data, error } = await supabase.from("spots").select("*").order("name");
       if (error) throw error;
       return data;
+    },
+  });
+
+  // Fetch last visit date per spot
+  const { data: spotLastVisits = [] } = useQuery({
+    queryKey: ["spot-last-visits"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("spot_visits")
+        .select("spot_id, visit_date")
+        .order("visit_date", { ascending: false });
+      if (error) throw error;
+      // Group by spot_id, take the first (latest) for each
+      const map = new Map<string, string>();
+      (data || []).forEach((v: any) => {
+        if (!map.has(v.spot_id)) map.set(v.spot_id, v.visit_date);
+      });
+      return Array.from(map.entries()).map(([spotId, visitDate]) => ({ spot_id: spotId, last_visit_date: visitDate }));
     },
   });
 
@@ -348,6 +366,24 @@ export default function Locations() {
             {filteredLocations.map((location) => {
               const locationSpots = getSpotsForLocation(location.id);
               const totalSpots = location.total_spots || locationSpots.length;
+              const spotCount = locationSpots.length || 1;
+              const locationRent = Number(location.rent_amount || 0);
+              const spotMonthlyRent = spotCount > 0 ? locationRent / spotCount : 0;
+
+              // Calculate accrued rent for entire location (contract start → latest visit across all spots)
+              let locationLastVisitDate: string | null = null;
+              locationSpots.forEach((spot) => {
+                const lastVisit = spotLastVisits.find((v) => v.spot_id === spot.id);
+                if (lastVisit && (!locationLastVisitDate || lastVisit.last_visit_date > locationLastVisitDate)) {
+                  locationLastVisitDate = lastVisit.last_visit_date;
+                }
+              });
+              const contractStart = location.contract_start_date;
+              let locationAccruedRent = 0;
+              if (locationRent > 0 && contractStart && locationLastVisitDate) {
+                const days = Math.max(0, differenceInDays(new Date(locationLastVisitDate), new Date(contractStart)));
+                locationAccruedRent = (locationRent / 30) * days;
+              }
 
               return (
                 <Card key={location.id}>
@@ -392,8 +428,13 @@ export default function Locations() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <Badge variant="secondary">{locationSpots.length}/{totalSpots} spots</Badge>
-                          {(location.negotiation_type === "fixed_rent" || location.negotiation_type === "hybrid") && Number(location.rent_amount) > 0 && (
-                            <span className="text-sm text-foreground font-medium">${fmt2(Number(location.rent_amount || 0))}</span>
+                          {locationRent > 0 && (
+                            <span className="text-sm text-foreground font-medium">${fmt2(locationRent)}/mo</span>
+                          )}
+                          {locationAccruedRent > 0 && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto">
+                              Accrued: ${fmt2(locationAccruedRent)}
+                            </Badge>
                           )}
                           {locationSpots.length > 0 && (
                             <CollapsibleTrigger asChild>
@@ -425,6 +466,14 @@ export default function Locations() {
                               });
                               const spotStockPct = spotTotalCapacity > 0 ? (spotTotalStock / spotTotalCapacity) * 100 : 0;
 
+                              // Per-spot rent calculations
+                              const spotLastVisit = spotLastVisits.find((v) => v.spot_id === spot.id);
+                              let spotAccruedRent = 0;
+                              if (spotMonthlyRent > 0 && contractStart && spotLastVisit) {
+                                const days = Math.max(0, differenceInDays(new Date(spotLastVisit.last_visit_date), new Date(contractStart)));
+                                spotAccruedRent = (spotMonthlyRent / 30) * days;
+                              }
+
                               return (
                                 <AccordionItem key={spot.id} value={spot.id}>
                                   <AccordionTrigger className="py-2 px-3 hover:no-underline">
@@ -441,6 +490,16 @@ export default function Locations() {
                                         <Badge variant="outline" className="text-xs">{assignedSetup.name}</Badge>
                                       ) : (
                                         <Badge variant="secondary" className="text-xs">No setup</Badge>
+                                      )}
+                                      {spotMonthlyRent > 0 && (
+                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
+                                          <DollarSign className="h-2.5 w-2.5 mr-0.5" />{fmt2(spotMonthlyRent)}/mo
+                                        </Badge>
+                                      )}
+                                      {spotAccruedRent > 0 && (
+                                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+                                          Accrued: ${fmt2(spotAccruedRent)}
+                                        </Badge>
                                       )}
                                       {assignedSetup && spotTotalCapacity > 0 && (
                                         <div className="hidden sm:flex items-center gap-2 ml-auto">
