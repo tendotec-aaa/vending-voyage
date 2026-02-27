@@ -1,161 +1,84 @@
 
 
-## Plan: Two-Phase Swap Workflow, Surplus/Shortage Tracking, and Auto-Resolve Jam Tickets
+## Plan: Fix Rent Calculations, Add Rent Tracking to Locations, and Redesign Spots Analytics
 
-### Problem Summary
+### Issues Identified
 
-The "Replace all toys in this slot" feature currently mixes old product closure and new product setup into one flat form. This means:
-1. The old product's final movements (units sold, removed, false coins, jam) are not properly captured
-2. No surplus/shortage calculation for the old product
-3. The new product setup lacks installation-style fields (capacity, price)
-4. Jams are not auto-reported as maintenance tickets that get auto-resolved
-
-### Solution Overview
-
-Split the swap into two visual phases within the same slot card, add surplus/shortage for routine visits, and auto-create+resolve jam maintenance tickets.
+1. **VisitDetail.tsx (line 224)**: `monthlyRent` uses the full location rent instead of dividing by number of spots at that location. Need to fetch sibling spot count.
+2. **useSpotAnalytics.tsx (line 149-150)**: `rentAmount` is the monthly rent per spot (correctly divided), but `netProfit = totalSales - rentAmount` subtracts only one month's rent regardless of how long the spot has been active. Should calculate rent from contract start to last visit date.
+3. **Spots Leaderboard**: Needs more columns (Days Open, visit count) and a date range filter. Table too wide for mobile — needs responsive card layout.
+4. **Locations page**: Needs per-spot rent display and accrued rent calculations.
 
 ---
 
-### 1. SlotEntry Data Model Changes (`NewVisitReport.tsx`)
+### 1. Fix VisitDetail Monthly Rent (per spot)
 
-Add new fields to the `SlotEntry` interface for the two-phase swap:
+**File**: `src/pages/VisitDetail.tsx`
 
-```typescript
-interface SlotEntry {
-  // ... existing fields ...
-  
-  // Phase 2: New product fields (for swap)
-  newToyId: string;
-  newToyName: string;
-  newToyCapacity: number;
-  newUnitsRefilled: number;
-  newPricePerUnit: number;
-  newCurrentStock: number;  // = newUnitsRefilled
-}
-```
+- Add a query to count sibling spots for the same location: `SELECT count(*) FROM spots WHERE location_id = ?`
+- Divide `monthlyRent` by spot count: `const spotMonthlyRent = monthlyRent / spotCount`
+- Use `spotMonthlyRent` for the "Monthly Rent" card display
+- `dailyRent = spotMonthlyRent / 30` for rent-since-last-visit (this part was already using the undivided value, so it was also wrong)
+- Label the card "Monthly Rent (per spot)" for clarity
 
-Currently, when `replaceAllToys` is toggled, the `toyId` is overwritten with the new product. Instead:
-- `toyId` / `toyName` remain as the **old** product (original slot product)
-- `newToyId` / `newToyName` store the **new** replacement product
-- On submission, the payload sends both sets of data
+### 2. Fix Spot Analytics Rent Calculation
 
-### 2. UI: Two-Phase Swap Card Layout (`NewVisitReport.tsx`)
+**File**: `src/hooks/useSpotAnalytics.tsx`
 
-When `replaceAllToys` is checked, the slot card splits into two sections:
+Currently: `netProfit = totalSales - rentAmount` (one month's rent per spot). Should be: rent accrued from contract start to last visit date.
 
-**Phase 1 — "Closing Out: [Old Product Name]"** (bordered section, slightly muted background):
-```
-Last Stock:      30        (read-only, from slot.lastStock)
-Units Sold:      [input]
-Units Removed:   [input]   (auto-set to remaining stock after sold/false/jam)
-False Coins:     [input]
-Price/Unit:      $1.00     (read-only)
-Jam Status:      [select]
-Current Stock:   0         (computed, should reach 0 for a swap)
-Surplus/Shortage: +5       (auto: lastStock - unitsSold - unitsRemoved - falseCoins + jamAdj)
-```
+- Fetch `contract_start_date` from the location join (add to the select)
+- Find the last visit date for each spot: `Math.max(...spotVisits.map(v => v.visit_date))` 
+- Calculate `daysOfRent = differenceInDays(lastVisitDate, contractStartDate)`
+- `dailyRent = rentAmount / 30` (rentAmount is already per-spot monthly)
+- `totalAccruedRent = dailyRent * daysOfRent`
+- `netProfit = totalSales - totalAccruedRent`
+- Update `SpotAnalytics` interface: add `lastVisitDate`, `contractStartDate`, `totalAccruedRent`
+- Add date range filtering support: add `dateRange` param, filter visits within range, and prorate rent accordingly
 
-The surplus/shortage is computed as: `currentStock` should be 0 (all units accounted for). The variance = `lastStock - unitsSold - unitsRemoved - falseCoins + jamByConAdj`. If the operator doesn't account for all units, the system flags it.
+### 3. Date Range Filter for Spots Analytics
 
-**Phase 2 — "New Product Setup"** (bordered section, primary accent):
-```
-Assign Toy:      [ToyPicker combobox]
-Toy Capacity:    [input, default 150]
-Units Refilled:  [input]
-Price/Unit ($):  [input, default 1.00]
-Current Stock:   0         (= unitsRefilled)
-Capacity:        0 / 150   [progress bar]
-```
+**File**: `src/pages/Spots.tsx`
 
-This is essentially the installation layout for the new product only.
+- Add a date range selector (Last 30d, Last 3m, Last 6m, Last 1y, All Time) as a filter alongside location/profitability/stock filters
+- Pass the date range to `useSpotAnalytics` or filter client-side
+- When a range is selected, filter visits within that range and prorate the rent calculation for only those days
 
-### 3. Stock Calculation Changes (`updateSlot`)
+**File**: `src/hooks/useSpotAnalytics.tsx`
 
-When `replaceAllToys` is true:
-- **Old product currentStock**: `lastStock - unitsSold + jamAdj - falseCoins - unitsRemoved` (should reach 0)
-- **Surplus/Shortage**: computed as `currentStock` (anything left over is a surplus, negative is shortage)
-- **New product currentStock**: `newUnitsRefilled`
-- **cashCollected**: based on old product's `(unitsSold + jamAdj) * pricePerUnit`
+- Accept optional `dateRange` parameter
+- Filter `spotVisits` to only include visits within the range
+- Calculate rent only for the days within the range (or from contract start if it falls within)
 
-The field sent to the edge function as `currentStock` becomes `newCurrentStock` (the new product's stock level that the machine slot will be set to).
+### 4. Redesign Spots Leaderboard
 
-### 4. Edge Function Payload Changes (`submit-visit-report/index.ts`)
+**File**: `src/components/spots/SpotLeaderboard.tsx`
 
-Add fields to `SlotPayload`:
-```typescript
-interface SlotPayload {
-  // ... existing ...
-  newToyId: string;         // new product ID (swap only)
-  newToyName: string;       // new product name
-  newToyCapacity: number;   // new capacity
-  newUnitsRefilled: number; // units loaded of new product
-  newPricePerUnit: number;  // coin acceptor for new product
-  newCurrentStock: number;  // = newUnitsRefilled
-  swapSurplusShortage: number; // surplus/shortage of old product
-}
-```
+Add columns and make mobile-responsive:
+- Add **Days Open** column (from `daysActive`)
+- Add **Visits** column (from `visitCount`)  
+- Add **Last Visit** column (from `lastVisitDate`)
+- On mobile: switch from table to stacked card layout showing key metrics in a compact grid
+- Remove horizontal scroll requirement — use responsive breakpoints
+- Each card shows: Rank, Name, Location, Sales, Rent, Profit, ROI, Stock bar, Trend, Days Open
 
-### 5. Edge Function Logic Changes (`submit-visit-report/index.ts`)
+### 5. Locations Page — Per-Spot Rent Display & Accrued Rent
 
-For swap slots (`replaceAllToys === true`):
+**File**: `src/pages/Locations.tsx`
 
-**Step 3 (visit_line_items)**: The line item records the swap action with `product_id` = new product, but we also need to store old product data. Since the schema has a single `product_id`, we'll use the new product as the primary and record old product movements via the snapshot and ledger.
-
-**Step 4 (machine_slots update)**: Set `current_product_id` to `newToyId`, `current_stock` to `newCurrentStock`, `capacity` to `newToyCapacity`, `coin_acceptor` to `newPricePerUnit`.
-
-**Step 5 (Inventory Ledger)**:
-- **Old product slot ledger**: Record removal of all old stock from slot (quantity = `-previousStock`, balance = 0, movement_type = `swap_out`)
-- **Old product warehouse ledger**: Return `unitsRemoved` to warehouse (the actual physical units returned)
-- **Old product surplus/shortage**: If `swapSurplusShortage !== 0`, record an `adjustment` entry in both ledger and `inventory_adjustments`
-- **New product warehouse ledger**: Deduct `newUnitsRefilled` from warehouse (movement_type = `refill`)
-- **New product slot ledger**: Record addition of new stock to slot (quantity = `newCurrentStock`, balance = `newCurrentStock`, movement_type = `swap_in`)
-
-**Step 6 (inventory_adjustments)**: For swaps, create adjustment records when surplus/shortage is non-zero (not just for audit visits).
-
-**Step 7 (Maintenance - Jam Auto-Tickets)**: For ANY jam status that is not `no_jam`:
-- Auto-create a maintenance ticket with `issue_type: "Jam"`, description auto-generated from jam type
-- Immediately set `status: "resolved"` and `resolved_at: now()` since the operator addressed it during the visit
-- This creates an audit trail of jams without requiring manual follow-up
-
-### 6. Surplus/Shortage for Regular Routine Visits
-
-Even for non-swap routine visits, we should track expected vs actual. Currently the system only does this for `inventory_audit` visits. The user wants surplus/shortage visible in the swap flow specifically.
-
-For the swap, the surplus/shortage is simply: the old product's `currentStock` after accounting for all movements. If it's not 0, something is unaccounted for. We'll display this in the UI and record it in `inventory_adjustments`.
-
-### 7. Machine Detail Page — Jam Display
-
-The machine detail page already shows maintenance tickets per slot via the Maintenance tab. Since we're now auto-creating jam tickets (with `resolved` status), they'll automatically appear in the maintenance tab filtered per slot. No additional changes needed to `MachineDetail.tsx` for this — the existing query on `maintenance_tickets` already captures them.
-
-### 8. Submission Payload Mapping
-
-In `handleSubmit` / `submitVisitReport.mutate()`, update the slot mapping to include the new fields:
-```typescript
-slots: slots.map(s => ({
-  // ... existing fields ...
-  // For swap: toyId stays as OLD product, newToyId is the replacement
-  toyId: s.replaceAllToys ? s.toyId : s.toyId,  // old product for swap
-  newToyId: s.newToyId || "",
-  newToyName: s.newToyName || "",
-  newToyCapacity: s.newToyCapacity || 150,
-  newUnitsRefilled: s.newUnitsRefilled || 0,
-  newPricePerUnit: s.newPricePerUnit || 1,
-  newCurrentStock: s.newCurrentStock || 0,
-  swapSurplusShortage: s.replaceAllToys ? s.currentStock : 0,
-  // currentStock for non-swap stays as computed; for swap, edge fn uses newCurrentStock
-}))
-```
+- Fetch last visit date per spot (query `spot_visits` grouped by `spot_id`, max `visit_date`)
+- For each location: calculate `accrued rent = (dailyRent) * days from contract_start to lastVisitDate`
+- For each spot: show `Monthly Rent / spotCount` as the spot's share
+- Show per-spot accrued rent: `(spotMonthlyRent / 30) * days from contract_start to spot's lastVisitDate`
+- Display in the spot accordion trigger line: `$XX.XX/mo rent` badge
+- Add a summary line per location card: "Rent Paid: $X,XXX.XX (Start → Last Visit)" with tooltip or subtitle explaining the date range
+- Use clear labels: "Spot Rent: $125.00/mo" and "Rent Accrued (Jan 1 – Jan 15): $62.50"
 
 ### Files to Modify
 
-1. **`src/pages/NewVisitReport.tsx`** — SlotEntry interface, updateSlot logic, renderSlotCard two-phase UI, submission payload
-2. **`supabase/functions/submit-visit-report/index.ts`** — SlotPayload interface, swap logic in Steps 3-7, jam auto-ticket creation
-
-### Technical Details
-
-- The `inventory_ledger` check constraint allows: `receive`, `refill`, `removal`, `swap_in`, `swap_out`, `reversal`, `adjustment`, `transfer`, `initial`, `assembly_consumption`, `assembly_production` — all needed types are covered
-- The `visit_action_type` enum allows: `restock`, `collection`, `service`, `swap` — the `swap` type is available
-- The `inventory_adjustments` table can store surplus/shortage records with `visit_id`, `item_detail_id`, `slot_id`
-- The `maintenance_tickets` table has `status` enum that includes `resolved` and `resolved_at` column
-- No database migrations needed — all required tables and columns already exist
+1. `src/pages/VisitDetail.tsx` — Fix monthly rent division by spot count
+2. `src/hooks/useSpotAnalytics.tsx` — Fix rent to use contract start → last visit, add date range support, add new fields to interface
+3. `src/pages/Spots.tsx` — Add date range filter dropdown
+4. `src/components/spots/SpotLeaderboard.tsx` — Add Days Open/Visits/Last Visit columns, responsive card layout for mobile
+5. `src/pages/Locations.tsx` — Add per-spot rent and accrued rent display
 
