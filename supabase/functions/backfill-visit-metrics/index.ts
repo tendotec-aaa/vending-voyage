@@ -90,12 +90,7 @@ Deno.serve(async (req) => {
       for (let i = 0; i < spotVisits.length; i++) {
         const v = spotVisits[i];
 
-        // Skip if already populated
-        if (v.days_since_last_visit !== null && v.monthly_rent_per_spot !== null && v.rent_since_last_visit !== null) {
-          skipped++;
-          continue;
-        }
-
+        // Always recalculate to fix formula (was /30, now *12/365)
         let daysSinceLastVisit: number | null = null;
         let rentSinceLastVisit: number | null = null;
 
@@ -104,7 +99,7 @@ Deno.serve(async (req) => {
           const prevDate = new Date(prev.visit_date);
           const currDate = new Date(v.visit_date);
           daysSinceLastVisit = Math.max(0, Math.floor((currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)));
-          const dailyRent = monthlyRentPerSpot / 30;
+          const dailyRent = (monthlyRentPerSpot * 12) / 365;
           rentSinceLastVisit = Math.round(dailyRent * daysSinceLastVisit * 100) / 100;
         }
 
