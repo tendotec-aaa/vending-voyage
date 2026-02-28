@@ -257,6 +257,67 @@ Deno.serve(async (req) => {
     if (visitErr) throw new Error(`spot_visits insert: ${visitErr.message}`);
     const visitId = visit.id;
 
+    // ── Step 1b: Calculate & persist days_since_last_visit, monthly_rent_per_spot, rent_since_last_visit ──
+    {
+      // Find previous visit for this spot (same or earlier date, excluding current)
+      const { data: prevVisit } = await db
+        .from("spot_visits")
+        .select("id, visit_date, created_at")
+        .eq("spot_id", spotId)
+        .neq("id", visitId)
+        .lte("visit_date", visitDate)
+        .order("visit_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const daysSinceLastVisit = prevVisit?.visit_date
+        ? Math.max(0, Math.floor((new Date(visitDate).getTime() - new Date(prevVisit.visit_date).getTime()) / (1000 * 60 * 60 * 24)))
+        : null;
+
+      // Get location rent and spot count
+      const { data: spotRow } = await db
+        .from("spots")
+        .select("location_id")
+        .eq("id", spotId)
+        .single();
+
+      let monthlyRentPerSpot: number | null = null;
+      let rentSinceLastVisit: number | null = null;
+
+      if (spotRow?.location_id) {
+        const { data: loc } = await db
+          .from("locations")
+          .select("rent_amount")
+          .eq("id", spotRow.location_id)
+          .single();
+
+        const { count: siblingCount } = await db
+          .from("spots")
+          .select("id", { count: "exact", head: true })
+          .eq("location_id", spotRow.location_id);
+
+        const totalRent = loc?.rent_amount || 0;
+        const spotCount = siblingCount || 1;
+        monthlyRentPerSpot = totalRent / spotCount;
+
+        if (daysSinceLastVisit !== null) {
+          const dailyRent = monthlyRentPerSpot / 30;
+          rentSinceLastVisit = Math.round((dailyRent * daysSinceLastVisit) * 100) / 100;
+        }
+      }
+
+      // Update the visit record with calculated fields
+      await db
+        .from("spot_visits")
+        .update({
+          days_since_last_visit: daysSinceLastVisit,
+          monthly_rent_per_spot: monthlyRentPerSpot,
+          rent_since_last_visit: rentSinceLastVisit,
+        })
+        .eq("id", visitId);
+    }
+
     // ── Step 2: Insert visit_slot_snapshots ──
     const snapshots = slots.map((s) => ({
       visit_id: visitId,
