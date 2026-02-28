@@ -247,7 +247,7 @@ export default function VisitDetail() {
     (location?.rent_amount || 0) / (spotCountData || 1)
   );
   const rentSinceLastVisit = (visit as any).rent_since_last_visit ?? (
-    daysSinceLastVisit !== null ? (monthlyRent / 30) * daysSinceLastVisit : null
+    daysSinceLastVisit !== null ? ((monthlyRent * 12) / 365) * daysSinceLastVisit : null
   );
   const netProfit = rentSinceLastVisit !== null ? totalCash - rentSinceLastVisit : null;
 

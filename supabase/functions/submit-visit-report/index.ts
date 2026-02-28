@@ -302,7 +302,7 @@ Deno.serve(async (req) => {
         monthlyRentPerSpot = totalRent / spotCount;
 
         if (daysSinceLastVisit !== null) {
-          const dailyRent = monthlyRentPerSpot / 30;
+          const dailyRent = (monthlyRentPerSpot * 12) / 365;
           rentSinceLastVisit = Math.round((dailyRent * daysSinceLastVisit) * 100) / 100;
         }
       }

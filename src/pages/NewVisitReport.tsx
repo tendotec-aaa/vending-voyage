@@ -172,6 +172,7 @@ interface PerformanceGrade {
 }
 
 const FORM_CACHE_KEY = "visit-report-form-cache";
+const CATEGORY_CACHE_KEY = "visit-report-last-category";
 
 interface FormCache {
   selectedLocation: string;
@@ -206,13 +207,19 @@ export default function NewVisitReport() {
   const cached = useMemo(() => loadFormCache(), []);
   
   // Location Details state
-  const [selectedLocation, setSelectedLocation] = useState(cached?.selectedLocation || "");
-  const [selectedSpot, setSelectedSpot] = useState(cached?.selectedSpot || "");
+  const [selectedLocation, setSelectedLocation] = useState("");
+  const [selectedSpot, setSelectedSpot] = useState("");
   
   // Visit Details state
   const [visitType, setVisitType] = useState(cached?.visitType || "");
   const [visitDate, setVisitDate] = useState<Date>(cached?.visitDate ? new Date(cached.visitDate) : new Date());
-  const [toyCategoryFilter, setToyCategoryFilter] = useState("all");
+  const [toyCategoryFilter, setToyCategoryFilter] = useState(() => {
+    try {
+      return localStorage.getItem(CATEGORY_CACHE_KEY) || "all";
+    } catch {
+      return "all";
+    }
+  });
   
   // Slots state
   const [slots, setSlots] = useState<SlotEntry[]>([]);
@@ -506,6 +513,13 @@ export default function NewVisitReport() {
       dailyRate: history.dailyRate,
     };
   };
+
+  // Prefill visit date to last visit date when spot changes
+  useEffect(() => {
+    if (lastVisit?.visit_date && selectedSpot) {
+      setVisitDate(new Date(lastVisit.visit_date));
+    }
+  }, [lastVisit, selectedSpot]);
 
   // Auto-detect installation visit
   useEffect(() => {
@@ -1770,7 +1784,10 @@ export default function NewVisitReport() {
             </div>
             <div className="space-y-2">
               <Label>Product Category</Label>
-              <Select value={toyCategoryFilter} onValueChange={setToyCategoryFilter}>
+              <Select value={toyCategoryFilter} onValueChange={(val) => {
+                setToyCategoryFilter(val);
+                try { localStorage.setItem(CATEGORY_CACHE_KEY, val); } catch {}
+              }}>
                 <SelectTrigger className="bg-background">
                   <SelectValue placeholder="All Categories" />
                 </SelectTrigger>
