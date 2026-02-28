@@ -1103,9 +1103,12 @@ export type Database = {
       spot_visits: {
         Row: {
           created_at: string | null
+          days_since_last_visit: number | null
           id: string
+          monthly_rent_per_spot: number | null
           notes: string | null
           operator_id: string | null
+          rent_since_last_visit: number | null
           spot_id: string | null
           status: Database["public"]["Enums"]["visit_status"] | null
           total_cash_collected: number | null
@@ -1115,9 +1118,12 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          days_since_last_visit?: number | null
           id?: string
+          monthly_rent_per_spot?: number | null
           notes?: string | null
           operator_id?: string | null
+          rent_since_last_visit?: number | null
           spot_id?: string | null
           status?: Database["public"]["Enums"]["visit_status"] | null
           total_cash_collected?: number | null
@@ -1127,9 +1133,12 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          days_since_last_visit?: number | null
           id?: string
+          monthly_rent_per_spot?: number | null
           notes?: string | null
           operator_id?: string | null
+          rent_since_last_visit?: number | null
           spot_id?: string | null
           status?: Database["public"]["Enums"]["visit_status"] | null
           total_cash_collected?: number | null

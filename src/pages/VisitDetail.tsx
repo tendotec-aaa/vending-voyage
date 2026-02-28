@@ -57,8 +57,9 @@ export default function VisitDetail() {
     enabled: !!id,
   });
 
-  // Fetch previous visit for same spot
+  // Fetch previous visit for same spot (fallback for old records without stored fields)
   const spotId = (visit as any)?.spot?.id;
+  const hasStoredDays = visit?.days_since_last_visit !== null && visit?.days_since_last_visit !== undefined;
   const { data: previousVisit } = useQuery({
     queryKey: ["previous-visit", spotId, id],
     queryFn: async () => {
@@ -76,7 +77,7 @@ export default function VisitDetail() {
         .maybeSingle();
       return data;
     },
-    enabled: !!spotId && !!visit?.visit_date,
+    enabled: !!spotId && !!visit?.visit_date && !hasStoredDays,
   });
 
   // Fetch line items with product and slot info
@@ -154,8 +155,9 @@ export default function VisitDetail() {
     enabled: !!id,
   });
 
-  // Fetch sibling spot count to divide rent (must be before any early returns)
+  // Fetch sibling spot count (fallback for old records without stored fields)
   const locationId = (visit as any)?.spot?.location?.id;
+  const hasStoredRent = visit?.monthly_rent_per_spot !== null && visit?.monthly_rent_per_spot !== undefined;
   const { data: spotCountData } = useQuery({
     queryKey: ["spot-count", locationId],
     queryFn: async () => {
@@ -167,7 +169,7 @@ export default function VisitDetail() {
       if (error) return 1;
       return count || 1;
     },
-    enabled: !!locationId,
+    enabled: !!locationId && !hasStoredRent,
   });
 
   // --- Derived data ---
@@ -232,18 +234,21 @@ export default function VisitDetail() {
   const totalRefilled = lineItems.reduce((s: number, li: any) => s + (li.quantity_added || 0), 0);
   const totalRemoved = lineItems.reduce((s: number, li: any) => s + (li.quantity_removed || 0), 0);
 
-  // Days since last visit
-  const daysSinceLastVisit = previousVisit?.visit_date && visit.visit_date
-    ? differenceInDays(new Date(visit.visit_date), new Date(previousVisit.visit_date))
-    : null;
+  // Days since last visit — prefer stored value, fallback to frontend calculation for old records
+  const daysSinceLastVisit = (visit as any).days_since_last_visit ?? (
+    previousVisit?.visit_date && visit.visit_date
+      ? differenceInDays(new Date(visit.visit_date), new Date(previousVisit.visit_date))
+      : null
+  );
 
-  // Rent analytics
+  // Rent analytics — prefer stored values
   const location = (visit as any)?.spot?.location;
-  const totalLocationRent = location?.rent_amount || 0;
-  const spotCount = spotCountData || 1;
-  const monthlyRent = totalLocationRent / spotCount;
-  const dailyRent = monthlyRent / 30;
-  const rentSinceLastVisit = daysSinceLastVisit !== null ? dailyRent * daysSinceLastVisit : null;
+  const monthlyRent = (visit as any).monthly_rent_per_spot ?? (
+    (location?.rent_amount || 0) / (spotCountData || 1)
+  );
+  const rentSinceLastVisit = (visit as any).rent_since_last_visit ?? (
+    daysSinceLastVisit !== null ? (monthlyRent / 30) * daysSinceLastVisit : null
+  );
   const netProfit = rentSinceLastVisit !== null ? totalCash - rentSinceLastVisit : null;
 
   // Build enriched slot data
