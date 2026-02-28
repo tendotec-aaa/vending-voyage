@@ -65,11 +65,13 @@ export default function VisitDetail() {
       if (!spotId || !id) return null;
       const { data } = await supabase
         .from("spot_visits")
-        .select("id, visit_date")
+        .select("id, visit_date, created_at")
         .eq("spot_id", spotId)
         .eq("status", "completed")
-        .lt("visit_date", visit!.visit_date!)
+        .neq("id", id)
+        .lte("visit_date", visit!.visit_date!)
         .order("visit_date", { ascending: false })
+        .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       return data;
