@@ -70,6 +70,13 @@ export default function ItemDetail() {
   const [pendingItemTypeId, setPendingItemTypeId] = useState<string | null>(null);
   const [showItemTypeConfirm1, setShowItemTypeConfirm1] = useState(false);
   const [showItemTypeConfirm2, setShowItemTypeConfirm2] = useState(false);
+  // Discrepancy management state
+  const [showResolveDialog, setShowResolveDialog] = useState<string | null>(null);
+  const [resolveNote, setResolveNote] = useState("");
+  const [showVisualDialog, setShowVisualDialog] = useState(false);
+  const [visualNote, setVisualNote] = useState("");
+  const [visualDate, setVisualDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [discrepancyProcessing, setDiscrepancyProcessing] = useState(false);
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -221,6 +228,58 @@ export default function ItemDetail() {
     enabled: !!id,
   });
 
+  // Resolve ledger reference dates (visit_date for visits, received_at for purchases)
+  const ledgerRefIds = ledgerEntries
+    .filter((e) => e.reference_id && e.reference_type)
+    .map((e) => ({ id: e.reference_id!, type: e.reference_type! }));
+  const visitRefIds = [...new Set(ledgerRefIds.filter((r) => r.type === "visit").map((r) => r.id))];
+  const purchaseRefIds = [...new Set(ledgerRefIds.filter((r) => r.type === "purchase").map((r) => r.id))];
+
+  const { data: visitDatesMap = {} } = useQuery({
+    queryKey: ["ledger-visit-dates", visitRefIds],
+    queryFn: async () => {
+      if (visitRefIds.length === 0) return {};
+      const { data } = await supabase
+        .from("spot_visits")
+        .select("id, visit_date")
+        .in("id", visitRefIds);
+      const map: Record<string, string> = {};
+      (data || []).forEach((v: any) => { if (v.visit_date) map[v.id] = v.visit_date; });
+      return map;
+    },
+    enabled: visitRefIds.length > 0,
+  });
+
+  const { data: purchaseDatesMap = {} } = useQuery({
+    queryKey: ["ledger-purchase-dates", purchaseRefIds],
+    queryFn: async () => {
+      if (purchaseRefIds.length === 0) return {};
+      const { data } = await supabase
+        .from("purchases")
+        .select("id, received_at, created_at")
+        .in("id", purchaseRefIds);
+      const map: Record<string, string> = {};
+      (data || []).forEach((p: any) => { map[p.id] = p.received_at || p.created_at; });
+      return map;
+    },
+    enabled: purchaseRefIds.length > 0,
+  });
+
+  // Stock discrepancies
+  const { data: discrepancies = [], refetch: refetchDiscrepancies } = useQuery({
+    queryKey: ["stock-discrepancies", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("stock_discrepancy" as any)
+        .select("*")
+        .eq("item_detail_id", id!)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!id,
+  });
+
   // Machine deployment history for machine_model items
   const { data: machineDeployments = [] } = useQuery({
     queryKey: ["item-machine-deployments", id],
@@ -368,6 +427,112 @@ export default function ItemDetail() {
     setShowItemTypeConfirm1(false);
     setShowItemTypeConfirm2(false);
     setPendingItemTypeId(null);
+  };
+
+  // --- Discrepancy handlers ---
+  const handleResolveDiscrepancy = async (discrepancyId: string) => {
+    if (!id) return;
+    setDiscrepancyProcessing(true);
+    try {
+      const disc = (discrepancies as any[]).find((d: any) => d.id === discrepancyId);
+      if (!disc) throw new Error("Discrepancy not found");
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // The adjustment corrects the difference — if shortage, it's negative
+      const adjustmentDiff = disc.difference;
+
+      // Update discrepancy status
+      await supabase
+        .from("stock_discrepancy" as any)
+        .update({
+          status: "resolved",
+          admin_note: resolveNote || "Resolved by admin",
+          resolved_at: new Date().toISOString(),
+          resolved_by: user?.id || null,
+        } as any)
+        .eq("id", discrepancyId);
+
+      queryClient.invalidateQueries({ queryKey: ["stock-discrepancies", id] });
+      queryClient.invalidateQueries({ queryKey: ["item-inventory-ledger", id] });
+      setShowResolveDialog(null);
+      setResolveNote("");
+      toast({ title: "Discrepancy resolved" });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setDiscrepancyProcessing(false);
+    }
+  };
+
+  const handleReportVisualDiscrepancy = async () => {
+    if (!id) return;
+    setDiscrepancyProcessing(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Create discrepancy record
+      await supabase.from("stock_discrepancy" as any).insert({
+        item_detail_id: id,
+        occurrence_date: visualDate,
+        discrepancy_type: "visual",
+        expected_quantity: totalStock,
+        actual_quantity: 0,
+        difference: -totalStock,
+        status: "pending",
+        admin_note: visualNote || "Visual discrepancy reported — stock set to 0",
+      } as any);
+
+      // Zero out all warehouse inventory for this item
+      const { data: invRecords } = await supabase
+        .from("inventory")
+        .select("id, warehouse_id, quantity_on_hand")
+        .eq("item_detail_id", id)
+        .not("warehouse_id", "is", null);
+      
+      for (const inv of (invRecords || [])) {
+        if ((inv.quantity_on_hand || 0) > 0) {
+          // Create ledger entry for zeroing out
+          const { data: lastLedger } = await supabase
+            .from("inventory_ledger")
+            .select("running_balance")
+            .eq("item_detail_id", id)
+            .eq("warehouse_id", inv.warehouse_id!)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          
+          const currentBal = lastLedger?.running_balance || inv.quantity_on_hand || 0;
+          await supabase.from("inventory_ledger").insert({
+            item_detail_id: id,
+            warehouse_id: inv.warehouse_id,
+            movement_type: "adjustment",
+            quantity: -(inv.quantity_on_hand || 0),
+            running_balance: currentBal - (inv.quantity_on_hand || 0),
+            reference_type: "adjustment",
+            performed_by: user?.id || null,
+            notes: `Visual discrepancy — stock zeroed (${visualNote || "no note"})`,
+          });
+
+          // Zero out inventory
+          await supabase
+            .from("inventory")
+            .update({ quantity_on_hand: 0, last_updated: new Date().toISOString() })
+            .eq("id", inv.id);
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["stock-discrepancies", id] });
+      queryClient.invalidateQueries({ queryKey: ["item-inventory-ledger", id] });
+      queryClient.invalidateQueries({ queryKey: ["item-warehouse-stock", id] });
+      setShowVisualDialog(false);
+      setVisualNote("");
+      toast({ title: "Visual discrepancy reported", description: "Stock has been zeroed out. Admin must still resolve." });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setDiscrepancyProcessing(false);
+    }
   };
 
   if (isLoading)
@@ -650,72 +815,205 @@ export default function ItemDetail() {
           </CardContent>
         </Card>
 
-        {/* Discrepancy alert (stock vs computed) */}
-        {totalStock > 0 && totalReceived > 0 && (() => {
+        {/* Stock Discrepancy Management */}
+        {(() => {
           const totalLost = totalUnitsSold + totalFalseCoins;
           const expectedStock = totalReceived - totalLost;
           const diff = totalStock - expectedStock;
-          if (diff !== 0) {
-            return (
-              <Alert className="border-chart-4/50 bg-chart-4/5">
-                <AlertTriangle className="h-4 w-4 text-chart-4" />
-                <AlertTitle className="text-chart-4">
-                  Stock Discrepancy Detected: {diff > 0 ? `Surplus of ${diff.toLocaleString()}` : `Shortage of ${Math.abs(diff).toLocaleString()}`} units
-                </AlertTitle>
-                <Collapsible>
-                  <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mt-1 transition-colors">
-                    <ChevronDown className="h-3.5 w-3.5" />
-                    View Breakdown
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <div className="mt-3 space-y-1 text-sm font-mono">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Total Received (purchases)</span>
-                        <span className="text-foreground">{totalReceived.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">− Units Sold (visits)</span>
-                        <span className="text-destructive">−{totalUnitsSold.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">− False Coins (lost)</span>
-                        <span className="text-destructive">−{totalFalseCoins.toLocaleString()}</span>
-                      </div>
-                      <div className="border-t border-border my-1" />
-                      <div className="flex justify-between font-semibold">
-                        <span className="text-foreground">Expected Stock</span>
-                        <span className="text-foreground">{expectedStock.toLocaleString()}</span>
-                      </div>
+          const pendingDiscs = (discrepancies as any[]).filter((d: any) => d.status === "pending");
+          const resolvedDiscs = (discrepancies as any[]).filter((d: any) => d.status === "resolved");
+          const hasSystemDiscrepancy = diff !== 0 && totalReceived > 0;
 
-                      <div className="mt-3 flex justify-between">
-                        <span className="text-muted-foreground pl-2">Warehouse</span>
-                        <span className="text-foreground">{totalWarehouse.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground pl-2">Deployed in Machines</span>
-                        <span className="text-foreground">{totalMachine.toLocaleString()}</span>
-                      </div>
-                      <div className="border-t border-border my-1" />
-                      <div className="flex justify-between font-semibold">
-                        <span className="text-foreground">Actual Stock</span>
-                        <span className="text-foreground">{totalStock.toLocaleString()}</span>
-                      </div>
+          return (
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" /> Stock Discrepancy
+                  </CardTitle>
+                  <Button variant="outline" size="sm" onClick={() => setShowVisualDialog(true)}>
+                    Report Visual Discrepancy
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* System-detected discrepancy */}
+                {hasSystemDiscrepancy && (
+                  <Alert className="border-chart-4/50 bg-chart-4/5">
+                    <AlertTriangle className="h-4 w-4 text-chart-4" />
+                    <AlertTitle className="text-chart-4">
+                      System: {diff > 0 ? `Surplus of ${diff.toLocaleString()}` : `Shortage of ${Math.abs(diff).toLocaleString()}`} units
+                    </AlertTitle>
+                    <Collapsible>
+                      <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mt-1 transition-colors">
+                        <ChevronDown className="h-3.5 w-3.5" />
+                        View Breakdown
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="mt-3 space-y-1 text-sm font-mono">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Total Received</span>
+                            <span className="text-foreground">{totalReceived.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">− Units Sold</span>
+                            <span className="text-destructive">−{totalUnitsSold.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">− False Coins</span>
+                            <span className="text-destructive">−{totalFalseCoins.toLocaleString()}</span>
+                          </div>
+                          <div className="border-t border-border my-1" />
+                          <div className="flex justify-between font-semibold">
+                            <span className="text-foreground">Expected</span>
+                            <span className="text-foreground">{expectedStock.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground pl-2">Warehouse</span>
+                            <span className="text-foreground">{totalWarehouse.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground pl-2">Deployed</span>
+                            <span className="text-foreground">{totalMachine.toLocaleString()}</span>
+                          </div>
+                          <div className="border-t border-border my-1" />
+                          <div className="flex justify-between font-bold">
+                            <span className={diff > 0 ? "text-chart-2" : "text-destructive"}>Discrepancy</span>
+                            <span className={diff > 0 ? "text-chart-2" : "text-destructive"}>
+                              {diff > 0 ? "+" : ""}{diff.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </Alert>
+                )}
 
-                      <div className="border-t border-border my-1" />
-                      <div className="flex justify-between font-bold">
-                        <span className={diff > 0 ? "text-chart-2" : "text-destructive"}>Discrepancy</span>
-                        <span className={diff > 0 ? "text-chart-2" : "text-destructive"}>
-                          {diff > 0 ? "+" : ""}{diff.toLocaleString()}
-                        </span>
+                {/* Pending discrepancies */}
+                {pendingDiscs.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">Pending ({pendingDiscs.length})</p>
+                    {pendingDiscs.map((d: any) => (
+                      <div key={d.id} className="p-3 rounded-md border border-chart-4/30 bg-chart-4/5 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm">
+                            <Badge variant="outline" className="text-xs mr-2 capitalize">{d.discrepancy_type}</Badge>
+                            <span className="text-muted-foreground">
+                              {d.occurrence_date ? format(new Date(d.occurrence_date), "MMM d, yyyy") : "—"}
+                            </span>
+                          </div>
+                          <span className={`text-sm font-semibold ${d.difference > 0 ? "text-chart-2" : "text-destructive"}`}>
+                            {d.difference > 0 ? "+" : ""}{d.difference}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Expected: {d.expected_quantity} · Actual: {d.actual_quantity}
+                        </div>
+                        {d.admin_note && <p className="text-xs text-muted-foreground italic">{d.admin_note}</p>}
+                        {isAdmin && (
+                          <Button variant="outline" size="sm" onClick={() => { setShowResolveDialog(d.id); setResolveNote(""); }}>
+                            Add Note & Resolve
+                          </Button>
+                        )}
                       </div>
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              </Alert>
-            );
-          }
-          return null;
+                    ))}
+                  </div>
+                )}
+
+                {/* Resolved discrepancies */}
+                {resolvedDiscs.length > 0 && (
+                  <Collapsible>
+                    <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                      <ChevronDown className="h-3.5 w-3.5" />
+                      Resolved ({resolvedDiscs.length})
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-2 space-y-2">
+                      {resolvedDiscs.map((d: any) => (
+                        <div key={d.id} className="p-3 rounded-md border border-border bg-muted/30 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-sm">
+                              <Badge variant="secondary" className="text-xs mr-2 capitalize">{d.discrepancy_type}</Badge>
+                              <span className="text-muted-foreground">
+                                {d.occurrence_date ? format(new Date(d.occurrence_date), "MMM d, yyyy") : "—"}
+                              </span>
+                            </div>
+                            <Badge variant="secondary" className="text-xs">Resolved</Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Difference: {d.difference > 0 ? "+" : ""}{d.difference} · {d.admin_note || "—"}
+                          </div>
+                          {d.resolved_at && (
+                            <span className="text-[10px] text-muted-foreground">
+                              Resolved: {format(new Date(d.resolved_at), "MMM d, yyyy")}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+
+                {!hasSystemDiscrepancy && pendingDiscs.length === 0 && resolvedDiscs.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No discrepancies detected.</p>
+                )}
+              </CardContent>
+            </Card>
+          );
         })()}
+
+        {/* Resolve Discrepancy Dialog */}
+        <AlertDialog open={!!showResolveDialog} onOpenChange={(open) => { if (!open) setShowResolveDialog(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Resolve Discrepancy</AlertDialogTitle>
+              <AlertDialogDescription>Add a note explaining this discrepancy and mark it as resolved.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-2">
+              <Label>Admin Note</Label>
+              <Textarea value={resolveNote} onChange={(e) => setResolveNote(e.target.value)} placeholder="e.g., Counted manually, units found in wrong bin..." rows={3} />
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => showResolveDialog && handleResolveDiscrepancy(showResolveDialog)} disabled={discrepancyProcessing}>
+                {discrepancyProcessing ? "Processing..." : "Resolve"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Visual Discrepancy Dialog */}
+        <AlertDialog open={showVisualDialog} onOpenChange={setShowVisualDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Report Visual Discrepancy</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will set current stock to 0 across all warehouses and create a discrepancy record for admin review.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Occurrence Date</Label>
+                <Input type="date" value={visualDate} onChange={(e) => setVisualDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Note</Label>
+                <Textarea value={visualNote} onChange={(e) => setVisualNote(e.target.value)} placeholder="e.g., No units found in any warehouse after physical count..." rows={3} />
+              </div>
+              <Alert className="border-destructive/50 bg-destructive/5">
+                <AlertTriangle className="h-4 w-4 text-destructive" />
+                <AlertDescription className="text-destructive text-xs">
+                  Current stock ({totalStock.toLocaleString()} units) will be set to 0.
+                </AlertDescription>
+              </Alert>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleReportVisualDiscrepancy} disabled={discrepancyProcessing} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                {discrepancyProcessing ? "Processing..." : "Report & Zero Stock"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* ===== SECTION 4: Detailed History Tabs ===== */}
         <Tabs defaultValue="ledger" className="w-full">
@@ -734,50 +1032,84 @@ export default function ItemDetail() {
                 {ledgerEntries.length === 0 ? (
                   <p className="text-muted-foreground p-4">No ledger entries yet.</p>
                 ) : (
-                  <div className="space-y-1">
-                    {ledgerEntries.map((entry) => {
-                      const locationLabel = entry.warehouse_id
-                        ? warehouseStock.find((w: any) => w.warehouse?.id === entry.warehouse_id)?.warehouse?.name || "Warehouse"
-                        : entry.slot_id
-                        ? machineStock.find((m: any) => m.machine)?.machine?.serial_number || "Slot"
-                        : "—";
-                      return (
-                        <div
-                          key={entry.id}
-                          className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 border-b border-border/40 last:border-0"
-                        >
-                          {/* Left: date + type badge */}
-                          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge className={`text-[10px] px-1.5 py-0 ${movementColors[entry.movement_type] || ""}`}>
-                                {entry.movement_type.replace(/_/g, " ")}
-                              </Badge>
-                              <span className="text-xs text-muted-foreground">
-                                {entry.warehouse_id ? "🏭" : entry.slot_id ? "🎰" : ""} {locationLabel}
+                  <>
+                    <div className="space-y-1">
+                      {ledgerEntries.map((entry) => {
+                        const locationLabel = entry.warehouse_id
+                          ? warehouseStock.find((w: any) => w.warehouse?.id === entry.warehouse_id)?.warehouse?.name || "Warehouse"
+                          : entry.slot_id
+                          ? machineStock.find((m: any) => m.machine)?.machine?.serial_number || "Slot"
+                          : "—";
+                        
+                        // Resolve actual event date
+                        let eventDate = entry.created_at;
+                        if (entry.reference_id && entry.reference_type === "visit" && (visitDatesMap as any)[entry.reference_id]) {
+                          eventDate = (visitDatesMap as any)[entry.reference_id];
+                        } else if (entry.reference_id && entry.reference_type === "purchase" && (purchaseDatesMap as any)[entry.reference_id]) {
+                          eventDate = (purchaseDatesMap as any)[entry.reference_id];
+                        }
+
+                        const inward = entry.quantity > 0 ? entry.quantity : null;
+                        const outward = entry.quantity < 0 ? Math.abs(entry.quantity) : null;
+
+                        return (
+                          <div
+                            key={entry.id}
+                            className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 border-b border-border/40 last:border-0"
+                          >
+                            {/* Left: date + type badge */}
+                            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge className={`text-[10px] px-1.5 py-0 ${movementColors[entry.movement_type] || ""}`}>
+                                  {entry.movement_type.replace(/_/g, " ")}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {entry.warehouse_id ? "🏭" : entry.slot_id ? "🎰" : ""} {locationLabel}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-muted-foreground truncate">
+                                {entry.notes || "—"}
                               </span>
                             </div>
-                            <span className="text-[11px] text-muted-foreground truncate">
-                              {entry.notes || "—"}
-                            </span>
-                          </div>
-                          {/* Right: qty + balance + date */}
-                          <div className="flex items-center gap-3 shrink-0">
-                            <div className="text-right">
-                              <span className={`text-sm font-semibold ${entry.quantity > 0 ? "text-chart-2" : entry.quantity < 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                                {entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}
+                            {/* Right: inward/outward + balance + date */}
+                            <div className="flex items-center gap-3 shrink-0">
+                              <div className="text-right min-w-[40px]">
+                                <span className="text-[10px] text-muted-foreground block">In</span>
+                                <span className="text-sm font-semibold text-chart-2">
+                                  {inward ? `+${inward}` : "—"}
+                                </span>
+                              </div>
+                              <div className="text-right min-w-[40px]">
+                                <span className="text-[10px] text-muted-foreground block">Out</span>
+                                <span className="text-sm font-semibold text-destructive">
+                                  {outward ? `-${outward}` : "—"}
+                                </span>
+                              </div>
+                              <div className="text-right min-w-[35px]">
+                                <span className="text-[10px] text-muted-foreground block">Bal</span>
+                                <span className="text-sm font-medium text-foreground">{entry.running_balance}</span>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground w-16 text-right">
+                                {eventDate ? format(new Date(eventDate), "MMM d, yy") : "—"}
                               </span>
-                              <p className="text-[10px] text-muted-foreground">
-                                bal: {entry.running_balance}
-                              </p>
                             </div>
-                            <span className="text-[10px] text-muted-foreground w-14 text-right">
-                              {entry.created_at ? format(new Date(entry.created_at), "MMM d") : "—"}
-                            </span>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                    {/* Totals */}
+                    <div className="mt-3 pt-3 border-t border-border flex items-center justify-between text-sm">
+                      <span className="font-semibold text-foreground">Totals</span>
+                      <div className="flex gap-4">
+                        <span className="text-chart-2 font-medium">
+                          In: +{ledgerEntries.reduce((s, e) => s + (e.quantity > 0 ? e.quantity : 0), 0).toLocaleString()}
+                        </span>
+                        <span className="text-destructive font-medium">
+                          Out: −{ledgerEntries.reduce((s, e) => s + (e.quantity < 0 ? Math.abs(e.quantity) : 0), 0).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
