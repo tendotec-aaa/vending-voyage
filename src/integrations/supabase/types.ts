@@ -1198,6 +1198,72 @@ export type Database = {
           },
         ]
       }
+      stock_discrepancy: {
+        Row: {
+          actual_quantity: number
+          adjustment_id: string | null
+          admin_note: string | null
+          created_at: string
+          detected_at: string
+          difference: number
+          discrepancy_type: string
+          expected_quantity: number
+          id: string
+          item_detail_id: string
+          occurrence_date: string
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+        }
+        Insert: {
+          actual_quantity: number
+          adjustment_id?: string | null
+          admin_note?: string | null
+          created_at?: string
+          detected_at?: string
+          difference: number
+          discrepancy_type?: string
+          expected_quantity: number
+          id?: string
+          item_detail_id: string
+          occurrence_date?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Update: {
+          actual_quantity?: number
+          adjustment_id?: string | null
+          admin_note?: string | null
+          created_at?: string
+          detected_at?: string
+          difference?: number
+          discrepancy_type?: string
+          expected_quantity?: number
+          id?: string
+          item_detail_id?: string
+          occurrence_date?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_discrepancy_adjustment_id_fkey"
+            columns: ["adjustment_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_adjustments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_discrepancy_item_detail_id_fkey"
+            columns: ["item_detail_id"]
+            isOneToOne: false
+            referencedRelation: "item_details"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subcategories: {
         Row: {
           category_id: string
@@ -1563,7 +1629,13 @@ export type Database = {
       ticket_priority: "low" | "medium" | "high" | "urgent"
       ticket_status: "pending" | "in_progress" | "completed"
       user_role: "admin" | "route_operator" | "warehouse_manager"
-      visit_action_type: "restock" | "collection" | "service" | "swap"
+      visit_action_type:
+        | "restock"
+        | "collection"
+        | "service"
+        | "swap"
+        | "swap_out"
+        | "swap_in"
       visit_status: "completed" | "flagged" | "reversed"
     }
     CompositeTypes: {
@@ -1710,7 +1782,14 @@ export const Constants = {
       ticket_priority: ["low", "medium", "high", "urgent"],
       ticket_status: ["pending", "in_progress", "completed"],
       user_role: ["admin", "route_operator", "warehouse_manager"],
-      visit_action_type: ["restock", "collection", "service", "swap"],
+      visit_action_type: [
+        "restock",
+        "collection",
+        "service",
+        "swap",
+        "swap_out",
+        "swap_in",
+      ],
       visit_status: ["completed", "flagged", "reversed"],
     },
   },

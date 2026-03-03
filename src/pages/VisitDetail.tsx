@@ -281,8 +281,13 @@ export default function VisitDetail() {
     const capacity = snap?.previous_capacity || li.slot?.capacity || 150;
     const fillPct = currentStock !== null && capacity > 0 ? Math.round((currentStock / capacity) * 100) : null;
     const surplusShortage = auditedCount !== null && currentStock !== null && visit.visit_type !== "inventory_audit" ? auditedCount - currentStock : null;
-    const isSwapped = li.action_type === "swap" && snap?.previous_product_id && snap.previous_product_id !== li.product_id;
-    const previousProductName = isSwapped ? (snap?.previous_product?.name || "Previous product") : null;
+    
+    // Handle new swap_out/swap_in action types
+    const isSwapOut = li.action_type === "swap_out";
+    const isSwapIn = li.action_type === "swap_in";
+    // Backward compat for old "swap" records
+    const isLegacySwap = li.action_type === "swap" && snap?.previous_product_id && snap.previous_product_id !== li.product_id;
+    const previousProductName = isLegacySwap ? (snap?.previous_product?.name || "Previous product") : null;
 
     return {
       id: li.id,
@@ -301,9 +306,12 @@ export default function VisitDetail() {
       falseCoins,
       jamStatus,
       surplusShortage,
-      isSwapped,
+      isSwapped: isLegacySwap,
+      isSwapOut,
+      isSwapIn,
       previousProductName,
       capacity,
+      photoUrl: li.photo_url,
     };
   });
 
@@ -503,7 +511,7 @@ export default function VisitDetail() {
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {enrichedSlots.map((slot) => (
-                <Card key={slot.id} className="overflow-hidden">
+                <Card key={slot.id} className={`overflow-hidden ${slot.isSwapOut ? "border-l-4 border-l-destructive/50" : slot.isSwapIn ? "border-l-4 border-l-chart-2/50" : ""}`}>
                   <CardContent className="p-4 space-y-3">
                     {/* Header */}
                     <div className="flex items-start justify-between gap-2">
@@ -515,13 +523,25 @@ export default function VisitDetail() {
                         <p className="text-sm font-semibold text-foreground truncate mt-0.5">{slot.productName}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
-                        <Badge variant="outline" className="text-xs capitalize">
-                          {formatVisitType(visit.visit_type)}
-                        </Badge>
+                        {slot.isSwapOut && (
+                          <Badge className="bg-destructive/20 text-destructive border-destructive/30 text-xs">
+                            Swap: Outgoing
+                          </Badge>
+                        )}
+                        {slot.isSwapIn && (
+                          <Badge className="bg-chart-2/20 text-chart-2 border-chart-2/30 text-xs">
+                            Swap: Incoming
+                          </Badge>
+                        )}
+                        {!slot.isSwapOut && !slot.isSwapIn && (
+                          <Badge variant="outline" className="text-xs capitalize">
+                            {formatVisitType(visit.visit_type)}
+                          </Badge>
+                        )}
                         {slot.isSwapped && (
                           <Badge className="bg-purple-500/20 text-purple-700 dark:text-purple-400 border-purple-500/30 text-xs">
                             <ArrowRightLeft className="w-3 h-3 mr-1" />
-                            Swapped
+                            Swapped (legacy)
                           </Badge>
                         )}
                       </div>
@@ -535,74 +555,154 @@ export default function VisitDetail() {
 
                     <Separator />
 
-                    {/* Stock row */}
-                    <div className="grid grid-cols-4 gap-2 text-center">
-                      <div>
-                        <span className="text-[10px] text-muted-foreground block">Last Stock</span>
-                        <span className="text-sm font-medium text-foreground">{slot.lastStock ?? "—"}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-muted-foreground block">Current</span>
-                        <span className="text-sm font-medium text-foreground">{slot.currentStock ?? "—"}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-muted-foreground block">Audited</span>
-                        <span className="text-sm font-medium text-foreground">{slot.auditedCount ?? "—"}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-muted-foreground block">Fill %</span>
-                        {slot.fillPct !== null ? (
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span className="text-sm font-medium text-foreground">{slot.fillPct}%</span>
-                            <Progress value={slot.fillPct} className="h-1 w-full" />
+                    {/* Swap Out card: show outgoing product metrics */}
+                    {slot.isSwapOut && (
+                      <>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Last Stock</span>
+                            <span className="text-sm font-medium text-foreground">{slot.lastStock ?? "—"}</span>
                           </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">—</span>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Units Sold</span>
+                            <span className="text-sm font-medium text-foreground">{slot.unitsSold}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Removed</span>
+                            <span className="text-sm font-medium text-destructive">{slot.removed > 0 ? `-${slot.removed}` : "0"}</span>
+                          </div>
+                        </div>
+                        <Separator />
+                        <div className="grid grid-cols-4 gap-2 text-center">
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Cash</span>
+                            <span className="text-sm font-medium text-foreground">${fmt2(slot.cashCollected)}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">False Coins</span>
+                            <span className="text-sm font-medium text-foreground">{slot.falseCoins}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Jam</span>
+                            <span className="text-xs font-medium text-foreground">{formatJamStatus(slot.jamStatus)}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Audited</span>
+                            <span className="text-sm font-medium text-foreground">{slot.auditedCount ?? "—"}</span>
+                          </div>
+                        </div>
+                        {slot.photoUrl && (
+                          <>
+                            <Separator />
+                            <div>
+                              <span className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                                <ImageIcon className="w-3 h-3" /> Swap Photo
+                              </span>
+                              <img src={slot.photoUrl} alt="Swap" className="rounded-md max-h-40 object-contain border border-border" />
+                            </div>
+                          </>
                         )}
-                      </div>
-                    </div>
+                      </>
+                    )}
 
-                    <Separator />
+                    {/* Swap In card: show incoming product metrics */}
+                    {slot.isSwapIn && (
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Units Refilled</span>
+                          <span className="text-sm font-medium text-chart-2">{slot.added > 0 ? `+${slot.added}` : "0"}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Current Stock</span>
+                          <span className="text-sm font-medium text-foreground">{slot.currentStock ?? "—"}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Fill %</span>
+                          {slot.fillPct !== null ? (
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className="text-sm font-medium text-foreground">{slot.fillPct}%</span>
+                              <Progress value={slot.fillPct} className="h-1 w-full" />
+                            </div>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
-                    {/* Movement row */}
-                    <div className="grid grid-cols-5 gap-2 text-center">
-                      <div>
-                        <span className="text-[10px] text-muted-foreground block">Sold</span>
-                        <span className="text-sm font-medium text-foreground">{slot.unitsSold}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-muted-foreground block">Added</span>
-                        <span className="text-sm font-medium text-green-600 dark:text-green-400">{slot.added > 0 ? `+${slot.added}` : "0"}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-muted-foreground block">Removed</span>
-                        <span className="text-sm font-medium text-destructive">{slot.removed > 0 ? `-${slot.removed}` : "0"}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-muted-foreground block">False Coins</span>
-                        <span className="text-sm font-medium text-foreground">{slot.falseCoins}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-muted-foreground block">Jam</span>
-                        <span className="text-xs font-medium text-foreground">{formatJamStatus(slot.jamStatus)}</span>
-                      </div>
-                    </div>
+                    {/* Normal (non-swap) card layout */}
+                    {!slot.isSwapOut && !slot.isSwapIn && (
+                      <>
+                        {/* Stock row */}
+                        <div className="grid grid-cols-4 gap-2 text-center">
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Last Stock</span>
+                            <span className="text-sm font-medium text-foreground">{slot.lastStock ?? "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Current</span>
+                            <span className="text-sm font-medium text-foreground">{slot.currentStock ?? "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Audited</span>
+                            <span className="text-sm font-medium text-foreground">{slot.auditedCount ?? "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Fill %</span>
+                            {slot.fillPct !== null ? (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span className="text-sm font-medium text-foreground">{slot.fillPct}%</span>
+                                <Progress value={slot.fillPct} className="h-1 w-full" />
+                              </div>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        </div>
 
-                    <Separator />
+                        <Separator />
 
-                    {/* Bottom row */}
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-4">
-                        <span className="text-muted-foreground text-xs">
-                          Cash: <span className="font-semibold text-foreground">${fmt2(slot.cashCollected)}</span>
-                        </span>
-                        {slot.surplusShortage !== null && (
-                          <span className={`text-xs font-medium ${slot.surplusShortage > 0 ? "text-green-600 dark:text-green-400" : slot.surplusShortage < 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                            {slot.surplusShortage > 0 ? "+" : ""}{slot.surplusShortage} {slot.surplusShortage > 0 ? "surplus" : slot.surplusShortage < 0 ? "shortage" : "exact"}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                        {/* Movement row */}
+                        <div className="grid grid-cols-5 gap-2 text-center">
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Sold</span>
+                            <span className="text-sm font-medium text-foreground">{slot.unitsSold}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Added</span>
+                            <span className="text-sm font-medium text-chart-2">{slot.added > 0 ? `+${slot.added}` : "0"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Removed</span>
+                            <span className="text-sm font-medium text-destructive">{slot.removed > 0 ? `-${slot.removed}` : "0"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">False Coins</span>
+                            <span className="text-sm font-medium text-foreground">{slot.falseCoins}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Jam</span>
+                            <span className="text-xs font-medium text-foreground">{formatJamStatus(slot.jamStatus)}</span>
+                          </div>
+                        </div>
+
+                        <Separator />
+
+                        {/* Bottom row */}
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-4">
+                            <span className="text-muted-foreground text-xs">
+                              Cash: <span className="font-semibold text-foreground">${fmt2(slot.cashCollected)}</span>
+                            </span>
+                            {slot.surplusShortage !== null && (
+                              <span className={`text-xs font-medium ${slot.surplusShortage > 0 ? "text-chart-2" : slot.surplusShortage < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                                {slot.surplusShortage > 0 ? "+" : ""}{slot.surplusShortage} {slot.surplusShortage > 0 ? "surplus" : slot.surplusShortage < 0 ? "shortage" : "exact"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               ))}

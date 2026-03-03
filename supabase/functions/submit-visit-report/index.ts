@@ -334,22 +334,61 @@ Deno.serve(async (req) => {
       throw new Error(`visit_slot_snapshots insert: ${snapErr.message}`);
 
     // ── Step 3: Insert visit_line_items ──
-    const lineItems = slots.map((s) => ({
-      spot_visit_id: visitId,
-      machine_id: s.machineId,
-      slot_id: s.slotId,
-      product_id: s.replaceAllToys && s.newToyId ? s.newToyId : (s.toyId || null),
-      action_type: s.replaceAllToys ? "swap" : actionType,
-      quantity_added: s.replaceAllToys ? s.newUnitsRefilled : s.unitsRefilled,
-      quantity_removed: s.unitsRemoved,
-      cash_collected: s.cashCollected,
-      meter_reading: s.auditedCount,
-      photo_url: s.photoUrl,
-      false_coins: s.falseCoins || 0,
-      jam_status: s.jamStatus || "no_jam",
-      computed_current_stock: s.currentStock,
-      units_sold: s.unitsSold,
-    }));
+    const lineItems: Array<Record<string, unknown>> = [];
+    for (const s of slots) {
+      if (s.replaceAllToys) {
+        // Swap: two separate rows — one for old product (swap_out), one for new (swap_in)
+        lineItems.push({
+          spot_visit_id: visitId,
+          machine_id: s.machineId,
+          slot_id: s.slotId,
+          product_id: s.toyId || s.previousProductId || null,
+          action_type: "swap_out",
+          quantity_added: 0,
+          quantity_removed: s.unitsRemoved,
+          cash_collected: s.cashCollected,
+          meter_reading: s.auditedCount,
+          photo_url: s.photoUrl,
+          false_coins: s.falseCoins || 0,
+          jam_status: s.jamStatus || "no_jam",
+          computed_current_stock: 0,
+          units_sold: s.unitsSold,
+        });
+        lineItems.push({
+          spot_visit_id: visitId,
+          machine_id: s.machineId,
+          slot_id: s.slotId,
+          product_id: s.newToyId || null,
+          action_type: "swap_in",
+          quantity_added: s.newUnitsRefilled,
+          quantity_removed: 0,
+          cash_collected: 0,
+          meter_reading: null,
+          photo_url: null,
+          false_coins: 0,
+          jam_status: "no_jam",
+          computed_current_stock: s.newCurrentStock,
+          units_sold: 0,
+        });
+      } else {
+        lineItems.push({
+          spot_visit_id: visitId,
+          machine_id: s.machineId,
+          slot_id: s.slotId,
+          product_id: s.toyId || null,
+          action_type: actionType,
+          quantity_added: s.unitsRefilled,
+          quantity_removed: s.unitsRemoved,
+          cash_collected: s.cashCollected,
+          meter_reading: s.auditedCount,
+          photo_url: s.photoUrl,
+          false_coins: s.falseCoins || 0,
+          jam_status: s.jamStatus || "no_jam",
+          computed_current_stock: s.currentStock,
+          units_sold: s.unitsSold,
+        });
+      }
+    }
     const { error: lineErr } = await db
       .from("visit_line_items")
       .insert(lineItems);

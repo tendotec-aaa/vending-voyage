@@ -663,7 +663,7 @@ export default function NewVisitReport() {
         const jamAdjustment = updated.jamStatus === 'by_coin' ? 1 : 0;
         const falseCoinsAdj = updated.falseCoins || 0;
         updated.currentStock = updated.lastStock - updated.unitsSold + jamAdjustment - falseCoinsAdj - updated.unitsRemoved;
-        updated.swapSurplusShortage = updated.currentStock; // anything != 0 is surplus/shortage
+        updated.swapSurplusShortage = -updated.currentStock; // negate: positive = surplus (extra units), negative = shortage (missing units)
         // New product stock
         updated.newCurrentStock = updated.newUnitsRefilled;
       } else {
