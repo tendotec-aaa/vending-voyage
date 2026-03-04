@@ -997,7 +997,7 @@ export default function ItemDetail() {
             <AlertDialogHeader>
               <AlertDialogTitle>Reconcile & Adjust Stock</AlertDialogTitle>
               <AlertDialogDescription>
-                Record a stock reconciliation from a physical count. This will permanently adjust inventory levels and create an audit trail entry.
+                Record a stock discrepancy from a physical count. This will adjust inventory levels and create an audit trail entry.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-3">
@@ -1006,32 +1006,60 @@ export default function ItemDetail() {
                 <Input type="date" value={visualDate} onChange={(e) => setVisualDate(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Quantity to Report (actual count)</Label>
+                <Label>Discrepancy Type</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={visualType === "shortage" ? "destructive" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setVisualType("shortage")}
+                  >
+                    Shortage (Missing)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={visualType === "surplus" ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setVisualType("surplus")}
+                  >
+                    Surplus (Extra)
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Units {visualType === "shortage" ? "Missing" : "Extra"}</Label>
                 <Input
                   type="number"
-                  min={0}
-                  max={totalStock}
-                  value={visualQuantity}
+                  min={1}
+                  value={visualQuantity || ""}
                   onChange={(e) => setVisualQuantity(Math.max(0, parseInt(e.target.value) || 0))}
+                  placeholder={`e.g., 50 units ${visualType === "shortage" ? "missing" : "found extra"}`}
                 />
                 <p className="text-xs text-muted-foreground">
-                  System shows {totalStock.toLocaleString()} units. Enter the actual quantity found.
+                  System shows {totalStock.toLocaleString()} units.
+                  {visualQuantity > 0 && (
+                    <> After adjustment: <strong>{(totalStock + (visualType === "shortage" ? -visualQuantity : visualQuantity)).toLocaleString()}</strong> units.</>
+                  )}
                 </p>
               </div>
               <div className="space-y-2">
                 <Label>Note</Label>
-                <Textarea value={visualNote} onChange={(e) => setVisualNote(e.target.value)} placeholder="e.g., No units found in any warehouse after physical count..." rows={3} />
+                <Textarea value={visualNote} onChange={(e) => setVisualNote(e.target.value)} placeholder="e.g., Physical count revealed missing units from bin A3..." rows={3} />
               </div>
-              <Alert className="border-destructive/50 bg-destructive/10">
-                <AlertTriangle className="h-4 w-4 text-destructive" />
-                <AlertDescription className="text-destructive text-xs">
-                  This will register a <strong>{visualQuantity < totalStock ? "shortage" : "surplus"}</strong> of {Math.abs(totalStock - visualQuantity).toLocaleString()} units. Inventory WILL be adjusted and a ledger entry created for accounting purposes.
-                </AlertDescription>
-              </Alert>
+              {visualQuantity > 0 && (
+                <Alert className={visualType === "shortage" ? "border-destructive/50 bg-destructive/10" : "border-chart-2/50 bg-chart-2/10"}>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    This will register a <strong>{visualType}</strong> of {visualQuantity.toLocaleString()} units. Inventory will be {visualType === "shortage" ? "decreased" : "increased"} from {totalStock.toLocaleString()} to {(totalStock + (visualType === "shortage" ? -visualQuantity : visualQuantity)).toLocaleString()} and a ledger entry created.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleReportVisualDiscrepancy} disabled={discrepancyProcessing || visualQuantity === totalStock}>
+              <AlertDialogAction onClick={handleReportVisualDiscrepancy} disabled={discrepancyProcessing || visualQuantity <= 0}>
                 {discrepancyProcessing ? "Processing..." : "Reconcile & Adjust Stock"}
               </AlertDialogAction>
             </AlertDialogFooter>
