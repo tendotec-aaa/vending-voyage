@@ -1140,13 +1140,23 @@ export default function ItemDetail() {
                       <span className="font-semibold text-foreground">Totals</span>
                       <div className="flex gap-4">
                         <span className="text-chart-2 font-medium">
-                          In: +{ledgerEntries.reduce((s, e) => s + (!e.slot_id && e.quantity > 0 ? e.quantity : 0), 0).toLocaleString()}
+                          In: +{ledgerEntries.reduce((s, e) => {
+                            const isIn = (e.warehouse_id && e.quantity > 0) || (e.movement_type === "adjustment" && e.quantity > 0);
+                            return s + (isIn ? e.quantity : 0);
+                          }, 0).toLocaleString()}
                         </span>
                         <span className="font-medium text-primary">
-                          Dep: {ledgerEntries.reduce((s, e) => s + (e.slot_id ? e.quantity : 0), 0).toLocaleString()}
+                          Dep: {ledgerEntries.reduce((s, e) => {
+                            const isDep = (e.warehouse_id && e.quantity < 0 && e.movement_type === "refill")
+                              || (e.slot_id && e.quantity > 0 && ["refill", "swap_in"].includes(e.movement_type));
+                            return s + (isDep ? Math.abs(e.quantity) : 0);
+                          }, 0).toLocaleString()}
                         </span>
                         <span className="text-destructive font-medium">
-                          Out: −{ledgerEntries.reduce((s, e) => s + (!e.slot_id && e.quantity < 0 ? Math.abs(e.quantity) : 0), 0).toLocaleString()}
+                          Out: −{ledgerEntries.reduce((s, e) => {
+                            const isOut = (e.slot_id && e.quantity < 0) || (e.movement_type === "adjustment" && e.quantity < 0);
+                            return s + (isOut ? Math.abs(e.quantity) : 0);
+                          }, 0).toLocaleString()}
                         </span>
                       </div>
                     </div>
