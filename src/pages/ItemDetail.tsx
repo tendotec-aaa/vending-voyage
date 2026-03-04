@@ -47,7 +47,7 @@ const movementColors: Record<string, string> = {
   swap_in: "bg-chart-2/10 text-chart-2 border-chart-2/20",
   swap_out: "bg-chart-3/10 text-chart-3 border-chart-3/20",
   reversal: "bg-destructive/10 text-destructive border-destructive/20",
-  adjustment: "bg-chart-4/10 text-chart-4 border-chart-4/20",
+  adjustment: "bg-chart-5/20 text-chart-5 border-chart-5/30",
   transfer: "bg-primary/10 text-primary border-primary/20",
   initial: "bg-muted text-muted-foreground border-border",
   assembly_production: "bg-chart-2/10 text-chart-2 border-chart-2/20",
