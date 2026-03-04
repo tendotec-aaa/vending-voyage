@@ -673,8 +673,7 @@ export default function NewVisitReport() {
       }
       
       // Calculate cash collected (always from old product sales)
-      const jamAdj = updated.jamStatus === 'by_coin' ? 1 : 0;
-      updated.cashCollected = (updated.unitsSold + jamAdj) * updated.pricePerUnit;
+      updated.cashCollected = updated.unitsSold * updated.pricePerUnit;
       
       return updated;
     }));
