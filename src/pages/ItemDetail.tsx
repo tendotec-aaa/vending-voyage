@@ -1019,10 +1019,10 @@ export default function ItemDetail() {
                 <Label>Note</Label>
                 <Textarea value={visualNote} onChange={(e) => setVisualNote(e.target.value)} placeholder="e.g., No units found in any warehouse after physical count..." rows={3} />
               </div>
-              <Alert className="border-border bg-muted/30">
-                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                <AlertDescription className="text-muted-foreground text-xs">
-                  This will log a discrepancy of {Math.abs(totalStock - visualQuantity).toLocaleString()} units ({visualQuantity < totalStock ? "shortage" : "surplus"}). Inventory will NOT be modified.
+              <Alert className="border-destructive/50 bg-destructive/10">
+                <AlertTriangle className="h-4 w-4 text-destructive" />
+                <AlertDescription className="text-destructive text-xs">
+                  This will register a <strong>{visualQuantity < totalStock ? "shortage" : "surplus"}</strong> of {Math.abs(totalStock - visualQuantity).toLocaleString()} units. Inventory WILL be adjusted and a ledger entry created for accounting purposes.
                 </AlertDescription>
               </Alert>
             </div>
