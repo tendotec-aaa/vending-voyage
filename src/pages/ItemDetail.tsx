@@ -471,9 +471,18 @@ export default function ItemDetail() {
     setDiscrepancyProcessing(true);
     try {
       const reportedQty = visualQuantity;
-      const difference = reportedQty - totalStock; // negative = shortage
+      const difference = reportedQty - totalStock; // negative = shortage, positive = surplus
 
-      // Only create a discrepancy record — no inventory or ledger changes
+      if (difference === 0) {
+        toast({ title: "No discrepancy", description: "Actual count matches system count.", variant: "destructive" });
+        setDiscrepancyProcessing(false);
+        return;
+      }
+
+      const adjustmentType = difference < 0 ? "shortage" : "surplus";
+      const noteText = visualNote || `Visual reconciliation: found ${reportedQty} units, system shows ${totalStock}. ${adjustmentType === "shortage" ? "Shortage" : "Surplus"} of ${Math.abs(difference)} units.`;
+
+      // 1. Create stock_discrepancy record (auto-resolved)
       await supabase.from("stock_discrepancy" as any).insert({
         item_detail_id: id,
         occurrence_date: visualDate,
@@ -481,14 +490,51 @@ export default function ItemDetail() {
         expected_quantity: totalStock,
         actual_quantity: reportedQty,
         difference,
-        status: "pending",
-        admin_note: visualNote || `Visual count: found ${reportedQty} units, system shows ${totalStock}. Difference: ${difference}.`,
+        status: "resolved",
+        resolved_at: new Date().toISOString(),
+        admin_note: noteText,
       } as any);
 
+      // 2. Get the current running balance from the latest ledger entry
+      const { data: lastLedger } = await supabase
+        .from("inventory_ledger")
+        .select("running_balance")
+        .eq("item_detail_id", id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      const currentBalance = lastLedger?.running_balance ?? totalStock;
+      const newBalance = currentBalance + difference;
+
+      // 3. Insert inventory_ledger entry (adjustment movement)
+      await supabase.from("inventory_ledger").insert({
+        item_detail_id: id,
+        movement_type: "adjustment",
+        quantity: difference,
+        running_balance: newBalance,
+        warehouse_id: warehouseStock.length > 0 ? warehouseStock[0].warehouse_id : null,
+        notes: `📋 ${adjustmentType === "shortage" ? "Shortage" : "Surplus"} adjustment — ${noteText}`,
+        reference_type: "discrepancy",
+      });
+
+      // 4. Update inventory table (adjust first warehouse row)
+      if (warehouseStock.length > 0) {
+        const firstWarehouse = warehouseStock[0];
+        await supabase
+          .from("inventory")
+          .update({ quantity_on_hand: (firstWarehouse.quantity_on_hand || 0) + difference, last_updated: new Date().toISOString() })
+          .eq("id", firstWarehouse.id);
+      }
+
       queryClient.invalidateQueries({ queryKey: ["stock-discrepancies", id] });
+      queryClient.invalidateQueries({ queryKey: ["inventory-ledger", id] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse-stock", id] });
       setShowVisualDialog(false);
       setVisualNote("");
-      toast({ title: "Visual discrepancy reported", description: `Logged ${Math.abs(difference)} missing units for admin review. No inventory was changed.` });
+      toast({
+        title: "Stock reconciled",
+        description: `${adjustmentType === "shortage" ? "Shortage" : "Surplus"} of ${Math.abs(difference)} units recorded and inventory updated.`,
+      });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
