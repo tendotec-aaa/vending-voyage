@@ -470,72 +470,25 @@ export default function ItemDetail() {
     if (!id) return;
     setDiscrepancyProcessing(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      // Create discrepancy record
       const reportedQty = visualQuantity;
-      const adjustAmount = totalStock - reportedQty; // how much to remove
+      const difference = reportedQty - totalStock; // negative = shortage
+
+      // Only create a discrepancy record — no inventory or ledger changes
       await supabase.from("stock_discrepancy" as any).insert({
         item_detail_id: id,
         occurrence_date: visualDate,
         discrepancy_type: "visual",
         expected_quantity: totalStock,
         actual_quantity: reportedQty,
-        difference: reportedQty - totalStock,
+        difference,
         status: "pending",
-        admin_note: visualNote || `Visual discrepancy reported — stock adjusted from ${totalStock} to ${reportedQty}`,
+        admin_note: visualNote || `Visual count: found ${reportedQty} units, system shows ${totalStock}. Difference: ${difference}.`,
       } as any);
 
-      // Zero out all warehouse inventory for this item
-      const { data: invRecords } = await supabase
-        .from("inventory")
-        .select("id, warehouse_id, quantity_on_hand")
-        .eq("item_detail_id", id)
-        .not("warehouse_id", "is", null);
-      
-      // Distribute the adjustment proportionally across warehouses
-      let remainingToRemove = adjustAmount;
-      for (const inv of (invRecords || [])) {
-        if ((inv.quantity_on_hand || 0) > 0 && remainingToRemove > 0) {
-          const removeFromThis = Math.min(inv.quantity_on_hand || 0, remainingToRemove);
-          const newQty = (inv.quantity_on_hand || 0) - removeFromThis;
-          
-          const { data: lastLedger } = await supabase
-            .from("inventory_ledger")
-            .select("running_balance")
-            .eq("item_detail_id", id)
-            .eq("warehouse_id", inv.warehouse_id!)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          
-          const currentBal = lastLedger?.running_balance || inv.quantity_on_hand || 0;
-          await supabase.from("inventory_ledger").insert({
-            item_detail_id: id,
-            warehouse_id: inv.warehouse_id,
-            movement_type: "adjustment",
-            quantity: -removeFromThis,
-            running_balance: currentBal - removeFromThis,
-            reference_type: "adjustment",
-            performed_by: user?.id || null,
-            notes: `Visual discrepancy — stock adjusted by -${removeFromThis} (${visualNote || "no note"})`,
-          });
-
-          await supabase
-            .from("inventory")
-            .update({ quantity_on_hand: newQty, last_updated: new Date().toISOString() })
-            .eq("id", inv.id);
-          
-          remainingToRemove -= removeFromThis;
-        }
-      }
-
       queryClient.invalidateQueries({ queryKey: ["stock-discrepancies", id] });
-      queryClient.invalidateQueries({ queryKey: ["item-inventory-ledger", id] });
-      queryClient.invalidateQueries({ queryKey: ["item-warehouse-stock", id] });
       setShowVisualDialog(false);
       setVisualNote("");
-      toast({ title: "Visual discrepancy reported", description: `Stock adjusted from ${totalStock} to ${reportedQty}. Admin must still resolve.` });
+      toast({ title: "Visual discrepancy reported", description: `Logged ${Math.abs(difference)} missing units for admin review. No inventory was changed.` });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
