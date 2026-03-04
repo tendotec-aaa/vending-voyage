@@ -948,7 +948,7 @@ export default function ItemDetail() {
             <AlertDialogHeader>
               <AlertDialogTitle>Report Visual Discrepancy</AlertDialogTitle>
               <AlertDialogDescription>
-                This will set current stock to 0 across all warehouses and create a discrepancy record for admin review.
+                Record a visual inventory count discrepancy. This does NOT change inventory — it logs the difference for admin review and resolution.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-3">
