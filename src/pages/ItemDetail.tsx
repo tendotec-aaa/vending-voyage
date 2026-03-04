@@ -841,7 +841,7 @@ export default function ItemDetail() {
                   <CardTitle className="text-base flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4" /> Stock Discrepancy
                   </CardTitle>
-                  <Button variant="outline" size="sm" onClick={() => { setVisualQuantity(totalStock); setShowVisualDialog(true); }}>
+                  <Button variant="outline" size="sm" onClick={() => { setVisualQuantity(0); setVisualType("shortage"); setShowVisualDialog(true); }}>
                     Report Visual Discrepancy
                   </Button>
                 </div>
