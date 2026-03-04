@@ -471,17 +471,18 @@ export default function ItemDetail() {
     if (!id) return;
     setDiscrepancyProcessing(true);
     try {
-      const reportedQty = visualQuantity;
-      const difference = reportedQty - totalStock; // negative = shortage, positive = surplus
-
-      if (difference === 0) {
-        toast({ title: "No discrepancy", description: "Actual count matches system count.", variant: "destructive" });
+      const discrepancyAmount = visualQuantity;
+      if (discrepancyAmount <= 0) {
+        toast({ title: "Invalid amount", description: "Enter a positive discrepancy amount.", variant: "destructive" });
         setDiscrepancyProcessing(false);
         return;
       }
 
-      const adjustmentType = difference < 0 ? "shortage" : "surplus";
-      const noteText = visualNote || `Visual reconciliation: found ${reportedQty} units, system shows ${totalStock}. ${adjustmentType === "shortage" ? "Shortage" : "Surplus"} of ${Math.abs(difference)} units.`;
+      // shortage = we're missing units, so inventory goes DOWN → negative difference
+      // surplus = we found extra units, so inventory goes UP → positive difference
+      const difference = visualType === "shortage" ? -discrepancyAmount : discrepancyAmount;
+      const actualQuantity = totalStock + difference;
+      const noteText = visualNote || `Visual reconciliation: ${visualType === "shortage" ? "Shortage" : "Surplus"} of ${discrepancyAmount} units detected. System had ${totalStock}, adjusted to ${actualQuantity}.`;
 
       // 1. Create stock_discrepancy record (auto-resolved)
       await supabase.from("stock_discrepancy" as any).insert({
@@ -489,7 +490,7 @@ export default function ItemDetail() {
         occurrence_date: visualDate,
         discrepancy_type: "visual",
         expected_quantity: totalStock,
-        actual_quantity: reportedQty,
+        actual_quantity: actualQuantity,
         difference,
         status: "resolved",
         resolved_at: new Date().toISOString(),
@@ -514,7 +515,7 @@ export default function ItemDetail() {
         quantity: difference,
         running_balance: newBalance,
         warehouse_id: warehouseStock.length > 0 ? warehouseStock[0].warehouse_id : null,
-        notes: `📋 ${adjustmentType === "shortage" ? "Shortage" : "Surplus"} adjustment — ${noteText}`,
+        notes: `📋 ${visualType === "shortage" ? "Shortage" : "Surplus"} adjustment — ${noteText}`,
         reference_type: "discrepancy",
       });
 
@@ -532,9 +533,10 @@ export default function ItemDetail() {
       queryClient.invalidateQueries({ queryKey: ["warehouse-stock", id] });
       setShowVisualDialog(false);
       setVisualNote("");
+      setVisualQuantity(0);
       toast({
         title: "Stock reconciled",
-        description: `${adjustmentType === "shortage" ? "Shortage" : "Surplus"} of ${Math.abs(difference)} units recorded and inventory updated.`,
+        description: `${visualType === "shortage" ? "Shortage" : "Surplus"} of ${discrepancyAmount} units recorded and inventory updated.`,
       });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
