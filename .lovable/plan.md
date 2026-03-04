@@ -1,71 +1,77 @@
+## Plan: Audit Trail & Ledger Logic
+
+### Problem 1: Visual Reconciliation & Full Audit Trail
+
+We are transforming the "Report Discrepancy" feature from a simple log into a full stock reconciliation event.
+
+**File:** `src/pages/ItemDetail.tsx` — `handleReportVisualDiscrepancy` (approx. lines 469-497)
+
+**The Logic Flow:**
+
+- **Calculate Delta:** `visualQuantity - totalStock`
+- **Update** `stock_discrepancy`: Insert record with `status: "resolved"` (since we are fixing it immediately).
+- **Update** `inventory_adjustments`:
+  - If Delta>0: Type = `"surplus"`.
+  - If Delta<0: Type = `"shortage"`.
+- **Update** `inventory_ledger`: Insert movement with `movement_type: "adjustment"`. This record will drive the "In" or "Out" columns.
+- **Update** `inventory` **(Table)**: Update `quantity_on_hand` for the relevant warehouse by adding the Delta.
+- **UI Refresh**: Update dialog labels to **"Reconcile & Adjust Stock"** and add a disclaimer that this action will permanently change inventory counts.
+
+---
+
+### Problem 2: Ledger Column Categorization (Circular Logic)
+
+We are fixing the "Dep" (Deployed) column so it doesn't incorrectly swallow sales, and ensuring removals from machines are treated as **Inbound** to the warehouse, not **Outbound** losses.
+
+**The Triple-Column Logic:**
 
 
-## Plan: Ledger "Dep" Column, Visual Discrepancy Quantity Input, Swap Photo Fix & Cash Collected Jam Fix
+|                    |                                         |                                                                                    |
+| ------------------ | --------------------------------------- | ---------------------------------------------------------------------------------- |
+| Category           | Definition                              | Included Movements                                                                 |
+| **IN** (Inward)    | Stock entering the warehouse/system.    | Warehouse receipts, returns from machines (removals), and **Surplus Adjustments**. |
+| **DEP** (Deployed) | Stock moving to or located in machines. | Refills (Warehouse Out / Slot In) and Swaps.                                       |
+| **OUT** (Outward)  | Stock leaving the ecosystem.            | **Sales (Sold)** and **Shortage Adjustments**.                                     |
 
-### 1. Add "Dep" (Deployed) Column to Inventory Ledger
 
-**File**: `src/pages/ItemDetail.tsx` (ledger section ~lines 1052-1111)
+Export to Sheets
 
-Currently the ledger shows In | Out | Bal. Add a "Dep" column between In and Out:
+**The Revised Code Logic:** Replace the current `isDep` / `inward` / `outward` logic (lines 1026-1030) with this:
 
-- **In** = positive quantity entries where `warehouse_id` is set (purchases, assemblies, returns to warehouse)
-- **Dep** = entries where `slot_id` is set (deployed to/from machine slots). Positive = returned from slot, negative = sent to slot
-- **Out** = negative quantity entries that are sales/adjustments (movement_type includes "sale", "adjustment", "swap_out" on slot, etc.)
-- **Bal** = running balance (unchanged)
+TypeScript
 
-Logic per entry:
-- If `entry.slot_id` is set → show quantity in Dep column (green if positive/return, red if negative/deploy)
-- Else if `entry.quantity > 0` → show in In column
-- Else if `entry.quantity < 0` → show in Out column
+```
+// 1. IN: Warehouse Inbound (positive qty) OR Positive Adjustments (Surplus)
+const isIn = (entry.warehouse_id && entry.quantity > 0) 
+          || (entry.movement_type === "adjustment" && entry.quantity > 0);
 
-Update totals row to include Dep total.
+// 2. DEP: Moving to field (Warehouse neg) OR Arriving in slot (Slot pos)
+const isDep = (entry.warehouse_id && entry.quantity < 0 && entry.movement_type === "refill")
+           || (entry.slot_id && entry.quantity > 0 && ["refill", "swap_in"].includes(entry.movement_type));
 
-### 2. Visual Discrepancy Dialog — Add Quantity Input
+// 3. OUT: Sales OR Negative Adjustments (Shortage)
+const isOut = (entry.movement_type === "sold")
+           || (entry.movement_type === "adjustment" && entry.quantity < 0);
 
-**File**: `src/pages/ItemDetail.tsx` (dialog ~lines 984-1016, handler ~lines 468-536)
-
-- Add a state variable `visualQuantity` initialized to `totalStock` when dialog opens
-- Add an `Input` field of type `number` in the dialog letting the user adjust the quantity to report
-- Update `handleReportVisualDiscrepancy` to use `visualQuantity` instead of hardcoded `totalStock` for the `expected_quantity` and zeroing logic (set inventory to `totalStock - visualQuantity` instead of always 0, or if they report the full amount, zero it out)
-
-### 3. Swap Photo on Incoming Card (Not Outgoing)
-
-**File**: `src/pages/VisitDetail.tsx` (~lines 594-631)
-
-Currently the `photoUrl` is stored on the `swap_out` line item (edge function line 351). Move the photo to the `swap_in` entry instead.
-
-**Edge function fix** (`supabase/functions/submit-visit-report/index.ts`, lines 341-371):
-- On the `swap_out` row: set `photo_url: null`
-- On the `swap_in` row: set `photo_url: s.photoUrl`
-
-**VisitDetail.tsx fix**:
-- Remove the photo rendering block from the `isSwapOut` section (lines 594-604)
-- Add photo rendering to the `isSwapIn` section (after line 630)
-
-**Incoming badge color**: Make the Swap: Incoming badge more prominent — use a solid green background instead of the current subtle `bg-chart-2/20`.
-
-### 4. Fix Cash Collected — Jam (+1 coin) Should NOT Add to Cash
-
-**File**: `src/pages/NewVisitReport.tsx` (lines 676-677)
-
-Current code:
-```typescript
-const jamAdj = updated.jamStatus === 'by_coin' ? 1 : 0;
-updated.cashCollected = (updated.unitsSold + jamAdj) * updated.pricePerUnit;
 ```
 
-The jam coin is already included in `unitsSold` (the machine counted it as a sale). The `+1` adjustment is only for stock tracking (the unit is stuck, not dispensed). Cash should NOT include the jam adjustment:
+---
 
-```typescript
-updated.cashCollected = updated.unitsSold * updated.pricePerUnit;
-```
+### UI & Styling Adjustments
 
-The stock formula already correctly adds `jamAdjustment` to account for the stuck unit, so only the cash line needs fixing.
+1. **Rendering Values**:
+  - `inward`: Display `entry.quantity` if `isIn`.
+  - `deployed`: Display `Math.abs(entry.quantity)` if `isDep`.
+  - `outward`: Display `Math.abs(entry.quantity)` if `isOut`.
+2. **Totals Row (lines 1084-1096)**: Update the reduction logic to sum based on these three new boolean flags.
+3. **Color Coding**: Ensure `adjustment` types are styled distinctly in the ledger to highlight reconciliation events (e.g., using a warning amber for adjustments vs. standard green/red for receipts/sales).
+
+---
 
 ### Files to Modify
 
-1. `src/pages/ItemDetail.tsx` — Add Dep column to ledger; add quantity input to visual discrepancy dialog
-2. `src/pages/VisitDetail.tsx` — Move swap photo to incoming card; make incoming badge more prominent
-3. `supabase/functions/submit-visit-report/index.ts` — Move `photo_url` from swap_out to swap_in row
-4. `src/pages/NewVisitReport.tsx` — Remove jam adjustment from cash collected calculation
-
+- `src/pages/ItemDetail.tsx`:
+  - `handleReportVisualDiscrepancy` function.
+  - Ledger column mapping logic.
+  - Table Footer/Totals calculation.
+  - Reconciliation Dialog UI text.
