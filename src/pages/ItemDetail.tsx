@@ -77,6 +77,7 @@ export default function ItemDetail() {
   const [visualNote, setVisualNote] = useState("");
   const [visualDate, setVisualDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [visualQuantity, setVisualQuantity] = useState(0);
+  const [visualType, setVisualType] = useState<"shortage" | "surplus">("shortage");
   const [discrepancyProcessing, setDiscrepancyProcessing] = useState(false);
   const [form, setForm] = useState({
     name: "",
