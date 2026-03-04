@@ -105,7 +105,7 @@ export default function ItemDetail() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("inventory")
-        .select("quantity_on_hand, warehouse:warehouses(id, name)")
+        .select("id, quantity_on_hand, warehouse_id, warehouse:warehouses(id, name)")
         .eq("item_detail_id", id!)
         .not("warehouse_id", "is", null);
       if (error) throw error;
