@@ -992,9 +992,9 @@ export default function ItemDetail() {
         <AlertDialog open={showVisualDialog} onOpenChange={setShowVisualDialog}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Report Visual Discrepancy</AlertDialogTitle>
+              <AlertDialogTitle>Reconcile & Adjust Stock</AlertDialogTitle>
               <AlertDialogDescription>
-                Record a visual inventory count discrepancy. This does NOT change inventory — it logs the difference for admin review and resolution.
+                Record a stock reconciliation from a physical count. This will permanently adjust inventory levels and create an audit trail entry.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-3">
