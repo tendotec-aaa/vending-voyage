@@ -529,7 +529,7 @@ export default function VisitDetail() {
                           </Badge>
                         )}
                         {slot.isSwapIn && (
-                          <Badge className="bg-chart-2/20 text-chart-2 border-chart-2/30 text-xs">
+                          <Badge className="bg-chart-2 text-primary-foreground border-chart-2 text-xs">
                             Swap: Incoming
                           </Badge>
                         )}
@@ -591,6 +591,33 @@ export default function VisitDetail() {
                             <span className="text-sm font-medium text-foreground">{slot.auditedCount ?? "—"}</span>
                           </div>
                         </div>
+                      </>
+                    )}
+
+                    {/* Swap In card: show incoming product metrics */}
+                    {slot.isSwapIn && (
+                      <>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Units Refilled</span>
+                            <span className="text-sm font-medium text-chart-2">{slot.added > 0 ? `+${slot.added}` : "0"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Current Stock</span>
+                            <span className="text-sm font-medium text-foreground">{slot.currentStock ?? "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Fill %</span>
+                            {slot.fillPct !== null ? (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span className="text-sm font-medium text-foreground">{slot.fillPct}%</span>
+                                <Progress value={slot.fillPct} className="h-1 w-full" />
+                              </div>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        </div>
                         {slot.photoUrl && (
                           <>
                             <Separator />
@@ -603,31 +630,6 @@ export default function VisitDetail() {
                           </>
                         )}
                       </>
-                    )}
-
-                    {/* Swap In card: show incoming product metrics */}
-                    {slot.isSwapIn && (
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        <div>
-                          <span className="text-[10px] text-muted-foreground block">Units Refilled</span>
-                          <span className="text-sm font-medium text-chart-2">{slot.added > 0 ? `+${slot.added}` : "0"}</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-muted-foreground block">Current Stock</span>
-                          <span className="text-sm font-medium text-foreground">{slot.currentStock ?? "—"}</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-muted-foreground block">Fill %</span>
-                          {slot.fillPct !== null ? (
-                            <div className="flex flex-col items-center gap-0.5">
-                              <span className="text-sm font-medium text-foreground">{slot.fillPct}%</span>
-                              <Progress value={slot.fillPct} className="h-1 w-full" />
-                            </div>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">—</span>
-                          )}
-                        </div>
-                      </div>
                     )}
 
                     {/* Normal (non-swap) card layout */}

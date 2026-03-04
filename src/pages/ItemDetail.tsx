@@ -76,6 +76,7 @@ export default function ItemDetail() {
   const [showVisualDialog, setShowVisualDialog] = useState(false);
   const [visualNote, setVisualNote] = useState("");
   const [visualDate, setVisualDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [visualQuantity, setVisualQuantity] = useState(0);
   const [discrepancyProcessing, setDiscrepancyProcessing] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -472,15 +473,17 @@ export default function ItemDetail() {
       const { data: { user } } = await supabase.auth.getUser();
       
       // Create discrepancy record
+      const reportedQty = visualQuantity;
+      const adjustAmount = totalStock - reportedQty; // how much to remove
       await supabase.from("stock_discrepancy" as any).insert({
         item_detail_id: id,
         occurrence_date: visualDate,
         discrepancy_type: "visual",
         expected_quantity: totalStock,
-        actual_quantity: 0,
-        difference: -totalStock,
+        actual_quantity: reportedQty,
+        difference: reportedQty - totalStock,
         status: "pending",
-        admin_note: visualNote || "Visual discrepancy reported — stock set to 0",
+        admin_note: visualNote || `Visual discrepancy reported — stock adjusted from ${totalStock} to ${reportedQty}`,
       } as any);
 
       // Zero out all warehouse inventory for this item
@@ -490,9 +493,13 @@ export default function ItemDetail() {
         .eq("item_detail_id", id)
         .not("warehouse_id", "is", null);
       
+      // Distribute the adjustment proportionally across warehouses
+      let remainingToRemove = adjustAmount;
       for (const inv of (invRecords || [])) {
-        if ((inv.quantity_on_hand || 0) > 0) {
-          // Create ledger entry for zeroing out
+        if ((inv.quantity_on_hand || 0) > 0 && remainingToRemove > 0) {
+          const removeFromThis = Math.min(inv.quantity_on_hand || 0, remainingToRemove);
+          const newQty = (inv.quantity_on_hand || 0) - removeFromThis;
+          
           const { data: lastLedger } = await supabase
             .from("inventory_ledger")
             .select("running_balance")
@@ -507,18 +514,19 @@ export default function ItemDetail() {
             item_detail_id: id,
             warehouse_id: inv.warehouse_id,
             movement_type: "adjustment",
-            quantity: -(inv.quantity_on_hand || 0),
-            running_balance: currentBal - (inv.quantity_on_hand || 0),
+            quantity: -removeFromThis,
+            running_balance: currentBal - removeFromThis,
             reference_type: "adjustment",
             performed_by: user?.id || null,
-            notes: `Visual discrepancy — stock zeroed (${visualNote || "no note"})`,
+            notes: `Visual discrepancy — stock adjusted by -${removeFromThis} (${visualNote || "no note"})`,
           });
 
-          // Zero out inventory
           await supabase
             .from("inventory")
-            .update({ quantity_on_hand: 0, last_updated: new Date().toISOString() })
+            .update({ quantity_on_hand: newQty, last_updated: new Date().toISOString() })
             .eq("id", inv.id);
+          
+          remainingToRemove -= removeFromThis;
         }
       }
 
@@ -527,7 +535,7 @@ export default function ItemDetail() {
       queryClient.invalidateQueries({ queryKey: ["item-warehouse-stock", id] });
       setShowVisualDialog(false);
       setVisualNote("");
-      toast({ title: "Visual discrepancy reported", description: "Stock has been zeroed out. Admin must still resolve." });
+      toast({ title: "Visual discrepancy reported", description: `Stock adjusted from ${totalStock} to ${reportedQty}. Admin must still resolve.` });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
@@ -831,7 +839,7 @@ export default function ItemDetail() {
                   <CardTitle className="text-base flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4" /> Stock Discrepancy
                   </CardTitle>
-                  <Button variant="outline" size="sm" onClick={() => setShowVisualDialog(true)}>
+                  <Button variant="outline" size="sm" onClick={() => { setVisualQuantity(totalStock); setShowVisualDialog(true); }}>
                     Report Visual Discrepancy
                   </Button>
                 </div>
@@ -996,13 +1004,26 @@ export default function ItemDetail() {
                 <Input type="date" value={visualDate} onChange={(e) => setVisualDate(e.target.value)} />
               </div>
               <div className="space-y-2">
+                <Label>Quantity to Report (actual count)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={totalStock}
+                  value={visualQuantity}
+                  onChange={(e) => setVisualQuantity(Math.max(0, parseInt(e.target.value) || 0))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  System shows {totalStock.toLocaleString()} units. Enter the actual quantity found.
+                </p>
+              </div>
+              <div className="space-y-2">
                 <Label>Note</Label>
                 <Textarea value={visualNote} onChange={(e) => setVisualNote(e.target.value)} placeholder="e.g., No units found in any warehouse after physical count..." rows={3} />
               </div>
               <Alert className="border-destructive/50 bg-destructive/5">
                 <AlertTriangle className="h-4 w-4 text-destructive" />
                 <AlertDescription className="text-destructive text-xs">
-                  Current stock ({totalStock.toLocaleString()} units) will be set to 0.
+                  Stock will be adjusted from {totalStock.toLocaleString()} to {visualQuantity.toLocaleString()} units (−{(totalStock - visualQuantity).toLocaleString()}).
                 </AlertDescription>
               </Alert>
             </div>
@@ -1049,8 +1070,11 @@ export default function ItemDetail() {
                           eventDate = (purchaseDatesMap as any)[entry.reference_id];
                         }
 
-                        const inward = entry.quantity > 0 ? entry.quantity : null;
-                        const outward = entry.quantity < 0 ? Math.abs(entry.quantity) : null;
+                        // Categorize: In (warehouse, positive), Dep (slot), Out (other negative)
+                        const isDep = !!entry.slot_id;
+                        const inward = !isDep && entry.quantity > 0 ? entry.quantity : null;
+                        const deployed = isDep ? entry.quantity : null;
+                        const outward = !isDep && entry.quantity < 0 ? Math.abs(entry.quantity) : null;
 
                         return (
                           <div
@@ -1071,15 +1095,21 @@ export default function ItemDetail() {
                                 {entry.notes || "—"}
                               </span>
                             </div>
-                            {/* Right: inward/outward + balance + date */}
+                            {/* Right: In / Dep / Out / Bal + date */}
                             <div className="flex items-center gap-3 shrink-0">
-                              <div className="text-right min-w-[40px]">
+                              <div className="text-right min-w-[35px]">
                                 <span className="text-[10px] text-muted-foreground block">In</span>
                                 <span className="text-sm font-semibold text-chart-2">
                                   {inward ? `+${inward}` : "—"}
                                 </span>
                               </div>
-                              <div className="text-right min-w-[40px]">
+                              <div className="text-right min-w-[35px]">
+                                <span className="text-[10px] text-muted-foreground block">Dep</span>
+                                <span className={`text-sm font-semibold ${deployed !== null ? (deployed < 0 ? "text-destructive" : "text-chart-2") : ""}`}>
+                                  {deployed !== null ? (deployed > 0 ? `+${deployed}` : `${deployed}`) : "—"}
+                                </span>
+                              </div>
+                              <div className="text-right min-w-[35px]">
                                 <span className="text-[10px] text-muted-foreground block">Out</span>
                                 <span className="text-sm font-semibold text-destructive">
                                   {outward ? `-${outward}` : "—"}
@@ -1102,10 +1132,13 @@ export default function ItemDetail() {
                       <span className="font-semibold text-foreground">Totals</span>
                       <div className="flex gap-4">
                         <span className="text-chart-2 font-medium">
-                          In: +{ledgerEntries.reduce((s, e) => s + (e.quantity > 0 ? e.quantity : 0), 0).toLocaleString()}
+                          In: +{ledgerEntries.reduce((s, e) => s + (!e.slot_id && e.quantity > 0 ? e.quantity : 0), 0).toLocaleString()}
+                        </span>
+                        <span className="font-medium text-primary">
+                          Dep: {ledgerEntries.reduce((s, e) => s + (e.slot_id ? e.quantity : 0), 0).toLocaleString()}
                         </span>
                         <span className="text-destructive font-medium">
-                          Out: −{ledgerEntries.reduce((s, e) => s + (e.quantity < 0 ? Math.abs(e.quantity) : 0), 0).toLocaleString()}
+                          Out: −{ledgerEntries.reduce((s, e) => s + (!e.slot_id && e.quantity < 0 ? Math.abs(e.quantity) : 0), 0).toLocaleString()}
                         </span>
                       </div>
                     </div>
