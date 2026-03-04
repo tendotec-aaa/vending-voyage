@@ -1028,8 +1028,8 @@ export default function ItemDetail() {
             </div>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleReportVisualDiscrepancy} disabled={discrepancyProcessing}>
-                {discrepancyProcessing ? "Processing..." : "Log Discrepancy"}
+              <AlertDialogAction onClick={handleReportVisualDiscrepancy} disabled={discrepancyProcessing || visualQuantity === totalStock}>
+                {discrepancyProcessing ? "Processing..." : "Reconcile & Adjust Stock"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
