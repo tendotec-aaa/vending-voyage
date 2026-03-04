@@ -47,7 +47,7 @@ const movementColors: Record<string, string> = {
   swap_in: "bg-chart-2/10 text-chart-2 border-chart-2/20",
   swap_out: "bg-chart-3/10 text-chart-3 border-chart-3/20",
   reversal: "bg-destructive/10 text-destructive border-destructive/20",
-  adjustment: "bg-chart-4/10 text-chart-4 border-chart-4/20",
+  adjustment: "bg-chart-5/20 text-chart-5 border-chart-5/30",
   transfer: "bg-primary/10 text-primary border-primary/20",
   initial: "bg-muted text-muted-foreground border-border",
   assembly_production: "bg-chart-2/10 text-chart-2 border-chart-2/20",
@@ -105,7 +105,7 @@ export default function ItemDetail() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("inventory")
-        .select("quantity_on_hand, warehouse:warehouses(id, name)")
+        .select("id, quantity_on_hand, warehouse_id, warehouse:warehouses(id, name)")
         .eq("item_detail_id", id!)
         .not("warehouse_id", "is", null);
       if (error) throw error;
@@ -471,9 +471,18 @@ export default function ItemDetail() {
     setDiscrepancyProcessing(true);
     try {
       const reportedQty = visualQuantity;
-      const difference = reportedQty - totalStock; // negative = shortage
+      const difference = reportedQty - totalStock; // negative = shortage, positive = surplus
 
-      // Only create a discrepancy record — no inventory or ledger changes
+      if (difference === 0) {
+        toast({ title: "No discrepancy", description: "Actual count matches system count.", variant: "destructive" });
+        setDiscrepancyProcessing(false);
+        return;
+      }
+
+      const adjustmentType = difference < 0 ? "shortage" : "surplus";
+      const noteText = visualNote || `Visual reconciliation: found ${reportedQty} units, system shows ${totalStock}. ${adjustmentType === "shortage" ? "Shortage" : "Surplus"} of ${Math.abs(difference)} units.`;
+
+      // 1. Create stock_discrepancy record (auto-resolved)
       await supabase.from("stock_discrepancy" as any).insert({
         item_detail_id: id,
         occurrence_date: visualDate,
@@ -481,14 +490,51 @@ export default function ItemDetail() {
         expected_quantity: totalStock,
         actual_quantity: reportedQty,
         difference,
-        status: "pending",
-        admin_note: visualNote || `Visual count: found ${reportedQty} units, system shows ${totalStock}. Difference: ${difference}.`,
+        status: "resolved",
+        resolved_at: new Date().toISOString(),
+        admin_note: noteText,
       } as any);
 
+      // 2. Get the current running balance from the latest ledger entry
+      const { data: lastLedger } = await supabase
+        .from("inventory_ledger")
+        .select("running_balance")
+        .eq("item_detail_id", id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      const currentBalance = lastLedger?.running_balance ?? totalStock;
+      const newBalance = currentBalance + difference;
+
+      // 3. Insert inventory_ledger entry (adjustment movement)
+      await supabase.from("inventory_ledger").insert({
+        item_detail_id: id,
+        movement_type: "adjustment",
+        quantity: difference,
+        running_balance: newBalance,
+        warehouse_id: warehouseStock.length > 0 ? warehouseStock[0].warehouse_id : null,
+        notes: `📋 ${adjustmentType === "shortage" ? "Shortage" : "Surplus"} adjustment — ${noteText}`,
+        reference_type: "discrepancy",
+      });
+
+      // 4. Update inventory table (adjust first warehouse row)
+      if (warehouseStock.length > 0) {
+        const firstWarehouse = warehouseStock[0];
+        await supabase
+          .from("inventory")
+          .update({ quantity_on_hand: (firstWarehouse.quantity_on_hand || 0) + difference, last_updated: new Date().toISOString() })
+          .eq("id", firstWarehouse.id);
+      }
+
       queryClient.invalidateQueries({ queryKey: ["stock-discrepancies", id] });
+      queryClient.invalidateQueries({ queryKey: ["inventory-ledger", id] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse-stock", id] });
       setShowVisualDialog(false);
       setVisualNote("");
-      toast({ title: "Visual discrepancy reported", description: `Logged ${Math.abs(difference)} missing units for admin review. No inventory was changed.` });
+      toast({
+        title: "Stock reconciled",
+        description: `${adjustmentType === "shortage" ? "Shortage" : "Surplus"} of ${Math.abs(difference)} units recorded and inventory updated.`,
+      });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
@@ -946,9 +992,9 @@ export default function ItemDetail() {
         <AlertDialog open={showVisualDialog} onOpenChange={setShowVisualDialog}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Report Visual Discrepancy</AlertDialogTitle>
+              <AlertDialogTitle>Reconcile & Adjust Stock</AlertDialogTitle>
               <AlertDialogDescription>
-                Record a visual inventory count discrepancy. This does NOT change inventory — it logs the difference for admin review and resolution.
+                Record a stock reconciliation from a physical count. This will permanently adjust inventory levels and create an audit trail entry.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-3">
@@ -973,17 +1019,17 @@ export default function ItemDetail() {
                 <Label>Note</Label>
                 <Textarea value={visualNote} onChange={(e) => setVisualNote(e.target.value)} placeholder="e.g., No units found in any warehouse after physical count..." rows={3} />
               </div>
-              <Alert className="border-border bg-muted/30">
-                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                <AlertDescription className="text-muted-foreground text-xs">
-                  This will log a discrepancy of {Math.abs(totalStock - visualQuantity).toLocaleString()} units ({visualQuantity < totalStock ? "shortage" : "surplus"}). Inventory will NOT be modified.
+              <Alert className="border-destructive/50 bg-destructive/10">
+                <AlertTriangle className="h-4 w-4 text-destructive" />
+                <AlertDescription className="text-destructive text-xs">
+                  This will register a <strong>{visualQuantity < totalStock ? "shortage" : "surplus"}</strong> of {Math.abs(totalStock - visualQuantity).toLocaleString()} units. Inventory WILL be adjusted and a ledger entry created for accounting purposes.
                 </AlertDescription>
               </Alert>
             </div>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleReportVisualDiscrepancy} disabled={discrepancyProcessing}>
-                {discrepancyProcessing ? "Processing..." : "Log Discrepancy"}
+              <AlertDialogAction onClick={handleReportVisualDiscrepancy} disabled={discrepancyProcessing || visualQuantity === totalStock}>
+                {discrepancyProcessing ? "Processing..." : "Reconcile & Adjust Stock"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -1023,11 +1069,20 @@ export default function ItemDetail() {
                           eventDate = (purchaseDatesMap as any)[entry.reference_id];
                         }
 
-                        // Categorize: In (warehouse, positive), Dep (slot), Out (other negative)
-                        const isDep = !!entry.slot_id;
-                        const inward = !isDep && entry.quantity > 0 ? entry.quantity : null;
-                        const deployed = isDep ? entry.quantity : null;
-                        const outward = !isDep && entry.quantity < 0 ? Math.abs(entry.quantity) : null;
+                        // Categorize: In / Dep / Out
+                        // IN: Warehouse inbound (positive qty) OR surplus adjustments
+                        const isIn = (entry.warehouse_id && entry.quantity > 0)
+                          || (entry.movement_type === "adjustment" && entry.quantity > 0);
+                        // DEP: Warehouse outbound to field (refill neg) OR slot inbound (refill/swap_in pos)
+                        const isDep = (entry.warehouse_id && entry.quantity < 0 && entry.movement_type === "refill")
+                          || (entry.slot_id && entry.quantity > 0 && ["refill", "swap_in"].includes(entry.movement_type));
+                        // OUT: Sales (slot negative: removal, swap_out) OR shortage adjustments
+                        const isOut = (entry.slot_id && entry.quantity < 0)
+                          || (entry.movement_type === "adjustment" && entry.quantity < 0);
+
+                        const inward = isIn ? entry.quantity : null;
+                        const deployed = isDep ? Math.abs(entry.quantity) : null;
+                        const outward = isOut ? Math.abs(entry.quantity) : null;
 
                         return (
                           <div
@@ -1085,13 +1140,23 @@ export default function ItemDetail() {
                       <span className="font-semibold text-foreground">Totals</span>
                       <div className="flex gap-4">
                         <span className="text-chart-2 font-medium">
-                          In: +{ledgerEntries.reduce((s, e) => s + (!e.slot_id && e.quantity > 0 ? e.quantity : 0), 0).toLocaleString()}
+                          In: +{ledgerEntries.reduce((s, e) => {
+                            const isIn = (e.warehouse_id && e.quantity > 0) || (e.movement_type === "adjustment" && e.quantity > 0);
+                            return s + (isIn ? e.quantity : 0);
+                          }, 0).toLocaleString()}
                         </span>
                         <span className="font-medium text-primary">
-                          Dep: {ledgerEntries.reduce((s, e) => s + (e.slot_id ? e.quantity : 0), 0).toLocaleString()}
+                          Dep: {ledgerEntries.reduce((s, e) => {
+                            const isDep = (e.warehouse_id && e.quantity < 0 && e.movement_type === "refill")
+                              || (e.slot_id && e.quantity > 0 && ["refill", "swap_in"].includes(e.movement_type));
+                            return s + (isDep ? Math.abs(e.quantity) : 0);
+                          }, 0).toLocaleString()}
                         </span>
                         <span className="text-destructive font-medium">
-                          Out: −{ledgerEntries.reduce((s, e) => s + (!e.slot_id && e.quantity < 0 ? Math.abs(e.quantity) : 0), 0).toLocaleString()}
+                          Out: −{ledgerEntries.reduce((s, e) => {
+                            const isOut = (e.slot_id && e.quantity < 0) || (e.movement_type === "adjustment" && e.quantity < 0);
+                            return s + (isOut ? Math.abs(e.quantity) : 0);
+                          }, 0).toLocaleString()}
                         </span>
                       </div>
                     </div>
