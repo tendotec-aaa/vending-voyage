@@ -982,8 +982,8 @@ export default function ItemDetail() {
             </div>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleReportVisualDiscrepancy} disabled={discrepancyProcessing} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                {discrepancyProcessing ? "Processing..." : "Report & Zero Stock"}
+              <AlertDialogAction onClick={handleReportVisualDiscrepancy} disabled={discrepancyProcessing}>
+                {discrepancyProcessing ? "Processing..." : "Log Discrepancy"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
