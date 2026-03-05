@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,7 @@ export default function ItemDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { isAdmin } = useUserRole();
   const { categories, getSubcategoriesByCategory } = useCategories();
   const { itemTypes, isLoading: itemTypesLoading } = useItemTypes();
@@ -485,7 +487,7 @@ export default function ItemDetail() {
       const noteText = visualNote || `Visual reconciliation: ${visualType === "shortage" ? "Shortage" : "Surplus"} of ${discrepancyAmount} units detected. System had ${totalStock}, adjusted to ${actualQuantity}.`;
 
       // 1. Create stock_discrepancy record (auto-resolved)
-      await supabase.from("stock_discrepancy" as any).insert({
+      const { error: discError } = await supabase.from("stock_discrepancy" as any).insert({
         item_detail_id: id,
         occurrence_date: visualDate,
         discrepancy_type: "visual",
@@ -494,8 +496,10 @@ export default function ItemDetail() {
         difference,
         status: "resolved",
         resolved_at: new Date().toISOString(),
+        resolved_by: user?.id || null,
         admin_note: noteText,
       } as any);
+      if (discError) throw new Error(`Failed to create discrepancy record: ${discError.message}`);
 
       // 2. Get the current running balance from the latest ledger entry
       const { data: lastLedger } = await supabase
@@ -509,7 +513,7 @@ export default function ItemDetail() {
       const newBalance = currentBalance + difference;
 
       // 3. Insert inventory_ledger entry (adjustment movement)
-      await supabase.from("inventory_ledger").insert({
+      const { error: ledgerError } = await supabase.from("inventory_ledger").insert({
         item_detail_id: id,
         movement_type: "adjustment",
         quantity: difference,
@@ -517,20 +521,24 @@ export default function ItemDetail() {
         warehouse_id: warehouseStock.length > 0 ? warehouseStock[0].warehouse_id : null,
         notes: `📋 ${visualType === "shortage" ? "Shortage" : "Surplus"} adjustment — ${noteText}`,
         reference_type: "discrepancy",
+        performed_by: user?.id || null,
       });
+      if (ledgerError) throw new Error(`Failed to create ledger entry: ${ledgerError.message}`);
 
       // 4. Update inventory table (adjust first warehouse row)
       if (warehouseStock.length > 0) {
         const firstWarehouse = warehouseStock[0];
-        await supabase
+        const { error: invError } = await supabase
           .from("inventory")
           .update({ quantity_on_hand: (firstWarehouse.quantity_on_hand || 0) + difference, last_updated: new Date().toISOString() })
           .eq("id", firstWarehouse.id);
+        if (invError) throw new Error(`Failed to update inventory: ${invError.message}`);
       }
 
       queryClient.invalidateQueries({ queryKey: ["stock-discrepancies", id] });
-      queryClient.invalidateQueries({ queryKey: ["inventory-ledger", id] });
+      queryClient.invalidateQueries({ queryKey: ["item-inventory-ledger", id] });
       queryClient.invalidateQueries({ queryKey: ["warehouse-stock", id] });
+      queryClient.invalidateQueries({ queryKey: ["item-logistics-history", id] });
       setShowVisualDialog(false);
       setVisualNote("");
       setVisualQuantity(0);
@@ -1255,85 +1263,147 @@ export default function ItemDetail() {
                     </div>
                   )
                 ) : (
-                  logisticsHistory.length === 0 ? (
-                    <p className="text-muted-foreground p-4">No logistics history yet.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {logisticsHistory.map((row: any) => {
-                        const visit = row.spot_visit;
-                        const spot = visit?.spot;
-                        const location = spot?.location;
-                        const snap = snapshots.find(
-                          (s: any) => s.visit_id === row.spot_visit_id && s.slot_id === row.slot_id
-                        );
-                        const lastStock = snap?.previous_stock ?? null;
-                        const currentStock = row.computed_current_stock ?? null;
-                        const unitsSold = row.units_sold ?? 0;
-                        const added = row.quantity_added || 0;
-                        const removed = row.quantity_removed || 0;
-                        const falseCoins = row.false_coins ?? 0;
-                        const jamStatus = row.jam_status ?? "no_jam";
-                        const auditedCount = row.meter_reading;
-                        const jamLabel = jamStatus === "by_coin" ? "Jam (+1)" : jamStatus === "mechanical" ? "Jam (mech)" : "—";
-
-                        return (
-                          <div
-                            key={row.id}
-                            className="rounded-lg border border-border/60 p-3 hover:bg-muted/30 cursor-pointer transition-colors"
-                            onClick={() => row.spot_visit_id && navigate(`/visits/${row.spot_visit_id}`)}
-                          >
-                            <div className="flex items-center justify-between gap-2 mb-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <Badge className={`text-[10px] px-1.5 py-0 shrink-0 ${actionColors[row.action_type] || ""}`}>
-                                  {row.action_type}
-                                </Badge>
-                                <span className="text-xs text-muted-foreground truncate">
-                                  {location?.name ? `${location.name} › ${spot?.name || ""}` : spot?.name || "—"}
+                  <>
+                    {/* Visual Discrepancy Reports */}
+                    {discrepancies.length > 0 && (
+                      <div className="mb-4">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1 mb-2">
+                          Stock Reconciliation Reports
+                        </p>
+                        <div className="space-y-2">
+                          {discrepancies.map((d: any) => (
+                            <div
+                              key={d.id}
+                              className="rounded-lg border border-chart-4/30 bg-chart-4/5 p-3"
+                            >
+                              <div className="flex items-center justify-between gap-2 mb-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Badge className="text-[10px] px-1.5 py-0 bg-chart-4/20 text-chart-4 border-chart-4/30">
+                                    {d.discrepancy_type || "visual"} reconciliation
+                                  </Badge>
+                                  <Badge className={`text-[10px] px-1.5 py-0 ${d.status === "resolved" ? "bg-chart-2/20 text-chart-2 border-chart-2/30" : "bg-destructive/20 text-destructive border-destructive/30"}`}>
+                                    {d.status}
+                                  </Badge>
+                                </div>
+                                <span className="text-[11px] text-muted-foreground shrink-0">
+                                  {d.occurrence_date ? format(new Date(d.occurrence_date), "MMM d, yyyy") : d.created_at ? format(new Date(d.created_at), "MMM d, yyyy") : "—"}
                                 </span>
                               </div>
-                              <span className="text-[11px] text-muted-foreground shrink-0">
-                                {visit?.visit_date ? format(new Date(visit.visit_date), "MMM d, yyyy") : "—"}
-                              </span>
+                              <div className="grid grid-cols-3 gap-x-2 text-center mb-2">
+                                <div>
+                                  <p className="text-[10px] text-muted-foreground">Expected</p>
+                                  <p className="text-sm font-medium text-foreground">{d.expected_quantity?.toLocaleString()}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-muted-foreground">Actual</p>
+                                  <p className="text-sm font-medium text-foreground">{d.actual_quantity?.toLocaleString()}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-muted-foreground">Difference</p>
+                                  <p className={`text-sm font-semibold ${d.difference > 0 ? "text-chart-2" : d.difference < 0 ? "text-destructive" : "text-foreground"}`}>
+                                    {d.difference > 0 ? `+${d.difference}` : d.difference}
+                                  </p>
+                                </div>
+                              </div>
+                              {d.admin_note && (
+                                <p className="text-[11px] text-muted-foreground truncate">
+                                  {d.admin_note}
+                                </p>
+                              )}
                             </div>
-                            <div className="grid grid-cols-4 sm:grid-cols-8 gap-x-2 gap-y-1 text-center">
-                              <div>
-                                <p className="text-[10px] text-muted-foreground">Last</p>
-                                <p className="text-sm font-medium text-foreground">{lastStock ?? "—"}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Visit Line Items */}
+                    {logisticsHistory.length === 0 && discrepancies.length === 0 ? (
+                      <p className="text-muted-foreground p-4">No logistics history yet.</p>
+                    ) : logisticsHistory.length > 0 ? (
+                      <>
+                        {discrepancies.length > 0 && (
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1 mb-2">
+                            Visit History
+                          </p>
+                        )}
+                        <div className="space-y-2">
+                          {logisticsHistory.map((row: any) => {
+                            const visit = row.spot_visit;
+                            const spot = visit?.spot;
+                            const location = spot?.location;
+                            const snap = snapshots.find(
+                              (s: any) => s.visit_id === row.spot_visit_id && s.slot_id === row.slot_id
+                            );
+                            const lastStock = snap?.previous_stock ?? null;
+                            const currentStock = row.computed_current_stock ?? null;
+                            const unitsSold = row.units_sold ?? 0;
+                            const added = row.quantity_added || 0;
+                            const removed = row.quantity_removed || 0;
+                            const falseCoins = row.false_coins ?? 0;
+                            const jamStatus = row.jam_status ?? "no_jam";
+                            const auditedCount = row.meter_reading;
+                            const jamLabel = jamStatus === "by_coin" ? "Jam (+1)" : jamStatus === "mechanical" ? "Jam (mech)" : "—";
+
+                            return (
+                              <div
+                                key={row.id}
+                                className="rounded-lg border border-border/60 p-3 hover:bg-muted/30 cursor-pointer transition-colors"
+                                onClick={() => row.spot_visit_id && navigate(`/visits/${row.spot_visit_id}`)}
+                              >
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <Badge className={`text-[10px] px-1.5 py-0 shrink-0 ${actionColors[row.action_type] || ""}`}>
+                                      {row.action_type}
+                                    </Badge>
+                                    <span className="text-xs text-muted-foreground truncate">
+                                      {location?.name ? `${location.name} › ${spot?.name || ""}` : spot?.name || "—"}
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] text-muted-foreground shrink-0">
+                                    {visit?.visit_date ? format(new Date(visit.visit_date), "MMM d, yyyy") : "—"}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-4 sm:grid-cols-8 gap-x-2 gap-y-1 text-center">
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground">Last</p>
+                                    <p className="text-sm font-medium text-foreground">{lastStock ?? "—"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground">Current</p>
+                                    <p className="text-sm font-medium text-foreground">{currentStock ?? "—"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground">Audited</p>
+                                    <p className="text-sm font-medium text-foreground">{auditedCount ?? "—"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground">Sold</p>
+                                    <p className="text-sm font-medium text-primary">{unitsSold || "—"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground">Added</p>
+                                    <p className="text-sm font-medium text-chart-2">{added > 0 ? `+${added}` : "—"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground">Removed</p>
+                                    <p className="text-sm font-medium text-destructive">{removed > 0 ? `-${removed}` : "—"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground">False</p>
+                                    <p className="text-sm font-medium text-chart-4">{falseCoins || "—"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground">Jam</p>
+                                    <p className="text-[11px] font-medium text-muted-foreground">{jamLabel}</p>
+                                  </div>
+                                </div>
                               </div>
-                              <div>
-                                <p className="text-[10px] text-muted-foreground">Current</p>
-                                <p className="text-sm font-medium text-foreground">{currentStock ?? "—"}</p>
-                              </div>
-                              <div>
-                                <p className="text-[10px] text-muted-foreground">Audited</p>
-                                <p className="text-sm font-medium text-foreground">{auditedCount ?? "—"}</p>
-                              </div>
-                              <div>
-                                <p className="text-[10px] text-muted-foreground">Sold</p>
-                                <p className="text-sm font-medium text-primary">{unitsSold || "—"}</p>
-                              </div>
-                              <div>
-                                <p className="text-[10px] text-muted-foreground">Added</p>
-                                <p className="text-sm font-medium text-chart-2">{added > 0 ? `+${added}` : "—"}</p>
-                              </div>
-                              <div>
-                                <p className="text-[10px] text-muted-foreground">Removed</p>
-                                <p className="text-sm font-medium text-destructive">{removed > 0 ? `-${removed}` : "—"}</p>
-                              </div>
-                              <div>
-                                <p className="text-[10px] text-muted-foreground">False</p>
-                                <p className="text-sm font-medium text-chart-4">{falseCoins || "—"}</p>
-                              </div>
-                              <div>
-                                <p className="text-[10px] text-muted-foreground">Jam</p>
-                                <p className="text-[11px] font-medium text-muted-foreground">{jamLabel}</p>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : null}
+                  </>
                 )}
               </CardContent>
             </Card>
