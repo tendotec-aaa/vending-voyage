@@ -485,7 +485,7 @@ export default function ItemDetail() {
       const noteText = visualNote || `Visual reconciliation: ${visualType === "shortage" ? "Shortage" : "Surplus"} of ${discrepancyAmount} units detected. System had ${totalStock}, adjusted to ${actualQuantity}.`;
 
       // 1. Create stock_discrepancy record (auto-resolved)
-      await supabase.from("stock_discrepancy" as any).insert({
+      const { error: discError } = await supabase.from("stock_discrepancy" as any).insert({
         item_detail_id: id,
         occurrence_date: visualDate,
         discrepancy_type: "visual",
@@ -494,8 +494,10 @@ export default function ItemDetail() {
         difference,
         status: "resolved",
         resolved_at: new Date().toISOString(),
+        resolved_by: user?.id || null,
         admin_note: noteText,
       } as any);
+      if (discError) throw new Error(`Failed to create discrepancy record: ${discError.message}`);
 
       // 2. Get the current running balance from the latest ledger entry
       const { data: lastLedger } = await supabase
@@ -509,7 +511,7 @@ export default function ItemDetail() {
       const newBalance = currentBalance + difference;
 
       // 3. Insert inventory_ledger entry (adjustment movement)
-      await supabase.from("inventory_ledger").insert({
+      const { error: ledgerError } = await supabase.from("inventory_ledger").insert({
         item_detail_id: id,
         movement_type: "adjustment",
         quantity: difference,
@@ -517,7 +519,9 @@ export default function ItemDetail() {
         warehouse_id: warehouseStock.length > 0 ? warehouseStock[0].warehouse_id : null,
         notes: `📋 ${visualType === "shortage" ? "Shortage" : "Surplus"} adjustment — ${noteText}`,
         reference_type: "discrepancy",
+        performed_by: user?.id || null,
       });
+      if (ledgerError) throw new Error(`Failed to create ledger entry: ${ledgerError.message}`);
 
       // 4. Update inventory table (adjust first warehouse row)
       if (warehouseStock.length > 0) {
