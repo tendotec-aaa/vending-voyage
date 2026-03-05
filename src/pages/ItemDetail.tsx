@@ -526,15 +526,17 @@ export default function ItemDetail() {
       // 4. Update inventory table (adjust first warehouse row)
       if (warehouseStock.length > 0) {
         const firstWarehouse = warehouseStock[0];
-        await supabase
+        const { error: invError } = await supabase
           .from("inventory")
           .update({ quantity_on_hand: (firstWarehouse.quantity_on_hand || 0) + difference, last_updated: new Date().toISOString() })
           .eq("id", firstWarehouse.id);
+        if (invError) throw new Error(`Failed to update inventory: ${invError.message}`);
       }
 
       queryClient.invalidateQueries({ queryKey: ["stock-discrepancies", id] });
-      queryClient.invalidateQueries({ queryKey: ["inventory-ledger", id] });
+      queryClient.invalidateQueries({ queryKey: ["item-inventory-ledger", id] });
       queryClient.invalidateQueries({ queryKey: ["warehouse-stock", id] });
+      queryClient.invalidateQueries({ queryKey: ["item-logistics-history", id] });
       setShowVisualDialog(false);
       setVisualNote("");
       setVisualQuantity(0);
