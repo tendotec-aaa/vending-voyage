@@ -1405,7 +1405,6 @@ export default function ItemDetail() {
                     ) : null}
                   </>
                 )
-                )}
               </CardContent>
             </Card>
           </TabsContent>
