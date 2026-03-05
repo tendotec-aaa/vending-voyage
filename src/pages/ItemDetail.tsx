@@ -60,6 +60,7 @@ export default function ItemDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { isAdmin } = useUserRole();
   const { categories, getSubcategoriesByCategory } = useCategories();
   const { itemTypes, isLoading: itemTypesLoading } = useItemTypes();
