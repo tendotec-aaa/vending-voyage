@@ -427,19 +427,57 @@ Deno.serve(async (req) => {
         const oldProductId = s.toyId || s.previousProductId;
         const newProductId = s.newToyId;
 
-        // -- Old product: slot ledger (remove all from slot) --
-        if (oldProductId && s.previousStock > 0) {
-          await appendLedger(db, {
-            item_detail_id: oldProductId,
-            slot_id: s.slotId,
-            movement_type: "swap_out",
-            quantity: -s.previousStock,
-            running_balance: 0,
-            reference_id: visitId,
-            reference_type: "visit",
-            performed_by: userId,
-            notes: `Old product removed during swap — ${s.toyName}`,
-          });
+        // -- Old product: slot ledger — split into sale + swap_out entries --
+        if (oldProductId) {
+          let slotRunBal = s.previousStock;
+
+          // 1) Sale entry (units sold + false coins)
+          const saleQty = (s.unitsSold || 0) + (s.falseCoins || 0);
+          if (saleQty > 0) {
+            slotRunBal -= saleQty;
+            await appendLedger(db, {
+              item_detail_id: oldProductId,
+              slot_id: s.slotId,
+              movement_type: "sale",
+              quantity: -saleQty,
+              running_balance: slotRunBal,
+              reference_id: visitId,
+              reference_type: "visit",
+              performed_by: userId,
+              notes: `Product Sales before swap — ${s.toyName}`,
+            });
+          }
+
+          // 2) Jam adjustment (+1 stock if coin jam)
+          if (s.jamStatus === "by_coin") {
+            slotRunBal += 1;
+            await appendLedger(db, {
+              item_detail_id: oldProductId,
+              slot_id: s.slotId,
+              movement_type: "adjustment",
+              quantity: 1,
+              running_balance: slotRunBal,
+              reference_id: visitId,
+              reference_type: "visit",
+              performed_by: userId,
+              notes: `Jam (+1 coin) — ${s.toyName}`,
+            });
+          }
+
+          // 3) Swap out remainder (stock removed from slot)
+          if (slotRunBal > 0) {
+            await appendLedger(db, {
+              item_detail_id: oldProductId,
+              slot_id: s.slotId,
+              movement_type: "swap_out",
+              quantity: -slotRunBal,
+              running_balance: 0,
+              reference_id: visitId,
+              reference_type: "visit",
+              performed_by: userId,
+              notes: `Old product removed during swap — ${s.toyName}`,
+            });
+          }
         }
 
         // -- Old product: return removed units to warehouse --
