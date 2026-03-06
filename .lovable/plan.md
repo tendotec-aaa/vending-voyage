@@ -1,71 +1,94 @@
 
 
-## Plan: Ledger "Dep" Column, Visual Discrepancy Quantity Input, Swap Photo Fix & Cash Collected Jam Fix
+## Plan: Fix Inventory Ledger Calculations, Labels, and Discrepancy Breakdown
 
-### 1. Add "Dep" (Deployed) Column to Inventory Ledger
+### Root Cause Analysis
 
-**File**: `src/pages/ItemDetail.tsx` (ledger section ~lines 1052-1111)
+The edge function (`submit-visit-report/index.ts`, lines 531-547) records a **single net slot ledger entry** for non-swap visits:
 
-Currently the ledger shows In | Out | Bal. Add a "Dep" column between In and Out:
-
-- **In** = positive quantity entries where `warehouse_id` is set (purchases, assemblies, returns to warehouse)
-- **Dep** = entries where `slot_id` is set (deployed to/from machine slots). Positive = returned from slot, negative = sent to slot
-- **Out** = negative quantity entries that are sales/adjustments (movement_type includes "sale", "adjustment", "swap_out" on slot, etc.)
-- **Bal** = running balance (unchanged)
-
-Logic per entry:
-- If `entry.slot_id` is set → show quantity in Dep column (green if positive/return, red if negative/deploy)
-- Else if `entry.quantity > 0` → show in In column
-- Else if `entry.quantity < 0` → show in Out column
-
-Update totals row to include Dep total.
-
-### 2. Visual Discrepancy Dialog — Add Quantity Input
-
-**File**: `src/pages/ItemDetail.tsx` (dialog ~lines 984-1016, handler ~lines 468-536)
-
-- Add a state variable `visualQuantity` initialized to `totalStock` when dialog opens
-- Add an `Input` field of type `number` in the dialog letting the user adjust the quantity to report
-- Update `handleReportVisualDiscrepancy` to use `visualQuantity` instead of hardcoded `totalStock` for the `expected_quantity` and zeroing logic (set inventory to `totalStock - visualQuantity` instead of always 0, or if they report the full amount, zero it out)
-
-### 3. Swap Photo on Incoming Card (Not Outgoing)
-
-**File**: `src/pages/VisitDetail.tsx` (~lines 594-631)
-
-Currently the `photoUrl` is stored on the `swap_out` line item (edge function line 351). Move the photo to the `swap_in` entry instead.
-
-**Edge function fix** (`supabase/functions/submit-visit-report/index.ts`, lines 341-371):
-- On the `swap_out` row: set `photo_url: null`
-- On the `swap_in` row: set `photo_url: s.photoUrl`
-
-**VisitDetail.tsx fix**:
-- Remove the photo rendering block from the `isSwapOut` section (lines 594-604)
-- Add photo rendering to the `isSwapIn` section (after line 630)
-
-**Incoming badge color**: Make the Swap: Incoming badge more prominent — use a solid green background instead of the current subtle `bg-chart-2/20`.
-
-### 4. Fix Cash Collected — Jam (+1 coin) Should NOT Add to Cash
-
-**File**: `src/pages/NewVisitReport.tsx` (lines 676-677)
-
-Current code:
-```typescript
-const jamAdj = updated.jamStatus === 'by_coin' ? 1 : 0;
-updated.cashCollected = (updated.unitsSold + jamAdj) * updated.pricePerUnit;
+```
+slotQtyChange = currentStock - lastStock
 ```
 
-The jam coin is already included in `unitsSold` (the machine counted it as a sale). The `+1` adjustment is only for stock tracking (the unit is stuck, not dispensed). Cash should NOT include the jam adjustment:
+This collapses all operations (sales, refills, removals, false coins, jams) into one number. For example:
+- Feb 23: sold=50, added=25, removed=30, false=5 → net = -60 → recorded as one "removal" of -60
+- This is mathematically correct as a net, but the user expects separate line items for sales, refills, and removals
 
-```typescript
-updated.cashCollected = updated.unitsSold * updated.pricePerUnit;
+Additionally, the swap flow (line 441) uses the note "Old product removed during swap" instead of "Product Sales before swap".
+
+### Changes Required
+
+#### 1. Edge Function: Split Slot Ledger into Separate Entries
+
+**File**: `supabase/functions/submit-visit-report/index.ts` (lines 528-589)
+
+Replace the single net `slotQtyChange` entry with up to 4 separate entries:
+
+1. **Sale entry** (`movement_type: "sale"`, `reference_type: "visit"`): quantity = `-(unitsSold + falseCoins)`. Notes: `Units sold — {toyName}`. Only if `unitsSold + falseCoins > 0`.
+2. **Refill entry** (`movement_type: "refill"`): quantity = `+unitsRefilled`. Notes: `Refill — {toyName}`. Only if `unitsRefilled > 0`.
+3. **Removal entry** (`movement_type: "removal"`): quantity = `-unitsRemoved`. Notes: `Units removed — {toyName}`. Only if `unitsRemoved > 0`. (Note: this is a slot-side removal, negative qty leaving the slot)
+4. **Jam adjustment** (`movement_type: "adjustment"`): quantity = `+1`. Notes: `Jam (+1 coin) — {toyName}`. Only if `jamStatus === "by_coin"`.
+
+Each entry must calculate its own `running_balance` incrementally from the previous balance.
+
+The warehouse-side entries (refill deduction at line 552, removal return at line 574) remain unchanged — they are already separate and correct.
+
+#### 2. Edge Function: Add "sale" to Reference Type Constraint
+
+**Migration**: Add `'sale'` to the `inventory_ledger_reference_type_check` constraint (already partially done, but `movement_type` for sale entries also needs to be valid).
+
+Actually, the constraint is on `reference_type`, not `movement_type`. The `movement_type` column has no check constraint. But we need a migration to add `'sale'` to the `reference_type` check if it isn't already there.
+
+**Migration SQL**:
+```sql
+ALTER TABLE public.inventory_ledger DROP CONSTRAINT IF EXISTS inventory_ledger_reference_type_check;
+ALTER TABLE public.inventory_ledger ADD CONSTRAINT inventory_ledger_reference_type_check 
+CHECK (reference_type = ANY (ARRAY['visit','purchase','manual','backfill','assembly','discrepancy','sale']));
 ```
 
-The stock formula already correctly adds `jamAdjustment` to account for the stuck unit, so only the cash line needs fixing.
+#### 3. Edge Function: Fix Swap Out Notes
+
+**File**: `supabase/functions/submit-visit-report/index.ts` (line 441)
+
+Change: `"Old product removed during swap — {toyName}"` → `"Product Sales before swap — {toyName}"`
+
+Also change the swap_out slot ledger entry (lines 432-443) to record sales separately from the swap removal, similar to the normal flow split above. The swap flow should record:
+- A `sale` entry for `unitsSold + falseCoins` (negative, leaving the slot)
+- A `swap_out` entry for the remaining stock removed from the slot (negative)
+
+#### 4. UI: Add "sale" Movement Type Styling
+
+**File**: `src/pages/ItemDetail.tsx` (line 44-56, `movementColors`)
+
+Add: `sale: "bg-chart-2/10 text-chart-2 border-chart-2/20"` (green-tinted, since it represents revenue)
+
+#### 5. UI: Categorize "sale" in Out Column
+
+**File**: `src/pages/ItemDetail.tsx` (lines 1111-1124)
+
+Update the `isOut` logic to include `movement_type === "sale"`:
+```
+const isOut = (entry.slot_id && entry.quantity < 0)
+  || (entry.movement_type === "adjustment" && entry.quantity < 0)
+  || entry.movement_type === "sale";
+```
+
+#### 6. Discrepancy Breakdown: Add Jam Count
+
+**File**: `src/pages/ItemDetail.tsx` (lines 838-883)
+
+- Calculate `totalJams` from `salesData` where `jam_status === "by_coin"`.
+- Add a line in the breakdown between "False Coins" and "Expected": `+ Jams (coin) | +{totalJams}` (green, since jams add stock back).
+- Update the expected formula: `expectedStock = totalReceived - totalUnitsSold - totalFalseCoins + totalJams`.
+- Add a note below the discrepancy value: "Includes {totalJams} coin jam(s) that added stock without dispensing."
 
 ### Files to Modify
 
-1. `src/pages/ItemDetail.tsx` — Add Dep column to ledger; add quantity input to visual discrepancy dialog
-2. `src/pages/VisitDetail.tsx` — Move swap photo to incoming card; make incoming badge more prominent
-3. `supabase/functions/submit-visit-report/index.ts` — Move `photo_url` from swap_out to swap_in row
-4. `src/pages/NewVisitReport.tsx` — Remove jam adjustment from cash collected calculation
+1. `supabase/functions/submit-visit-report/index.ts` — Split single net slot entry into separate sale/refill/removal/jam entries; fix swap notes
+2. `src/pages/ItemDetail.tsx` — Add "sale" to movement colors; update Out categorization; add jam count to discrepancy breakdown
+3. New migration — Add `'sale'` to `reference_type` check constraint
+
+### Important Note
+
+These changes only affect **future** visit reports. Existing ledger entries from prior visits will retain their old format (single net "removal" entries). The user may want to run a backfill to split historical entries, but that is a separate task.
 
