@@ -1,0 +1,2 @@
+ALTER TABLE public.inventory_ledger DROP CONSTRAINT IF EXISTS inventory_ledger_reference_type_check;
+ALTER TABLE public.inventory_ledger ADD CONSTRAINT inventory_ledger_reference_type_check CHECK (reference_type = ANY (ARRAY['visit'::text, 'purchase'::text, 'manual'::text, 'backfill'::text, 'assembly'::text, 'discrepancy'::text, 'sale'::text]));
