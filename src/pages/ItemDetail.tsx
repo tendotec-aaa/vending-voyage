@@ -885,6 +885,12 @@ export default function ItemDetail() {
                             <span className="text-muted-foreground">− False Coins</span>
                             <span className="text-destructive">−{totalFalseCoins.toLocaleString()}</span>
                           </div>
+                          {totalJams > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">+ Jams (coin)</span>
+                              <span className="text-chart-2">+{totalJams.toLocaleString()}</span>
+                            </div>
+                          )}
                           <div className="border-t border-border my-1" />
                           <div className="flex justify-between font-semibold">
                             <span className="text-foreground">Expected</span>
