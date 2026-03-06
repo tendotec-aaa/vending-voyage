@@ -1116,9 +1116,10 @@ export default function ItemDetail() {
                         // DEP: Warehouse outbound to field (refill neg) OR slot inbound (refill/swap_in pos)
                         const isDep = (entry.warehouse_id && entry.quantity < 0 && entry.movement_type === "refill")
                           || (entry.slot_id && entry.quantity > 0 && ["refill", "swap_in"].includes(entry.movement_type));
-                        // OUT: Sales (slot negative: removal, swap_out) OR shortage adjustments
+                        // OUT: Sales, slot negative (removal, swap_out), shortage adjustments
                         const isOut = (entry.slot_id && entry.quantity < 0)
-                          || (entry.movement_type === "adjustment" && entry.quantity < 0);
+                          || (entry.movement_type === "adjustment" && entry.quantity < 0)
+                          || entry.movement_type === "sale";
 
                         const inward = isIn ? entry.quantity : null;
                         const deployed = isDep ? Math.abs(entry.quantity) : null;
