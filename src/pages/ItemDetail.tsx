@@ -836,7 +836,10 @@ export default function ItemDetail() {
 
         {/* Stock Discrepancy Management */}
         {(() => {
-          const totalLost = totalUnitsSold + totalFalseCoins;
+          const totalJams = (salesData || []).reduce(
+            (sum, s) => sum + (s.jam_status === "by_coin" ? 1 : 0), 0
+          );
+          const totalLost = totalUnitsSold + totalFalseCoins - totalJams;
           const expectedStock = totalReceived - totalLost;
           const diff = totalStock - expectedStock;
           const pendingDiscs = (discrepancies as any[]).filter((d: any) => d.status === "pending");
