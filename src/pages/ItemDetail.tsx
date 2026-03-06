@@ -911,6 +911,11 @@ export default function ItemDetail() {
                               {diff > 0 ? "+" : ""}{diff.toLocaleString()}
                             </span>
                           </div>
+                          {totalJams > 0 && (
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Includes {totalJams} coin jam(s) that added stock without dispensing.
+                            </p>
+                          )}
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
