@@ -171,7 +171,7 @@ export default function ItemDetail() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("visit_line_items")
-        .select("units_sold, cash_collected, quantity_added, quantity_removed, false_coins")
+        .select("units_sold, cash_collected, quantity_added, quantity_removed, false_coins, jam_status")
         .eq("product_id", id!);
       if (error) throw error;
       return data;
