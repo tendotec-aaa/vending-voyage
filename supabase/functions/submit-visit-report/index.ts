@@ -427,19 +427,57 @@ Deno.serve(async (req) => {
         const oldProductId = s.toyId || s.previousProductId;
         const newProductId = s.newToyId;
 
-        // -- Old product: slot ledger (remove all from slot) --
-        if (oldProductId && s.previousStock > 0) {
-          await appendLedger(db, {
-            item_detail_id: oldProductId,
-            slot_id: s.slotId,
-            movement_type: "swap_out",
-            quantity: -s.previousStock,
-            running_balance: 0,
-            reference_id: visitId,
-            reference_type: "visit",
-            performed_by: userId,
-            notes: `Old product removed during swap — ${s.toyName}`,
-          });
+        // -- Old product: slot ledger — split into sale + swap_out entries --
+        if (oldProductId) {
+          let slotRunBal = s.previousStock;
+
+          // 1) Sale entry (units sold + false coins)
+          const saleQty = (s.unitsSold || 0) + (s.falseCoins || 0);
+          if (saleQty > 0) {
+            slotRunBal -= saleQty;
+            await appendLedger(db, {
+              item_detail_id: oldProductId,
+              slot_id: s.slotId,
+              movement_type: "sale",
+              quantity: -saleQty,
+              running_balance: slotRunBal,
+              reference_id: visitId,
+              reference_type: "visit",
+              performed_by: userId,
+              notes: `Product Sales before swap — ${s.toyName}`,
+            });
+          }
+
+          // 2) Jam adjustment (+1 stock if coin jam)
+          if (s.jamStatus === "by_coin") {
+            slotRunBal += 1;
+            await appendLedger(db, {
+              item_detail_id: oldProductId,
+              slot_id: s.slotId,
+              movement_type: "adjustment",
+              quantity: 1,
+              running_balance: slotRunBal,
+              reference_id: visitId,
+              reference_type: "visit",
+              performed_by: userId,
+              notes: `Jam (+1 coin) — ${s.toyName}`,
+            });
+          }
+
+          // 3) Swap out remainder (stock removed from slot)
+          if (slotRunBal > 0) {
+            await appendLedger(db, {
+              item_detail_id: oldProductId,
+              slot_id: s.slotId,
+              movement_type: "swap_out",
+              quantity: -slotRunBal,
+              running_balance: 0,
+              reference_id: visitId,
+              reference_type: "visit",
+              performed_by: userId,
+              notes: `Old product removed during swap — ${s.toyName}`,
+            });
+          }
         }
 
         // -- Old product: return removed units to warehouse --
@@ -528,21 +566,71 @@ Deno.serve(async (req) => {
       // === NORMAL (NON-SWAP) FLOW ===
       if (!s.toyId) continue;
 
-      // --- Slot ledger: record the net stock change on the machine slot ---
-      const slotBalance = s.currentStock;
-      const slotQtyChange = s.currentStock - s.lastStock;
-      if (slotQtyChange !== 0) {
-        const movementType = slotQtyChange > 0 ? "refill" : "removal";
+      // --- Slot ledger: record separate entries for sale, refill, removal, jam ---
+      let slotRunBal = s.lastStock;
+
+      // 1) Sale entry (units sold + false coins)
+      const saleQty = (s.unitsSold || 0) + (s.falseCoins || 0);
+      if (saleQty > 0) {
+        slotRunBal -= saleQty;
         await appendLedger(db, {
           item_detail_id: s.toyId,
           slot_id: s.slotId,
-          movement_type: movementType,
-          quantity: slotQtyChange,
-          running_balance: slotBalance,
+          movement_type: "sale",
+          quantity: -saleQty,
+          running_balance: slotRunBal,
           reference_id: visitId,
           reference_type: "visit",
           performed_by: userId,
-          notes: `${visitType} — ${s.toyName}`,
+          notes: `Units sold — ${s.toyName}`,
+        });
+      }
+
+      // 2) Jam adjustment (+1 stock if coin jam)
+      if (s.jamStatus === "by_coin") {
+        slotRunBal += 1;
+        await appendLedger(db, {
+          item_detail_id: s.toyId,
+          slot_id: s.slotId,
+          movement_type: "adjustment",
+          quantity: 1,
+          running_balance: slotRunBal,
+          reference_id: visitId,
+          reference_type: "visit",
+          performed_by: userId,
+          notes: `Jam (+1 coin) — ${s.toyName}`,
+        });
+      }
+
+      // 3) Removal entry (units removed from slot, returned to warehouse)
+      if (s.unitsRemoved > 0) {
+        slotRunBal -= s.unitsRemoved;
+        await appendLedger(db, {
+          item_detail_id: s.toyId,
+          slot_id: s.slotId,
+          movement_type: "removal",
+          quantity: -s.unitsRemoved,
+          running_balance: slotRunBal,
+          reference_id: visitId,
+          reference_type: "visit",
+          performed_by: userId,
+          notes: `Units removed — ${s.toyName}`,
+        });
+      }
+
+      // 4) Refill entry (units added to slot from warehouse)
+      if (s.unitsRefilled > 0) {
+        slotRunBal += s.unitsRefilled;
+        await appendLedger(db, {
+          item_detail_id: s.toyId,
+          slot_id: s.slotId,
+          movement_type: "refill",
+          quantity: s.unitsRefilled,
+          running_balance: slotRunBal,
+          reference_id: visitId,
+          reference_type: "visit",
+          performed_by: userId,
+          notes: `Refill — ${s.toyName}`,
         });
       }
 

@@ -45,6 +45,7 @@ const movementColors: Record<string, string> = {
   receive: "bg-chart-2/10 text-chart-2 border-chart-2/20",
   refill: "bg-primary/10 text-primary border-primary/20",
   removal: "bg-chart-4/10 text-chart-4 border-chart-4/20",
+  sale: "bg-chart-2/10 text-chart-2 border-chart-2/20",
   swap_in: "bg-chart-2/10 text-chart-2 border-chart-2/20",
   swap_out: "bg-chart-3/10 text-chart-3 border-chart-3/20",
   reversal: "bg-destructive/10 text-destructive border-destructive/20",
@@ -170,7 +171,7 @@ export default function ItemDetail() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("visit_line_items")
-        .select("units_sold, cash_collected, quantity_added, quantity_removed, false_coins")
+        .select("units_sold, cash_collected, quantity_added, quantity_removed, false_coins, jam_status")
         .eq("product_id", id!);
       if (error) throw error;
       return data;
@@ -835,7 +836,10 @@ export default function ItemDetail() {
 
         {/* Stock Discrepancy Management */}
         {(() => {
-          const totalLost = totalUnitsSold + totalFalseCoins;
+          const totalJams = (salesData || []).reduce(
+            (sum, s) => sum + (s.jam_status === "by_coin" ? 1 : 0), 0
+          );
+          const totalLost = totalUnitsSold + totalFalseCoins - totalJams;
           const expectedStock = totalReceived - totalLost;
           const diff = totalStock - expectedStock;
           const pendingDiscs = (discrepancies as any[]).filter((d: any) => d.status === "pending");
@@ -881,6 +885,12 @@ export default function ItemDetail() {
                             <span className="text-muted-foreground">− False Coins</span>
                             <span className="text-destructive">−{totalFalseCoins.toLocaleString()}</span>
                           </div>
+                          {totalJams > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">+ Jams (coin)</span>
+                              <span className="text-chart-2">+{totalJams.toLocaleString()}</span>
+                            </div>
+                          )}
                           <div className="border-t border-border my-1" />
                           <div className="flex justify-between font-semibold">
                             <span className="text-foreground">Expected</span>
@@ -901,6 +911,11 @@ export default function ItemDetail() {
                               {diff > 0 ? "+" : ""}{diff.toLocaleString()}
                             </span>
                           </div>
+                          {totalJams > 0 && (
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Includes {totalJams} coin jam(s) that added stock without dispensing.
+                            </p>
+                          )}
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
@@ -1115,9 +1130,10 @@ export default function ItemDetail() {
                         // DEP: Warehouse outbound to field (refill neg) OR slot inbound (refill/swap_in pos)
                         const isDep = (entry.warehouse_id && entry.quantity < 0 && entry.movement_type === "refill")
                           || (entry.slot_id && entry.quantity > 0 && ["refill", "swap_in"].includes(entry.movement_type));
-                        // OUT: Sales (slot negative: removal, swap_out) OR shortage adjustments
+                        // OUT: Sales, slot negative (removal, swap_out), shortage adjustments
                         const isOut = (entry.slot_id && entry.quantity < 0)
-                          || (entry.movement_type === "adjustment" && entry.quantity < 0);
+                          || (entry.movement_type === "adjustment" && entry.quantity < 0)
+                          || entry.movement_type === "sale";
 
                         const inward = isIn ? entry.quantity : null;
                         const deployed = isDep ? Math.abs(entry.quantity) : null;
