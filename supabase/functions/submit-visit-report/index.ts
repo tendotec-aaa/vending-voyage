@@ -459,9 +459,8 @@ Deno.serve(async (req) => {
           });
         }
 
-        // -- New product: deduct from warehouse --
+        // -- New product: deduct from warehouse (ledger only, trigger syncs inventory) --
         if (newProductId && s.newUnitsRefilled > 0 && sourceWarehouseId) {
-          const deducted = await deductInventory(db, newProductId, sourceWarehouseId, s.newUnitsRefilled);
           const whBal = await getRunningBalance(db, newProductId, sourceWarehouseId, null);
           await appendLedger(db, {
             item_detail_id: newProductId,
@@ -474,7 +473,8 @@ Deno.serve(async (req) => {
             performed_by: userId,
             notes: `Swap refill to field — ${s.newToyName}`,
           });
-          if (!deducted) {
+          // Check if warehouse went negative
+          if ((whBal - s.newUnitsRefilled) < 0) {
             warnings.push(
               `Insufficient warehouse stock for "${s.newToyName}" — refill of ${s.newUnitsRefilled} recorded but warehouse may go negative`
             );
