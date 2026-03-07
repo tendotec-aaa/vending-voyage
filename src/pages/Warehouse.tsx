@@ -143,6 +143,10 @@ export default function Warehouse() {
               ))}
             </SelectContent>
           </Select>
+          <div className="flex items-center gap-2">
+            <Switch id="wh-show-zero" checked={showZeroStock} onCheckedChange={setShowZeroStock} />
+            <Label htmlFor="wh-show-zero" className="text-sm text-muted-foreground whitespace-nowrap">Show zero stock</Label>
+          </div>
         </div>
       </Card>
 

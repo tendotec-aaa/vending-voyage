@@ -194,10 +194,10 @@ export default function InventoryPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <Button variant="outline" className="gap-2">
-            <Filter className="w-4 h-4" />
-            Filters
-          </Button>
+          <div className="flex items-center gap-2">
+            <Switch id="show-zero" checked={showZeroStock} onCheckedChange={setShowZeroStock} />
+            <Label htmlFor="show-zero" className="text-sm text-muted-foreground whitespace-nowrap">Show zero stock</Label>
+          </div>
         </div>
       </Card>
 
