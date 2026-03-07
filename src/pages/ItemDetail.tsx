@@ -897,13 +897,18 @@ export default function ItemDetail() {
           return (
             <Card>
               <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="text-base flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4" /> Stock Discrepancy
                   </CardTitle>
-                  <Button variant="outline" size="sm" onClick={() => { setVisualQuantity(0); setVisualType("shortage"); setShowVisualDialog(true); }}>
-                    Report Visual Discrepancy
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setShowWarehouseSale(true)}>
+                      <ShoppingCart className="mr-1 h-3.5 w-3.5" /> Warehouse Sale
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => { setVisualQuantity(0); setVisualType("shortage"); setShowVisualDialog(true); }}>
+                      Report Visual Discrepancy
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
