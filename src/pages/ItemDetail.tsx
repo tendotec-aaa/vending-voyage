@@ -526,7 +526,7 @@ export default function ItemDetail() {
         movement_type: "adjustment",
         quantity: difference,
         running_balance: newBalance,
-        warehouse_id: warehouseStock.length > 0 ? warehouseStock[0].warehouse_id : null,
+        warehouse_id: warehouseId,
         notes: `📋 ${visualType === "shortage" ? "Shortage" : "Surplus"} adjustment — ${noteText}`,
         reference_type: "discrepancy",
         performed_by: user?.id || null,
