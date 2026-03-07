@@ -1,0 +1,2 @@
+ALTER TABLE public.inventory_ledger DROP CONSTRAINT IF EXISTS inventory_ledger_movement_type_check;
+ALTER TABLE public.inventory_ledger ADD CONSTRAINT inventory_ledger_movement_type_check CHECK (movement_type = ANY (ARRAY['receive', 'refill', 'removal', 'sale', 'swap_in', 'swap_out', 'reversal', 'adjustment', 'transfer', 'initial', 'assembly_consumption', 'assembly_production']));
