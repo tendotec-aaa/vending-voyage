@@ -494,7 +494,7 @@ export default function ItemDetail() {
         item_detail_id: id,
         occurrence_date: visualDate,
         discrepancy_type: "visual",
-        expected_quantity: totalStock,
+        expected_quantity: warehouseTotal,
         actual_quantity: actualQuantity,
         difference,
         status: "resolved",
