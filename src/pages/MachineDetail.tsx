@@ -384,7 +384,7 @@ export default function MachineDetail() {
                 </Table>
 
                 {/* Slot History */}
-                <Tabs defaultValue="logistics">
+                <Tabs defaultValue="ledger">
                   <TabsList className="mb-4">
                     <TabsTrigger value="ledger">Inventory Ledger ({slotLedger.length})</TabsTrigger>
                     <TabsTrigger value="logistics">Logistics History ({slotVisitLines.length})</TabsTrigger>
