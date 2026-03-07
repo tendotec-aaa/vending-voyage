@@ -545,7 +545,7 @@ export default function ItemDetail() {
 
       queryClient.invalidateQueries({ queryKey: ["stock-discrepancies", id] });
       queryClient.invalidateQueries({ queryKey: ["item-inventory-ledger", id] });
-      queryClient.invalidateQueries({ queryKey: ["warehouse-stock", id] });
+      queryClient.invalidateQueries({ queryKey: ["item-warehouse-stock", id] });
       queryClient.invalidateQueries({ queryKey: ["item-logistics-history", id] });
       setShowVisualDialog(false);
       setVisualNote("");
