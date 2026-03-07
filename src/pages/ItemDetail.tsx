@@ -1068,9 +1068,9 @@ export default function ItemDetail() {
                   placeholder={`e.g., 50 units ${visualType === "shortage" ? "missing" : "found extra"}`}
                 />
                 <p className="text-xs text-muted-foreground">
-                  System shows {totalStock.toLocaleString()} units.
+                  Warehouse stock: {totalWarehouse.toLocaleString()} units.
                   {visualQuantity > 0 && (
-                    <> After adjustment: <strong>{(totalStock + (visualType === "shortage" ? -visualQuantity : visualQuantity)).toLocaleString()}</strong> units.</>
+                    <> After adjustment: <strong>{(totalWarehouse + (visualType === "shortage" ? -visualQuantity : visualQuantity)).toLocaleString()}</strong> units.</>
                   )}
                 </p>
               </div>
