@@ -118,72 +118,9 @@ async function appendLedger(
   }
 }
 
-// ── Helper: upsert inventory (add quantity) ──
-async function upsertInventory(
-  db: ReturnType<typeof createClient>,
-  itemDetailId: string,
-  warehouseId: string,
-  quantity: number
-) {
-  const { data: existing } = await db
-    .from("inventory")
-    .select("id, quantity_on_hand")
-    .eq("item_detail_id", itemDetailId)
-    .eq("warehouse_id", warehouseId)
-    .maybeSingle();
-
-  if (existing) {
-    await db
-      .from("inventory")
-      .update({
-        quantity_on_hand: (existing.quantity_on_hand || 0) + quantity,
-        last_updated: new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-  } else {
-    await db.from("inventory").insert({
-      item_detail_id: itemDetailId,
-      warehouse_id: warehouseId,
-      quantity_on_hand: quantity,
-      last_updated: new Date().toISOString(),
-    });
-  }
-}
-
-// ── Helper: deduct inventory (subtract quantity) ──
-async function deductInventory(
-  db: ReturnType<typeof createClient>,
-  itemDetailId: string,
-  warehouseId: string,
-  quantity: number
-): Promise<boolean> {
-  const { data: existing } = await db
-    .from("inventory")
-    .select("id, quantity_on_hand")
-    .eq("item_detail_id", itemDetailId)
-    .eq("warehouse_id", warehouseId)
-    .maybeSingle();
-
-  if (existing) {
-    const newQty = (existing.quantity_on_hand || 0) - quantity;
-    await db
-      .from("inventory")
-      .update({
-        quantity_on_hand: newQty,
-        last_updated: new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-    return newQty >= 0;
-  } else {
-    await db.from("inventory").insert({
-      item_detail_id: itemDetailId,
-      warehouse_id: warehouseId,
-      quantity_on_hand: -quantity,
-      last_updated: new Date().toISOString(),
-    });
-    return false;
-  }
-}
+// upsertInventory and deductInventory REMOVED — the DB trigger
+// sync_inventory_from_ledger now handles inventory.quantity_on_hand
+// automatically on every inventory_ledger INSERT.
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {

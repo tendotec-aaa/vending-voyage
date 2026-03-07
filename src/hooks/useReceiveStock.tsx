@@ -163,10 +163,18 @@ export function useReceiveStock() {
           if (noteError) throw noteError;
 
           if (systemWarehouseId) {
-            const sysBalance = await upsertInventory(item.itemDetailId, systemWarehouseId, difference);
-
-            // Ledger entry for discrepancy allocation
+            // Ledger entry for discrepancy allocation — trigger handles inventory sync
             if (item.itemDetailId) {
+              const { data: sysLastEntry } = await supabase
+                .from("inventory_ledger")
+                .select("running_balance")
+                .eq("item_detail_id", item.itemDetailId)
+                .eq("warehouse_id", systemWarehouseId)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              const sysBalance = (sysLastEntry?.running_balance ?? 0) + difference;
+
               await supabase.from("inventory_ledger").insert({
                 item_detail_id: item.itemDetailId,
                 warehouse_id: systemWarehouseId,
