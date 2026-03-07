@@ -97,6 +97,27 @@ export default function MachineDetail() {
     enabled: !!id,
   });
 
+  // Fetch slot-level inventory ledger entries for all slots of this machine
+  const slotIds = slots.map((s: any) => s.id);
+  const { data: slotLedgerEntries = [] } = useQuery({
+    queryKey: ["machine-slot-ledger", id, slotIds],
+    queryFn: async () => {
+      if (slotIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("inventory_ledger")
+        .select(`
+          id, created_at, movement_type, quantity, running_balance,
+          reference_id, reference_type, notes, slot_id, item_detail_id
+        `)
+        .in("slot_id", slotIds)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return data;
+    },
+    enabled: slotIds.length > 0,
+  });
+
   const { data: tickets = [] } = useQuery({
     queryKey: ["machine-tickets", id],
     queryFn: async () => {
