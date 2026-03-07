@@ -1230,6 +1230,15 @@ export default function ItemDetail() {
                               <span className="text-[10px] text-muted-foreground w-16 text-right">
                                 {eventDate ? format(new Date(eventDate), "MMM d, yy") : "—"}
                               </span>
+                              {isAdmin && entry.movement_type !== "reversal" && (
+                                <button
+                                  onClick={() => setShowReverseConfirm(entry)}
+                                  className="text-muted-foreground hover:text-destructive transition-colors p-0.5"
+                                  title="Reverse this entry"
+                                >
+                                  <Undo2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                             </div>
                           </div>
                         );
