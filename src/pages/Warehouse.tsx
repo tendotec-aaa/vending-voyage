@@ -16,6 +16,8 @@ import { AddWarehouseItemDialog } from "@/components/warehouse/AddWarehouseItemD
 import { CreateWarehouseDialog } from "@/components/warehouse/CreateWarehouseDialog";
 import { useWarehouseInventory } from "@/hooks/useWarehouseInventory";
 import { useCategories } from "@/hooks/useCategories";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 export default function Warehouse() {
   const navigate = useNavigate();
