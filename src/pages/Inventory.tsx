@@ -127,14 +127,18 @@ export default function InventoryPage() {
 
   const filteredInventory = useMemo(() => {
     if (!inventory) return [];
-    const items = !searchQuery ? inventory : inventory.filter((item) => {
+    let items = inventory;
+    if (!showZeroStock) items = items.filter((item) => item.total !== 0);
+    if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      return item.name.toLowerCase().includes(query) ||
+      items = items.filter((item) =>
+        item.name.toLowerCase().includes(query) ||
         item.sku.toLowerCase().includes(query) ||
-        item.category.toLowerCase().includes(query);
-    });
+        item.category.toLowerCase().includes(query)
+      );
+    }
     return items.sort((a, b) => b.totalInventoryCost - a.totalInventoryCost);
-  }, [inventory, searchQuery]);
+  }, [inventory, searchQuery, showZeroStock]);
 
   const stats = useMemo(() => {
     if (!inventory) return { totalSKUs: 0, activeSKUs: 0, warehouseStock: 0, deployed: 0, totalCost: 0 };
