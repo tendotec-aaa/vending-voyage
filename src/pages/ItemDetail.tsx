@@ -54,6 +54,7 @@ const movementColors: Record<string, string> = {
   initial: "bg-muted text-muted-foreground border-border",
   assembly_production: "bg-chart-2/10 text-chart-2 border-chart-2/20",
   assembly_consumption: "bg-chart-3/10 text-chart-3 border-chart-3/20",
+  warehouse_sale: "bg-chart-3/10 text-chart-3 border-chart-3/20",
 };
 
 export default function ItemDetail() {
