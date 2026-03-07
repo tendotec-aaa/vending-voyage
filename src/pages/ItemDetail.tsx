@@ -1127,17 +1127,13 @@ export default function ItemDetail() {
                           eventDate = (purchaseDatesMap as any)[entry.reference_id];
                         }
 
-                        // Categorize: In / Dep / Out
-                        // IN: Warehouse inbound (positive qty) OR surplus adjustments
-                        const isIn = (entry.warehouse_id && entry.quantity > 0)
-                          || (entry.movement_type === "adjustment" && entry.quantity > 0);
-                        // DEP: Warehouse outbound to field (refill neg) OR slot inbound (refill/swap_in pos)
-                        const isDep = (entry.warehouse_id && entry.quantity < 0 && entry.movement_type === "refill")
-                          || (entry.slot_id && entry.quantity > 0 && ["refill", "swap_in"].includes(entry.movement_type));
-                        // OUT: Sales, slot negative (removal, swap_out), shortage adjustments
-                        const isOut = (entry.slot_id && entry.quantity < 0)
-                          || (entry.movement_type === "adjustment" && entry.quantity < 0)
-                          || entry.movement_type === "sale";
+                        // Categorize: In / Dep / Out (warehouse-only view)
+                        // IN: Warehouse inbound (positive qty) — receives, returns from field, surplus adjustments
+                        const isIn = entry.quantity > 0;
+                        // DEP: Warehouse outbound to field (refill, swap refill — negative qty)
+                        const isDep = entry.quantity < 0 && ["refill", "swap_out"].includes(entry.movement_type);
+                        // OUT: Shortage adjustments (negative qty, not deployment)
+                        const isOut = entry.quantity < 0 && !isDep;
 
                         const inward = isIn ? entry.quantity : null;
                         const deployed = isDep ? Math.abs(entry.quantity) : null;
