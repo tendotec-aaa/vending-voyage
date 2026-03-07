@@ -504,15 +504,20 @@ export default function ItemDetail() {
       } as any);
       if (discError) throw new Error(`Failed to create discrepancy record: ${discError.message}`);
 
-      // 2. Get the current running balance from the latest ledger entry
-      const { data: lastLedger } = await supabase
-        .from("inventory_ledger")
-        .select("running_balance")
-        .eq("item_detail_id", id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
-      const currentBalance = lastLedger?.running_balance ?? totalStock;
+      // 2. Get the current running balance from the latest WAREHOUSE ledger entry
+      const warehouseId = warehouseStock.length > 0 ? warehouseStock[0].warehouse_id : null;
+      let currentBalance = warehouseTotal;
+      if (warehouseId) {
+        const { data: lastLedger } = await supabase
+          .from("inventory_ledger")
+          .select("running_balance")
+          .eq("item_detail_id", id)
+          .eq("warehouse_id", warehouseId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        if (lastLedger) currentBalance = lastLedger.running_balance;
+      }
       const newBalance = currentBalance + difference;
 
       // 3. Insert inventory_ledger entry (adjustment movement)
