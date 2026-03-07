@@ -391,7 +391,53 @@ export default function MachineDetail() {
                     <TabsTrigger value="maintenance">Maintenance (0)</TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="logistics">
+                  <TabsContent value="ledger">
+                    {slotLedger.length === 0 ? (
+                      <p className="text-muted-foreground">No ledger entries for this slot.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {slotLedger.map((entry: any) => {
+                          const movColors: Record<string, string> = {
+                            sale: "bg-chart-2/10 text-chart-2 border-chart-2/20",
+                            refill: "bg-primary/10 text-primary border-primary/20",
+                            removal: "bg-chart-4/10 text-chart-4 border-chart-4/20",
+                            swap_in: "bg-chart-2/10 text-chart-2 border-chart-2/20",
+                            swap_out: "bg-chart-3/10 text-chart-3 border-chart-3/20",
+                            adjustment: "bg-chart-5/20 text-chart-5 border-chart-5/30",
+                          };
+                          return (
+                            <div key={entry.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 border-b border-border/40 last:border-0">
+                              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Badge className={`text-[10px] px-1.5 py-0 ${movColors[entry.movement_type] || ""}`}>
+                                    {entry.movement_type.replace(/_/g, " ")}
+                                  </Badge>
+                                </div>
+                                <span className="text-[11px] text-muted-foreground truncate">{entry.notes || "—"}</span>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <div className="text-right min-w-[35px]">
+                                  <span className="text-[10px] text-muted-foreground block">Qty</span>
+                                  <span className={`text-sm font-semibold ${entry.quantity > 0 ? "text-chart-2" : "text-destructive"}`}>
+                                    {entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}
+                                  </span>
+                                </div>
+                                <div className="text-right min-w-[35px]">
+                                  <span className="text-[10px] text-muted-foreground block">Bal</span>
+                                  <span className="text-sm font-medium text-foreground">{entry.running_balance}</span>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground w-16 text-right">
+                                  {entry.created_at ? format(new Date(entry.created_at), "MMM d, yy") : "—"}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </TabsContent>
+
+
                     {slotVisitLines.length === 0 ? (
                       <p className="text-muted-foreground">No visit records for this slot.</p>
                     ) : (
