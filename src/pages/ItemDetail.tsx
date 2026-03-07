@@ -1082,7 +1082,7 @@ export default function ItemDetail() {
                 <Alert className={visualType === "shortage" ? "border-destructive/50 bg-destructive/10" : "border-chart-2/50 bg-chart-2/10"}>
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription className="text-xs">
-                    This will register a <strong>{visualType}</strong> of {visualQuantity.toLocaleString()} units. Inventory will be {visualType === "shortage" ? "decreased" : "increased"} from {totalStock.toLocaleString()} to {(totalStock + (visualType === "shortage" ? -visualQuantity : visualQuantity)).toLocaleString()} and a ledger entry created.
+                    This will register a <strong>{visualType}</strong> of {visualQuantity.toLocaleString()} units. Warehouse inventory will be {visualType === "shortage" ? "decreased" : "increased"} from {totalWarehouse.toLocaleString()} to {(totalWarehouse + (visualType === "shortage" ? -visualQuantity : visualQuantity)).toLocaleString()} and a ledger entry created.
                   </AlertDescription>
                 </Alert>
               )}
