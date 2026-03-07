@@ -1151,7 +1151,7 @@ export default function ItemDetail() {
                                   {entry.movement_type.replace(/_/g, " ")}
                                 </Badge>
                                 <span className="text-xs text-muted-foreground">
-                                  {entry.warehouse_id ? "🏭" : entry.slot_id ? "🎰" : ""} {locationLabel}
+                                  🏭 {locationLabel}
                                 </span>
                               </div>
                               <span className="text-[11px] text-muted-foreground truncate">
