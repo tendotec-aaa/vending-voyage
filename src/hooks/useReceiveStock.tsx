@@ -241,41 +241,5 @@ export function useReceiveStock() {
   };
 }
 
-async function upsertInventory(
-  itemDetailId: string | null,
-  warehouseId: string,
-  quantity: number
-): Promise<number> {
-  if (!itemDetailId) return 0;
-
-  const { data: existing } = await supabase
-    .from("inventory")
-    .select("id, quantity_on_hand")
-    .eq("item_detail_id", itemDetailId)
-    .eq("warehouse_id", warehouseId)
-    .maybeSingle();
-
-  const newBalance = (existing?.quantity_on_hand || 0) + quantity;
-
-  if (existing) {
-    const { error } = await supabase
-      .from("inventory")
-      .update({
-        quantity_on_hand: newBalance,
-        last_updated: new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-    if (error) throw error;
-  } else {
-    const { error } = await supabase
-      .from("inventory")
-      .insert({
-        item_detail_id: itemDetailId,
-        warehouse_id: warehouseId,
-        quantity_on_hand: quantity,
-      });
-    if (error) throw error;
-  }
-
-  return newBalance;
-}
+// upsertInventory REMOVED — the DB trigger sync_inventory_from_ledger
+// now handles inventory.quantity_on_hand automatically.
