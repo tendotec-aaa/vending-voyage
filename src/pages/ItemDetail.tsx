@@ -484,8 +484,10 @@ export default function ItemDetail() {
       // shortage = we're missing units, so inventory goes DOWN → negative difference
       // surplus = we found extra units, so inventory goes UP → positive difference
       const difference = visualType === "shortage" ? -discrepancyAmount : discrepancyAmount;
-      const actualQuantity = totalStock + difference;
-      const noteText = visualNote || `Visual reconciliation: ${visualType === "shortage" ? "Shortage" : "Surplus"} of ${discrepancyAmount} units detected. System had ${totalStock}, adjusted to ${actualQuantity}.`;
+      // Use warehouse stock only (not totalStock which includes deployed units in machine slots)
+      const warehouseTotal = warehouseStock.reduce((s, i) => s + (i.quantity_on_hand || 0), 0);
+      const actualQuantity = warehouseTotal + difference;
+      const noteText = visualNote || `Visual reconciliation: ${visualType === "shortage" ? "Shortage" : "Surplus"} of ${discrepancyAmount} units detected. Warehouse had ${warehouseTotal}, adjusted to ${actualQuantity}.`;
 
       // 1. Create stock_discrepancy record (auto-resolved)
       const { error: discError } = await supabase.from("stock_discrepancy" as any).insert({
