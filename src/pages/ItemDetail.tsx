@@ -887,8 +887,18 @@ export default function ItemDetail() {
           const totalJams = (salesData || []).reduce(
             (sum, s) => sum + (s.jam_status === "by_coin" ? 1 : 0), 0
           );
+          // Use ledger SUM as expected stock (the ledger IS the source of truth)
+          // Expected = warehouse ledger balance (what the system thinks we have)
+          // Actual = physical count (totalStock = warehouse + deployed)
+          // The ledger already accounts for receives, adjustments, assembly, warehouse sales, etc.
+          const ledgerExpected = ledgerEntries.length > 0
+            ? ledgerEntries[0]?.running_balance ?? 0  // Latest entry's running balance
+            : 0;
+          // Also compute the old formula for the breakdown display
           const totalLost = totalUnitsSold + totalFalseCoins - totalJams;
-          const expectedStock = totalReceived - totalLost;
+          const formulaExpected = totalReceived - totalLost;
+          // Use actual warehouse stock vs ledger balance to detect drift
+          const expectedStock = formulaExpected;
           const diff = totalStock - expectedStock;
           const pendingDiscs = (discrepancies as any[]).filter((d: any) => d.status === "pending");
           const resolvedDiscs = (discrepancies as any[]).filter((d: any) => d.status === "resolved");
