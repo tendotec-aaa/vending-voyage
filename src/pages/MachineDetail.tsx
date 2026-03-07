@@ -438,6 +438,7 @@ export default function MachineDetail() {
                   </TabsContent>
 
 
+                  <TabsContent value="logistics">
                     {slotVisitLines.length === 0 ? (
                       <p className="text-muted-foreground">No visit records for this slot.</p>
                     ) : (
