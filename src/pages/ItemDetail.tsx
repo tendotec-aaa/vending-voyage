@@ -1196,20 +1196,19 @@ export default function ItemDetail() {
                       <div className="flex gap-4">
                         <span className="text-chart-2 font-medium">
                           In: +{ledgerEntries.reduce((s, e) => {
-                            const isIn = (e.warehouse_id && e.quantity > 0) || (e.movement_type === "adjustment" && e.quantity > 0);
-                            return s + (isIn ? e.quantity : 0);
+                            return s + (e.quantity > 0 ? e.quantity : 0);
                           }, 0).toLocaleString()}
                         </span>
                         <span className="font-medium text-primary">
                           Dep: {ledgerEntries.reduce((s, e) => {
-                            const isDep = (e.warehouse_id && e.quantity < 0 && e.movement_type === "refill")
-                              || (e.slot_id && e.quantity > 0 && ["refill", "swap_in"].includes(e.movement_type));
+                            const isDep = e.quantity < 0 && ["refill", "swap_out"].includes(e.movement_type);
                             return s + (isDep ? Math.abs(e.quantity) : 0);
                           }, 0).toLocaleString()}
                         </span>
                         <span className="text-destructive font-medium">
                           Out: −{ledgerEntries.reduce((s, e) => {
-                            const isOut = (e.slot_id && e.quantity < 0) || (e.movement_type === "adjustment" && e.quantity < 0);
+                            const isDep = e.quantity < 0 && ["refill", "swap_out"].includes(e.movement_type);
+                            const isOut = e.quantity < 0 && !isDep;
                             return s + (isOut ? Math.abs(e.quantity) : 0);
                           }, 0).toLocaleString()}
                         </span>
