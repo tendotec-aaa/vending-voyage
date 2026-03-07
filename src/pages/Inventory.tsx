@@ -123,6 +123,7 @@ export default function InventoryPage() {
   const navigate = useNavigate();
   const { data: inventory, isLoading } = useConsolidatedInventory();
   const [searchQuery, setSearchQuery] = useState("");
+  const [showZeroStock, setShowZeroStock] = useState(false);
 
   const filteredInventory = useMemo(() => {
     if (!inventory) return [];
