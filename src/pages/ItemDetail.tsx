@@ -1581,6 +1581,39 @@ export default function ItemDetail() {
             </button>
           </span>
         </div>
+
+        {/* Reverse Entry Confirmation Dialog */}
+        <AlertDialog open={!!showReverseConfirm} onOpenChange={(open) => !open && setShowReverseConfirm(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Reverse Ledger Entry</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will create a compensating entry of <strong>{showReverseConfirm ? (showReverseConfirm.quantity > 0 ? `-${showReverseConfirm.quantity}` : `+${Math.abs(showReverseConfirm.quantity)}`) : ""}</strong> to neutralize this transaction. The original entry will remain for audit purposes.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {showReverseConfirm && (
+              <div className="text-sm space-y-1 p-3 rounded-md bg-muted/50">
+                <div><strong>Type:</strong> {showReverseConfirm.movement_type.replace(/_/g, " ")}</div>
+                <div><strong>Quantity:</strong> {showReverseConfirm.quantity > 0 ? "+" : ""}{showReverseConfirm.quantity}</div>
+                <div><strong>Notes:</strong> {showReverseConfirm.notes || "—"}</div>
+              </div>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleReverseLedgerEntry} disabled={reversingEntry} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                {reversingEntry ? "Reversing..." : "Confirm Reversal"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Warehouse Sale Dialog */}
+        <WarehouseSaleDialog
+          open={showWarehouseSale}
+          onOpenChange={setShowWarehouseSale}
+          itemDetailId={id!}
+          itemName={item.name}
+        />
       </div>
     </AppLayout>
   );
