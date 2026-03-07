@@ -6,6 +6,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
 } from "@/components/ui/table";
 import { Search, Filter, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState, useMemo } from "react";
@@ -123,17 +125,22 @@ export default function InventoryPage() {
   const navigate = useNavigate();
   const { data: inventory, isLoading } = useConsolidatedInventory();
   const [searchQuery, setSearchQuery] = useState("");
+  const [showZeroStock, setShowZeroStock] = useState(false);
 
   const filteredInventory = useMemo(() => {
     if (!inventory) return [];
-    const items = !searchQuery ? inventory : inventory.filter((item) => {
+    let items = inventory;
+    if (!showZeroStock) items = items.filter((item) => item.total !== 0);
+    if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      return item.name.toLowerCase().includes(query) ||
+      items = items.filter((item) =>
+        item.name.toLowerCase().includes(query) ||
         item.sku.toLowerCase().includes(query) ||
-        item.category.toLowerCase().includes(query);
-    });
+        item.category.toLowerCase().includes(query)
+      );
+    }
     return items.sort((a, b) => b.totalInventoryCost - a.totalInventoryCost);
-  }, [inventory, searchQuery]);
+  }, [inventory, searchQuery, showZeroStock]);
 
   const stats = useMemo(() => {
     if (!inventory) return { totalSKUs: 0, activeSKUs: 0, warehouseStock: 0, deployed: 0, totalCost: 0 };
@@ -189,10 +196,10 @@ export default function InventoryPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <Button variant="outline" className="gap-2">
-            <Filter className="w-4 h-4" />
-            Filters
-          </Button>
+          <div className="flex items-center gap-2">
+            <Switch id="show-zero" checked={showZeroStock} onCheckedChange={setShowZeroStock} />
+            <Label htmlFor="show-zero" className="text-sm text-muted-foreground whitespace-nowrap">Show zero stock</Label>
+          </div>
         </div>
       </Card>
 

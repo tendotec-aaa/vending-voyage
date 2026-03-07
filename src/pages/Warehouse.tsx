@@ -16,12 +16,15 @@ import { AddWarehouseItemDialog } from "@/components/warehouse/AddWarehouseItemD
 import { CreateWarehouseDialog } from "@/components/warehouse/CreateWarehouseDialog";
 import { useWarehouseInventory } from "@/hooks/useWarehouseInventory";
 import { useCategories } from "@/hooks/useCategories";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 export default function Warehouse() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [selectedWarehouse, setSelectedWarehouse] = useState("all");
+  const [showZeroStock, setShowZeroStock] = useState(false);
 
   const { inventory, warehouses, isLoading, isWarehousesLoading, createWarehouse, isCreatingWarehouse } =
     useWarehouseInventory(selectedWarehouse);
@@ -32,6 +35,7 @@ export default function Warehouse() {
   const filteredInventory = useMemo(() => {
     return inventory
       .filter((item) => {
+        if (!showZeroStock && (item.quantity_on_hand || 0) === 0) return false;
         const itemName = item.item_detail?.name?.toLowerCase() || "";
         const sku = item.item_detail?.sku?.toLowerCase() || "";
         const q = searchQuery.toLowerCase();
@@ -41,7 +45,7 @@ export default function Warehouse() {
         return matchesSearch && matchesCategory;
       })
       .sort((a, b) => (b.quantity_on_hand || 0) - (a.quantity_on_hand || 0));
-  }, [inventory, searchQuery, categoryFilter]);
+  }, [inventory, searchQuery, categoryFilter, showZeroStock]);
 
   const totalItems = filteredInventory.reduce((sum, item) => sum + (item.quantity_on_hand || 0), 0);
   const activeSKUs = filteredInventory.filter((item) => (item.quantity_on_hand || 0) > 0).length;
@@ -139,6 +143,10 @@ export default function Warehouse() {
               ))}
             </SelectContent>
           </Select>
+          <div className="flex items-center gap-2">
+            <Switch id="wh-show-zero" checked={showZeroStock} onCheckedChange={setShowZeroStock} />
+            <Label htmlFor="wh-show-zero" className="text-sm text-muted-foreground whitespace-nowrap">Show zero stock</Label>
+          </div>
         </div>
       </Card>
 
