@@ -559,7 +559,50 @@ export default function ItemDetail() {
     }
   };
 
-  if (isLoading)
+  const handleReverseLedgerEntry = async () => {
+    if (!showReverseConfirm || !id) return;
+    setReversingEntry(true);
+    try {
+      const entry = showReverseConfirm;
+      const warehouseId = entry.warehouse_id;
+      // Get current running balance
+      const { data: lastEntry } = await supabase
+        .from("inventory_ledger")
+        .select("running_balance")
+        .eq("item_detail_id", id)
+        .eq("warehouse_id", warehouseId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const currentBalance = lastEntry?.running_balance ?? 0;
+      const reversalQty = -entry.quantity;
+      const newBalance = currentBalance + reversalQty;
+
+      const { error } = await supabase.from("inventory_ledger").insert({
+        item_detail_id: id,
+        warehouse_id: warehouseId,
+        movement_type: "reversal",
+        quantity: reversalQty,
+        running_balance: newBalance,
+        reference_id: entry.id,
+        reference_type: "reversal",
+        performed_by: user?.id || null,
+        notes: `Reversal of: ${entry.notes || entry.movement_type}`,
+      });
+      if (error) throw error;
+
+      queryClient.invalidateQueries({ queryKey: ["item-inventory-ledger", id] });
+      queryClient.invalidateQueries({ queryKey: ["item-warehouse-stock", id] });
+      setShowReverseConfirm(null);
+      toast({ title: "Entry reversed", description: `Compensating entry of ${reversalQty > 0 ? "+" : ""}${reversalQty} created.` });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setReversingEntry(false);
+    }
+  };
+
+
     return (
       <AppLayout>
         <div className="text-muted-foreground p-6">Loading...</div>
