@@ -386,6 +386,7 @@ export default function MachineDetail() {
                 {/* Slot History */}
                 <Tabs defaultValue="logistics">
                   <TabsList className="mb-4">
+                    <TabsTrigger value="ledger">Inventory Ledger ({slotLedger.length})</TabsTrigger>
                     <TabsTrigger value="logistics">Logistics History ({slotVisitLines.length})</TabsTrigger>
                     <TabsTrigger value="maintenance">Maintenance (0)</TabsTrigger>
                   </TabsList>
