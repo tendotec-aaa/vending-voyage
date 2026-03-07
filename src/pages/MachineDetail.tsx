@@ -357,6 +357,7 @@ export default function MachineDetail() {
         {/* Per-Slot Cards */}
         {slots.map((slot: any) => {
           const slotVisitLines = visitLineItems.filter((li: any) => li.slot?.slot_number === slot.slot_number);
+          const slotLedger = slotLedgerEntries.filter((e: any) => e.slot_id === slot.id);
           const slotTickets = tickets.filter((t) => t.id && false); // tickets don't have slot filtering currently
           return (
             <Card key={slot.id}>
