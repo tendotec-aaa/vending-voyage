@@ -97,6 +97,27 @@ export default function MachineDetail() {
     enabled: !!id,
   });
 
+  // Fetch slot-level inventory ledger entries for all slots of this machine
+  const slotIds = slots.map((s: any) => s.id);
+  const { data: slotLedgerEntries = [] } = useQuery({
+    queryKey: ["machine-slot-ledger", id, slotIds],
+    queryFn: async () => {
+      if (slotIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("inventory_ledger")
+        .select(`
+          id, created_at, movement_type, quantity, running_balance,
+          reference_id, reference_type, notes, slot_id, item_detail_id
+        `)
+        .in("slot_id", slotIds)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return data;
+    },
+    enabled: slotIds.length > 0,
+  });
+
   const { data: tickets = [] } = useQuery({
     queryKey: ["machine-tickets", id],
     queryFn: async () => {
@@ -336,6 +357,7 @@ export default function MachineDetail() {
         {/* Per-Slot Cards */}
         {slots.map((slot: any) => {
           const slotVisitLines = visitLineItems.filter((li: any) => li.slot?.slot_number === slot.slot_number);
+          const slotLedger = slotLedgerEntries.filter((e: any) => e.slot_id === slot.id);
           const slotTickets = tickets.filter((t) => t.id && false); // tickets don't have slot filtering currently
           return (
             <Card key={slot.id}>
@@ -362,11 +384,59 @@ export default function MachineDetail() {
                 </Table>
 
                 {/* Slot History */}
-                <Tabs defaultValue="logistics">
+                <Tabs defaultValue="ledger">
                   <TabsList className="mb-4">
+                    <TabsTrigger value="ledger">Inventory Ledger ({slotLedger.length})</TabsTrigger>
                     <TabsTrigger value="logistics">Logistics History ({slotVisitLines.length})</TabsTrigger>
                     <TabsTrigger value="maintenance">Maintenance (0)</TabsTrigger>
                   </TabsList>
+
+                  <TabsContent value="ledger">
+                    {slotLedger.length === 0 ? (
+                      <p className="text-muted-foreground">No ledger entries for this slot.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {slotLedger.map((entry: any) => {
+                          const movColors: Record<string, string> = {
+                            sale: "bg-chart-2/10 text-chart-2 border-chart-2/20",
+                            refill: "bg-primary/10 text-primary border-primary/20",
+                            removal: "bg-chart-4/10 text-chart-4 border-chart-4/20",
+                            swap_in: "bg-chart-2/10 text-chart-2 border-chart-2/20",
+                            swap_out: "bg-chart-3/10 text-chart-3 border-chart-3/20",
+                            adjustment: "bg-chart-5/20 text-chart-5 border-chart-5/30",
+                          };
+                          return (
+                            <div key={entry.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 border-b border-border/40 last:border-0">
+                              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Badge className={`text-[10px] px-1.5 py-0 ${movColors[entry.movement_type] || ""}`}>
+                                    {entry.movement_type.replace(/_/g, " ")}
+                                  </Badge>
+                                </div>
+                                <span className="text-[11px] text-muted-foreground truncate">{entry.notes || "—"}</span>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <div className="text-right min-w-[35px]">
+                                  <span className="text-[10px] text-muted-foreground block">Qty</span>
+                                  <span className={`text-sm font-semibold ${entry.quantity > 0 ? "text-chart-2" : "text-destructive"}`}>
+                                    {entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}
+                                  </span>
+                                </div>
+                                <div className="text-right min-w-[35px]">
+                                  <span className="text-[10px] text-muted-foreground block">Bal</span>
+                                  <span className="text-sm font-medium text-foreground">{entry.running_balance}</span>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground w-16 text-right">
+                                  {entry.created_at ? format(new Date(entry.created_at), "MMM d, yy") : "—"}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </TabsContent>
+
 
                   <TabsContent value="logistics">
                     {slotVisitLines.length === 0 ? (

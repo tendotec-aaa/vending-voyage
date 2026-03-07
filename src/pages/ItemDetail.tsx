@@ -225,6 +225,7 @@ export default function ItemDetail() {
           warehouse_id, slot_id, performed_by
         `)
         .eq("item_detail_id", id!)
+        .not("warehouse_id", "is", null)
         .order("created_at", { ascending: false })
         .limit(200);
       if (error) throw error;
@@ -484,15 +485,17 @@ export default function ItemDetail() {
       // shortage = we're missing units, so inventory goes DOWN → negative difference
       // surplus = we found extra units, so inventory goes UP → positive difference
       const difference = visualType === "shortage" ? -discrepancyAmount : discrepancyAmount;
-      const actualQuantity = totalStock + difference;
-      const noteText = visualNote || `Visual reconciliation: ${visualType === "shortage" ? "Shortage" : "Surplus"} of ${discrepancyAmount} units detected. System had ${totalStock}, adjusted to ${actualQuantity}.`;
+      // Use warehouse stock only (not totalStock which includes deployed units in machine slots)
+      const warehouseTotal = warehouseStock.reduce((s, i) => s + (i.quantity_on_hand || 0), 0);
+      const actualQuantity = warehouseTotal + difference;
+      const noteText = visualNote || `Visual reconciliation: ${visualType === "shortage" ? "Shortage" : "Surplus"} of ${discrepancyAmount} units detected. Warehouse had ${warehouseTotal}, adjusted to ${actualQuantity}.`;
 
       // 1. Create stock_discrepancy record (auto-resolved)
       const { error: discError } = await supabase.from("stock_discrepancy" as any).insert({
         item_detail_id: id,
         occurrence_date: visualDate,
         discrepancy_type: "visual",
-        expected_quantity: totalStock,
+        expected_quantity: warehouseTotal,
         actual_quantity: actualQuantity,
         difference,
         status: "resolved",
@@ -502,15 +505,20 @@ export default function ItemDetail() {
       } as any);
       if (discError) throw new Error(`Failed to create discrepancy record: ${discError.message}`);
 
-      // 2. Get the current running balance from the latest ledger entry
-      const { data: lastLedger } = await supabase
-        .from("inventory_ledger")
-        .select("running_balance")
-        .eq("item_detail_id", id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
-      const currentBalance = lastLedger?.running_balance ?? totalStock;
+      // 2. Get the current running balance from the latest WAREHOUSE ledger entry
+      const warehouseId = warehouseStock.length > 0 ? warehouseStock[0].warehouse_id : null;
+      let currentBalance = warehouseTotal;
+      if (warehouseId) {
+        const { data: lastLedger } = await supabase
+          .from("inventory_ledger")
+          .select("running_balance")
+          .eq("item_detail_id", id)
+          .eq("warehouse_id", warehouseId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        if (lastLedger) currentBalance = lastLedger.running_balance;
+      }
       const newBalance = currentBalance + difference;
 
       // 3. Insert inventory_ledger entry (adjustment movement)
@@ -519,7 +527,7 @@ export default function ItemDetail() {
         movement_type: "adjustment",
         quantity: difference,
         running_balance: newBalance,
-        warehouse_id: warehouseStock.length > 0 ? warehouseStock[0].warehouse_id : null,
+        warehouse_id: warehouseId,
         notes: `📋 ${visualType === "shortage" ? "Shortage" : "Surplus"} adjustment — ${noteText}`,
         reference_type: "discrepancy",
         performed_by: user?.id || null,
@@ -538,7 +546,7 @@ export default function ItemDetail() {
 
       queryClient.invalidateQueries({ queryKey: ["stock-discrepancies", id] });
       queryClient.invalidateQueries({ queryKey: ["item-inventory-ledger", id] });
-      queryClient.invalidateQueries({ queryKey: ["warehouse-stock", id] });
+      queryClient.invalidateQueries({ queryKey: ["item-warehouse-stock", id] });
       queryClient.invalidateQueries({ queryKey: ["item-logistics-history", id] });
       setShowVisualDialog(false);
       setVisualNote("");
@@ -1061,9 +1069,9 @@ export default function ItemDetail() {
                   placeholder={`e.g., 50 units ${visualType === "shortage" ? "missing" : "found extra"}`}
                 />
                 <p className="text-xs text-muted-foreground">
-                  System shows {totalStock.toLocaleString()} units.
+                  Warehouse stock: {totalWarehouse.toLocaleString()} units.
                   {visualQuantity > 0 && (
-                    <> After adjustment: <strong>{(totalStock + (visualType === "shortage" ? -visualQuantity : visualQuantity)).toLocaleString()}</strong> units.</>
+                    <> After adjustment: <strong>{(totalWarehouse + (visualType === "shortage" ? -visualQuantity : visualQuantity)).toLocaleString()}</strong> units.</>
                   )}
                 </p>
               </div>
@@ -1075,7 +1083,7 @@ export default function ItemDetail() {
                 <Alert className={visualType === "shortage" ? "border-destructive/50 bg-destructive/10" : "border-chart-2/50 bg-chart-2/10"}>
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription className="text-xs">
-                    This will register a <strong>{visualType}</strong> of {visualQuantity.toLocaleString()} units. Inventory will be {visualType === "shortage" ? "decreased" : "increased"} from {totalStock.toLocaleString()} to {(totalStock + (visualType === "shortage" ? -visualQuantity : visualQuantity)).toLocaleString()} and a ledger entry created.
+                    This will register a <strong>{visualType}</strong> of {visualQuantity.toLocaleString()} units. Warehouse inventory will be {visualType === "shortage" ? "decreased" : "increased"} from {totalWarehouse.toLocaleString()} to {(totalWarehouse + (visualType === "shortage" ? -visualQuantity : visualQuantity)).toLocaleString()} and a ledger entry created.
                   </AlertDescription>
                 </Alert>
               )}
@@ -1109,11 +1117,7 @@ export default function ItemDetail() {
                   <>
                     <div className="space-y-1">
                       {ledgerEntries.map((entry) => {
-                        const locationLabel = entry.warehouse_id
-                          ? warehouseStock.find((w: any) => w.warehouse?.id === entry.warehouse_id)?.warehouse?.name || "Warehouse"
-                          : entry.slot_id
-                          ? machineStock.find((m: any) => m.machine)?.machine?.serial_number || "Slot"
-                          : "—";
+                        const locationLabel = warehouseStock.find((w: any) => w.warehouse?.id === entry.warehouse_id)?.warehouse?.name || "Warehouse";
                         
                         // Resolve actual event date
                         let eventDate = entry.created_at;
@@ -1123,17 +1127,13 @@ export default function ItemDetail() {
                           eventDate = (purchaseDatesMap as any)[entry.reference_id];
                         }
 
-                        // Categorize: In / Dep / Out
-                        // IN: Warehouse inbound (positive qty) OR surplus adjustments
-                        const isIn = (entry.warehouse_id && entry.quantity > 0)
-                          || (entry.movement_type === "adjustment" && entry.quantity > 0);
-                        // DEP: Warehouse outbound to field (refill neg) OR slot inbound (refill/swap_in pos)
-                        const isDep = (entry.warehouse_id && entry.quantity < 0 && entry.movement_type === "refill")
-                          || (entry.slot_id && entry.quantity > 0 && ["refill", "swap_in"].includes(entry.movement_type));
-                        // OUT: Sales, slot negative (removal, swap_out), shortage adjustments
-                        const isOut = (entry.slot_id && entry.quantity < 0)
-                          || (entry.movement_type === "adjustment" && entry.quantity < 0)
-                          || entry.movement_type === "sale";
+                        // Categorize: In / Dep / Out (warehouse-only view)
+                        // IN: Warehouse inbound (positive qty) — receives, returns from field, surplus adjustments
+                        const isIn = entry.quantity > 0;
+                        // DEP: Warehouse outbound to field (refill, swap refill — negative qty)
+                        const isDep = entry.quantity < 0 && ["refill", "swap_out"].includes(entry.movement_type);
+                        // OUT: Shortage adjustments (negative qty, not deployment)
+                        const isOut = entry.quantity < 0 && !isDep;
 
                         const inward = isIn ? entry.quantity : null;
                         const deployed = isDep ? Math.abs(entry.quantity) : null;
@@ -1151,7 +1151,7 @@ export default function ItemDetail() {
                                   {entry.movement_type.replace(/_/g, " ")}
                                 </Badge>
                                 <span className="text-xs text-muted-foreground">
-                                  {entry.warehouse_id ? "🏭" : entry.slot_id ? "🎰" : ""} {locationLabel}
+                                  🏭 {locationLabel}
                                 </span>
                               </div>
                               <span className="text-[11px] text-muted-foreground truncate">
@@ -1196,20 +1196,19 @@ export default function ItemDetail() {
                       <div className="flex gap-4">
                         <span className="text-chart-2 font-medium">
                           In: +{ledgerEntries.reduce((s, e) => {
-                            const isIn = (e.warehouse_id && e.quantity > 0) || (e.movement_type === "adjustment" && e.quantity > 0);
-                            return s + (isIn ? e.quantity : 0);
+                            return s + (e.quantity > 0 ? e.quantity : 0);
                           }, 0).toLocaleString()}
                         </span>
                         <span className="font-medium text-primary">
                           Dep: {ledgerEntries.reduce((s, e) => {
-                            const isDep = (e.warehouse_id && e.quantity < 0 && e.movement_type === "refill")
-                              || (e.slot_id && e.quantity > 0 && ["refill", "swap_in"].includes(e.movement_type));
+                            const isDep = e.quantity < 0 && ["refill", "swap_out"].includes(e.movement_type);
                             return s + (isDep ? Math.abs(e.quantity) : 0);
                           }, 0).toLocaleString()}
                         </span>
                         <span className="text-destructive font-medium">
                           Out: −{ledgerEntries.reduce((s, e) => {
-                            const isOut = (e.slot_id && e.quantity < 0) || (e.movement_type === "adjustment" && e.quantity < 0);
+                            const isDep = e.quantity < 0 && ["refill", "swap_out"].includes(e.movement_type);
+                            const isOut = e.quantity < 0 && !isDep;
                             return s + (isOut ? Math.abs(e.quantity) : 0);
                           }, 0).toLocaleString()}
                         </span>
