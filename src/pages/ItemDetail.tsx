@@ -534,16 +534,8 @@ export default function ItemDetail() {
       });
       if (ledgerError) throw new Error(`Failed to create ledger entry: ${ledgerError.message}`);
 
-      // 4. Update inventory table (adjust first warehouse row)
-      if (warehouseStock.length > 0) {
-        const firstWarehouse = warehouseStock[0];
-        const { error: invError } = await supabase
-          .from("inventory")
-          .update({ quantity_on_hand: (firstWarehouse.quantity_on_hand || 0) + difference, last_updated: new Date().toISOString() })
-          .eq("id", firstWarehouse.id);
-        if (invError) throw new Error(`Failed to update inventory: ${invError.message}`);
-      }
-
+      // Step 4 REMOVED — The DB trigger sync_inventory_from_ledger
+      // automatically updates inventory.quantity_on_hand from the ledger insert above.
       queryClient.invalidateQueries({ queryKey: ["stock-discrepancies", id] });
       queryClient.invalidateQueries({ queryKey: ["item-inventory-ledger", id] });
       queryClient.invalidateQueries({ queryKey: ["item-warehouse-stock", id] });
