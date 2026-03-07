@@ -106,7 +106,7 @@ export function useReceiveStock() {
 
         if (updateError) throw updateError;
 
-        // 2. Create receiving_allocations and update inventory + ledger for each warehouse
+        // 2. Create receiving_allocations and ledger entries (trigger handles inventory sync)
         for (const alloc of item.allocations) {
           const { error: allocError } = await supabase
             .from("receiving_allocations")
@@ -119,10 +119,19 @@ export function useReceiveStock() {
 
           if (allocError) throw allocError;
 
-          const newBalance = await upsertInventory(item.itemDetailId, alloc.warehouseId, alloc.quantity);
-
-          // Write ledger entry for this receive
+          // Write ledger entry — DB trigger auto-syncs inventory.quantity_on_hand
           if (item.itemDetailId) {
+            // Get current running balance for this item+warehouse
+            const { data: lastEntry } = await supabase
+              .from("inventory_ledger")
+              .select("running_balance")
+              .eq("item_detail_id", item.itemDetailId)
+              .eq("warehouse_id", alloc.warehouseId)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            const newBalance = (lastEntry?.running_balance ?? 0) + alloc.quantity;
+
             await supabase.from("inventory_ledger").insert({
               item_detail_id: item.itemDetailId,
               warehouse_id: alloc.warehouseId,
