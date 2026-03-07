@@ -35,6 +35,7 @@ export default function Warehouse() {
   const filteredInventory = useMemo(() => {
     return inventory
       .filter((item) => {
+        if (!showZeroStock && (item.quantity_on_hand || 0) === 0) return false;
         const itemName = item.item_detail?.name?.toLowerCase() || "";
         const sku = item.item_detail?.sku?.toLowerCase() || "";
         const q = searchQuery.toLowerCase();
@@ -44,7 +45,7 @@ export default function Warehouse() {
         return matchesSearch && matchesCategory;
       })
       .sort((a, b) => (b.quantity_on_hand || 0) - (a.quantity_on_hand || 0));
-  }, [inventory, searchQuery, categoryFilter]);
+  }, [inventory, searchQuery, categoryFilter, showZeroStock]);
 
   const totalItems = filteredInventory.reduce((sum, item) => sum + (item.quantity_on_hand || 0), 0);
   const activeSKUs = filteredInventory.filter((item) => (item.quantity_on_hand || 0) > 0).length;
