@@ -106,7 +106,7 @@ export function useReceiveStock() {
 
         if (updateError) throw updateError;
 
-        // 2. Create receiving_allocations and update inventory + ledger for each warehouse
+        // 2. Create receiving_allocations and ledger entries (trigger handles inventory sync)
         for (const alloc of item.allocations) {
           const { error: allocError } = await supabase
             .from("receiving_allocations")
@@ -119,10 +119,19 @@ export function useReceiveStock() {
 
           if (allocError) throw allocError;
 
-          const newBalance = await upsertInventory(item.itemDetailId, alloc.warehouseId, alloc.quantity);
-
-          // Write ledger entry for this receive
+          // Write ledger entry — DB trigger auto-syncs inventory.quantity_on_hand
           if (item.itemDetailId) {
+            // Get current running balance for this item+warehouse
+            const { data: lastEntry } = await supabase
+              .from("inventory_ledger")
+              .select("running_balance")
+              .eq("item_detail_id", item.itemDetailId)
+              .eq("warehouse_id", alloc.warehouseId)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            const newBalance = (lastEntry?.running_balance ?? 0) + alloc.quantity;
+
             await supabase.from("inventory_ledger").insert({
               item_detail_id: item.itemDetailId,
               warehouse_id: alloc.warehouseId,
@@ -154,10 +163,18 @@ export function useReceiveStock() {
           if (noteError) throw noteError;
 
           if (systemWarehouseId) {
-            const sysBalance = await upsertInventory(item.itemDetailId, systemWarehouseId, difference);
-
-            // Ledger entry for discrepancy allocation
+            // Ledger entry for discrepancy allocation — trigger handles inventory sync
             if (item.itemDetailId) {
+              const { data: sysLastEntry } = await supabase
+                .from("inventory_ledger")
+                .select("running_balance")
+                .eq("item_detail_id", item.itemDetailId)
+                .eq("warehouse_id", systemWarehouseId)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              const sysBalance = (sysLastEntry?.running_balance ?? 0) + difference;
+
               await supabase.from("inventory_ledger").insert({
                 item_detail_id: item.itemDetailId,
                 warehouse_id: systemWarehouseId,
@@ -224,41 +241,5 @@ export function useReceiveStock() {
   };
 }
 
-async function upsertInventory(
-  itemDetailId: string | null,
-  warehouseId: string,
-  quantity: number
-): Promise<number> {
-  if (!itemDetailId) return 0;
-
-  const { data: existing } = await supabase
-    .from("inventory")
-    .select("id, quantity_on_hand")
-    .eq("item_detail_id", itemDetailId)
-    .eq("warehouse_id", warehouseId)
-    .maybeSingle();
-
-  const newBalance = (existing?.quantity_on_hand || 0) + quantity;
-
-  if (existing) {
-    const { error } = await supabase
-      .from("inventory")
-      .update({
-        quantity_on_hand: newBalance,
-        last_updated: new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-    if (error) throw error;
-  } else {
-    const { error } = await supabase
-      .from("inventory")
-      .insert({
-        item_detail_id: itemDetailId,
-        warehouse_id: warehouseId,
-        quantity_on_hand: quantity,
-      });
-    if (error) throw error;
-  }
-
-  return newBalance;
-}
+// upsertInventory REMOVED — the DB trigger sync_inventory_from_ledger
+// now handles inventory.quantity_on_hand automatically.

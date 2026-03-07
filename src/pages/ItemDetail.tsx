@@ -20,7 +20,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Pencil, Save, X, Camera, Upload, Trash2, DollarSign, Warehouse, Truck, ShoppingCart, AlertTriangle, Copy, Check, ChevronDown } from "lucide-react";
+import { ArrowLeft, Pencil, Save, X, Camera, Upload, Trash2, DollarSign, Warehouse, Truck, ShoppingCart, AlertTriangle, Copy, Check, ChevronDown, Undo2 } from "lucide-react";
+import { WarehouseSaleDialog } from "@/components/inventory/WarehouseSaleDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useCategories } from "@/hooks/useCategories";
@@ -54,6 +55,7 @@ const movementColors: Record<string, string> = {
   initial: "bg-muted text-muted-foreground border-border",
   assembly_production: "bg-chart-2/10 text-chart-2 border-chart-2/20",
   assembly_consumption: "bg-chart-3/10 text-chart-3 border-chart-3/20",
+  warehouse_sale: "bg-chart-3/10 text-chart-3 border-chart-3/20",
 };
 
 export default function ItemDetail() {
@@ -82,6 +84,9 @@ export default function ItemDetail() {
   const [visualQuantity, setVisualQuantity] = useState(0);
   const [visualType, setVisualType] = useState<"shortage" | "surplus">("shortage");
   const [discrepancyProcessing, setDiscrepancyProcessing] = useState(false);
+  const [showReverseConfirm, setShowReverseConfirm] = useState<any>(null);
+  const [reversingEntry, setReversingEntry] = useState(false);
+  const [showWarehouseSale, setShowWarehouseSale] = useState(false);
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -534,16 +539,8 @@ export default function ItemDetail() {
       });
       if (ledgerError) throw new Error(`Failed to create ledger entry: ${ledgerError.message}`);
 
-      // 4. Update inventory table (adjust first warehouse row)
-      if (warehouseStock.length > 0) {
-        const firstWarehouse = warehouseStock[0];
-        const { error: invError } = await supabase
-          .from("inventory")
-          .update({ quantity_on_hand: (firstWarehouse.quantity_on_hand || 0) + difference, last_updated: new Date().toISOString() })
-          .eq("id", firstWarehouse.id);
-        if (invError) throw new Error(`Failed to update inventory: ${invError.message}`);
-      }
-
+      // Step 4 REMOVED — The DB trigger sync_inventory_from_ledger
+      // automatically updates inventory.quantity_on_hand from the ledger insert above.
       queryClient.invalidateQueries({ queryKey: ["stock-discrepancies", id] });
       queryClient.invalidateQueries({ queryKey: ["item-inventory-ledger", id] });
       queryClient.invalidateQueries({ queryKey: ["item-warehouse-stock", id] });
@@ -562,7 +559,50 @@ export default function ItemDetail() {
     }
   };
 
-  if (isLoading)
+  const handleReverseLedgerEntry = async () => {
+    if (!showReverseConfirm || !id) return;
+    setReversingEntry(true);
+    try {
+      const entry = showReverseConfirm;
+      const warehouseId = entry.warehouse_id;
+      // Get current running balance
+      const { data: lastEntry } = await supabase
+        .from("inventory_ledger")
+        .select("running_balance")
+        .eq("item_detail_id", id)
+        .eq("warehouse_id", warehouseId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const currentBalance = lastEntry?.running_balance ?? 0;
+      const reversalQty = -entry.quantity;
+      const newBalance = currentBalance + reversalQty;
+
+      const { error } = await supabase.from("inventory_ledger").insert({
+        item_detail_id: id,
+        warehouse_id: warehouseId,
+        movement_type: "reversal",
+        quantity: reversalQty,
+        running_balance: newBalance,
+        reference_id: entry.id,
+        reference_type: "reversal",
+        performed_by: user?.id || null,
+        notes: `Reversal of: ${entry.notes || entry.movement_type}`,
+      });
+      if (error) throw error;
+
+      queryClient.invalidateQueries({ queryKey: ["item-inventory-ledger", id] });
+      queryClient.invalidateQueries({ queryKey: ["item-warehouse-stock", id] });
+      setShowReverseConfirm(null);
+      toast({ title: "Entry reversed", description: `Compensating entry of ${reversalQty > 0 ? "+" : ""}${reversalQty} created.` });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setReversingEntry(false);
+    }
+  };
+
+
     return (
       <AppLayout>
         <div className="text-muted-foreground p-6">Loading...</div>
@@ -847,8 +887,18 @@ export default function ItemDetail() {
           const totalJams = (salesData || []).reduce(
             (sum, s) => sum + (s.jam_status === "by_coin" ? 1 : 0), 0
           );
+          // Use ledger SUM as expected stock (the ledger IS the source of truth)
+          // Expected = warehouse ledger balance (what the system thinks we have)
+          // Actual = physical count (totalStock = warehouse + deployed)
+          // The ledger already accounts for receives, adjustments, assembly, warehouse sales, etc.
+          const ledgerExpected = ledgerEntries.length > 0
+            ? ledgerEntries[0]?.running_balance ?? 0  // Latest entry's running balance
+            : 0;
+          // Also compute the old formula for the breakdown display
           const totalLost = totalUnitsSold + totalFalseCoins - totalJams;
-          const expectedStock = totalReceived - totalLost;
+          const formulaExpected = totalReceived - totalLost;
+          // Use actual warehouse stock vs ledger balance to detect drift
+          const expectedStock = formulaExpected;
           const diff = totalStock - expectedStock;
           const pendingDiscs = (discrepancies as any[]).filter((d: any) => d.status === "pending");
           const resolvedDiscs = (discrepancies as any[]).filter((d: any) => d.status === "resolved");
@@ -857,13 +907,18 @@ export default function ItemDetail() {
           return (
             <Card>
               <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="text-base flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4" /> Stock Discrepancy
                   </CardTitle>
-                  <Button variant="outline" size="sm" onClick={() => { setVisualQuantity(0); setVisualType("shortage"); setShowVisualDialog(true); }}>
-                    Report Visual Discrepancy
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setShowWarehouseSale(true)}>
+                      <ShoppingCart className="mr-1 h-3.5 w-3.5" /> Warehouse Sale
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => { setVisualQuantity(0); setVisualType("shortage"); setShowVisualDialog(true); }}>
+                      Report Visual Discrepancy
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1185,6 +1240,15 @@ export default function ItemDetail() {
                               <span className="text-[10px] text-muted-foreground w-16 text-right">
                                 {eventDate ? format(new Date(eventDate), "MMM d, yy") : "—"}
                               </span>
+                              {isAdmin && entry.movement_type !== "reversal" && (
+                                <button
+                                  onClick={() => setShowReverseConfirm(entry)}
+                                  className="text-muted-foreground hover:text-destructive transition-colors p-0.5"
+                                  title="Reverse this entry"
+                                >
+                                  <Undo2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                             </div>
                           </div>
                         );
@@ -1527,6 +1591,39 @@ export default function ItemDetail() {
             </button>
           </span>
         </div>
+
+        {/* Reverse Entry Confirmation Dialog */}
+        <AlertDialog open={!!showReverseConfirm} onOpenChange={(open) => !open && setShowReverseConfirm(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Reverse Ledger Entry</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will create a compensating entry of <strong>{showReverseConfirm ? (showReverseConfirm.quantity > 0 ? `-${showReverseConfirm.quantity}` : `+${Math.abs(showReverseConfirm.quantity)}`) : ""}</strong> to neutralize this transaction. The original entry will remain for audit purposes.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {showReverseConfirm && (
+              <div className="text-sm space-y-1 p-3 rounded-md bg-muted/50">
+                <div><strong>Type:</strong> {showReverseConfirm.movement_type.replace(/_/g, " ")}</div>
+                <div><strong>Quantity:</strong> {showReverseConfirm.quantity > 0 ? "+" : ""}{showReverseConfirm.quantity}</div>
+                <div><strong>Notes:</strong> {showReverseConfirm.notes || "—"}</div>
+              </div>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleReverseLedgerEntry} disabled={reversingEntry} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                {reversingEntry ? "Reversing..." : "Confirm Reversal"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Warehouse Sale Dialog */}
+        <WarehouseSaleDialog
+          open={showWarehouseSale}
+          onOpenChange={setShowWarehouseSale}
+          itemDetailId={id!}
+          itemName={item.name}
+        />
       </div>
     </AppLayout>
   );

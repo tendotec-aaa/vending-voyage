@@ -118,72 +118,9 @@ async function appendLedger(
   }
 }
 
-// ── Helper: upsert inventory (add quantity) ──
-async function upsertInventory(
-  db: ReturnType<typeof createClient>,
-  itemDetailId: string,
-  warehouseId: string,
-  quantity: number
-) {
-  const { data: existing } = await db
-    .from("inventory")
-    .select("id, quantity_on_hand")
-    .eq("item_detail_id", itemDetailId)
-    .eq("warehouse_id", warehouseId)
-    .maybeSingle();
-
-  if (existing) {
-    await db
-      .from("inventory")
-      .update({
-        quantity_on_hand: (existing.quantity_on_hand || 0) + quantity,
-        last_updated: new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-  } else {
-    await db.from("inventory").insert({
-      item_detail_id: itemDetailId,
-      warehouse_id: warehouseId,
-      quantity_on_hand: quantity,
-      last_updated: new Date().toISOString(),
-    });
-  }
-}
-
-// ── Helper: deduct inventory (subtract quantity) ──
-async function deductInventory(
-  db: ReturnType<typeof createClient>,
-  itemDetailId: string,
-  warehouseId: string,
-  quantity: number
-): Promise<boolean> {
-  const { data: existing } = await db
-    .from("inventory")
-    .select("id, quantity_on_hand")
-    .eq("item_detail_id", itemDetailId)
-    .eq("warehouse_id", warehouseId)
-    .maybeSingle();
-
-  if (existing) {
-    const newQty = (existing.quantity_on_hand || 0) - quantity;
-    await db
-      .from("inventory")
-      .update({
-        quantity_on_hand: newQty,
-        last_updated: new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-    return newQty >= 0;
-  } else {
-    await db.from("inventory").insert({
-      item_detail_id: itemDetailId,
-      warehouse_id: warehouseId,
-      quantity_on_hand: -quantity,
-      last_updated: new Date().toISOString(),
-    });
-    return false;
-  }
-}
+// upsertInventory and deductInventory REMOVED — the DB trigger
+// sync_inventory_from_ledger now handles inventory.quantity_on_hand
+// automatically on every inventory_ledger INSERT.
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -480,9 +417,8 @@ Deno.serve(async (req) => {
           }
         }
 
-        // -- Old product: return removed units to warehouse --
+        // -- Old product: return removed units to warehouse (ledger only, trigger syncs inventory) --
         if (oldProductId && s.unitsRemoved > 0 && sourceWarehouseId) {
-          await upsertInventory(db, oldProductId, sourceWarehouseId, s.unitsRemoved);
           const whBal = await getRunningBalance(db, oldProductId, sourceWarehouseId, null);
           await appendLedger(db, {
             item_detail_id: oldProductId,
@@ -523,9 +459,8 @@ Deno.serve(async (req) => {
           });
         }
 
-        // -- New product: deduct from warehouse --
+        // -- New product: deduct from warehouse (ledger only, trigger syncs inventory) --
         if (newProductId && s.newUnitsRefilled > 0 && sourceWarehouseId) {
-          const deducted = await deductInventory(db, newProductId, sourceWarehouseId, s.newUnitsRefilled);
           const whBal = await getRunningBalance(db, newProductId, sourceWarehouseId, null);
           await appendLedger(db, {
             item_detail_id: newProductId,
@@ -538,7 +473,8 @@ Deno.serve(async (req) => {
             performed_by: userId,
             notes: `Swap refill to field — ${s.newToyName}`,
           });
-          if (!deducted) {
+          // Check if warehouse went negative
+          if ((whBal - s.newUnitsRefilled) < 0) {
             warnings.push(
               `Insufficient warehouse stock for "${s.newToyName}" — refill of ${s.newUnitsRefilled} recorded but warehouse may go negative`
             );
@@ -634,11 +570,10 @@ Deno.serve(async (req) => {
         });
       }
 
-      // --- Warehouse ledger + inventory updates ---
+      // --- Warehouse ledger (trigger syncs inventory automatically) ---
       if (sourceWarehouseId) {
         // Deduct refilled units from warehouse
         if (s.unitsRefilled > 0) {
-          const deducted = await deductInventory(db, s.toyId, sourceWarehouseId, s.unitsRefilled);
           const whBal = await getRunningBalance(db, s.toyId, sourceWarehouseId, null);
           await appendLedger(db, {
             item_detail_id: s.toyId,
@@ -651,7 +586,7 @@ Deno.serve(async (req) => {
             performed_by: userId,
             notes: `Refill to field — ${s.toyName}`,
           });
-          if (!deducted) {
+          if ((whBal - s.unitsRefilled) < 0) {
             warnings.push(
               `Insufficient warehouse stock for "${s.toyName}" — refill of ${s.unitsRefilled} recorded but warehouse may go negative`
             );
@@ -660,7 +595,6 @@ Deno.serve(async (req) => {
 
         // Return removed units to warehouse
         if (s.unitsRemoved > 0) {
-          await upsertInventory(db, s.toyId, sourceWarehouseId, s.unitsRemoved);
           const whBal = await getRunningBalance(db, s.toyId, sourceWarehouseId, null);
           await appendLedger(db, {
             item_detail_id: s.toyId,
