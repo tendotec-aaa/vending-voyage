@@ -1117,11 +1117,7 @@ export default function ItemDetail() {
                   <>
                     <div className="space-y-1">
                       {ledgerEntries.map((entry) => {
-                        const locationLabel = entry.warehouse_id
-                          ? warehouseStock.find((w: any) => w.warehouse?.id === entry.warehouse_id)?.warehouse?.name || "Warehouse"
-                          : entry.slot_id
-                          ? machineStock.find((m: any) => m.machine)?.machine?.serial_number || "Slot"
-                          : "—";
+                        const locationLabel = warehouseStock.find((w: any) => w.warehouse?.id === entry.warehouse_id)?.warehouse?.name || "Warehouse";
                         
                         // Resolve actual event date
                         let eventDate = entry.created_at;
