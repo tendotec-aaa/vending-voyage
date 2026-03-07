@@ -84,6 +84,9 @@ export default function ItemDetail() {
   const [visualQuantity, setVisualQuantity] = useState(0);
   const [visualType, setVisualType] = useState<"shortage" | "surplus">("shortage");
   const [discrepancyProcessing, setDiscrepancyProcessing] = useState(false);
+  const [showReverseConfirm, setShowReverseConfirm] = useState<any>(null);
+  const [reversingEntry, setReversingEntry] = useState(false);
+  const [showWarehouseSale, setShowWarehouseSale] = useState(false);
   const [form, setForm] = useState({
     name: "",
     description: "",
