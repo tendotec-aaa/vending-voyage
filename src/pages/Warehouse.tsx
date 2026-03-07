@@ -24,6 +24,7 @@ export default function Warehouse() {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [selectedWarehouse, setSelectedWarehouse] = useState("all");
+  const [showZeroStock, setShowZeroStock] = useState(false);
 
   const { inventory, warehouses, isLoading, isWarehousesLoading, createWarehouse, isCreatingWarehouse } =
     useWarehouseInventory(selectedWarehouse);
