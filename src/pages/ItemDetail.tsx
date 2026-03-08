@@ -1548,93 +1548,159 @@ export default function ItemDetail() {
                       </div>
                     )}
 
-                    {/* Visit Line Items */}
-                    {logisticsHistory.length === 0 && discrepancies.length === 0 ? (
-                      <p className="text-muted-foreground p-4">No logistics history yet.</p>
-                    ) : logisticsHistory.length > 0 ? (
-                      <>
-                        {discrepancies.length > 0 && (
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1 mb-2">
-                            Visit History
-                          </p>
-                        )}
-                        <div className="space-y-2">
-                          {logisticsHistory.map((row: any) => {
-                            const visit = row.spot_visit;
-                            const spot = visit?.spot;
-                            const location = spot?.location;
-                            const snap = snapshots.find(
-                              (s: any) => s.visit_id === row.spot_visit_id && s.slot_id === row.slot_id
-                            );
-                            const lastStock = snap?.previous_stock ?? null;
-                            const currentStock = row.computed_current_stock ?? null;
-                            const unitsSold = row.units_sold ?? 0;
-                            const added = row.quantity_added || 0;
-                            const removed = row.quantity_removed || 0;
-                            const falseCoins = row.false_coins ?? 0;
-                            const jamStatus = row.jam_status ?? "no_jam";
-                            const auditedCount = row.meter_reading;
-                            const jamLabel = jamStatus === "by_coin" ? "Jam (+1)" : jamStatus === "mechanical" ? "Jam (mech)" : "—";
+                    {/* Unified Chronological Timeline */}
+                    {(() => {
+                      const unifiedHistory = [
+                        ...logisticsHistory.map((row: any) => ({
+                          type: "visit" as const,
+                          date: row.spot_visit?.visit_date || row.created_at,
+                          data: row,
+                        })),
+                        ...(warehouseSales || []).map((row: any) => ({
+                          type: "sale" as const,
+                          date: (row.sale as any)?.sale_date || row.created_at,
+                          data: row,
+                        })),
+                      ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-                            return (
-                              <div
-                                key={row.id}
-                                className="rounded-lg border border-border/60 p-3 hover:bg-muted/30 cursor-pointer transition-colors"
-                                onClick={() => row.spot_visit_id && navigate(`/visits/${row.spot_visit_id}`)}
-                              >
-                                <div className="flex items-center justify-between gap-2 mb-2">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <Badge className={`text-[10px] px-1.5 py-0 shrink-0 ${actionColors[row.action_type] || ""}`}>
-                                      {row.action_type}
-                                    </Badge>
-                                    <span className="text-xs text-muted-foreground truncate">
-                                      {location?.name ? `${location.name} › ${spot?.name || ""}` : spot?.name || "—"}
-                                    </span>
+                      if (unifiedHistory.length === 0 && discrepancies.length === 0) {
+                        return <p className="text-muted-foreground p-4">No logistics history yet.</p>;
+                      }
+
+                      if (unifiedHistory.length === 0) return null;
+
+                      return (
+                        <>
+                          {discrepancies.length > 0 && (
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1 mb-2">
+                              Movement History
+                            </p>
+                          )}
+                          <div className="space-y-2">
+                            {unifiedHistory.map((entry) => {
+                              if (entry.type === "visit") {
+                                const row = entry.data;
+                                const visit = row.spot_visit;
+                                const spot = visit?.spot;
+                                const location = spot?.location;
+                                const snap = snapshots.find(
+                                  (s: any) => s.visit_id === row.spot_visit_id && s.slot_id === row.slot_id
+                                );
+                                const lastStock = snap?.previous_stock ?? null;
+                                const currentStock = row.computed_current_stock ?? null;
+                                const unitsSold = row.units_sold ?? 0;
+                                const added = row.quantity_added || 0;
+                                const removed = row.quantity_removed || 0;
+                                const falseCoins = row.false_coins ?? 0;
+                                const jamStatus = row.jam_status ?? "no_jam";
+                                const auditedCount = row.meter_reading;
+                                const jamLabel = jamStatus === "by_coin" ? "Jam (+1)" : jamStatus === "mechanical" ? "Jam (mech)" : "—";
+
+                                return (
+                                  <div
+                                    key={`visit-${row.id}`}
+                                    className="rounded-lg border border-border/60 p-3 hover:bg-muted/30 cursor-pointer transition-colors"
+                                    onClick={() => row.spot_visit_id && navigate(`/visits/${row.spot_visit_id}`)}
+                                  >
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <Badge className={`text-[10px] px-1.5 py-0 shrink-0 ${actionColors[row.action_type] || ""}`}>
+                                          {row.action_type}
+                                        </Badge>
+                                        <span className="text-xs text-muted-foreground truncate">
+                                          {location?.name ? `${location.name} › ${spot?.name || ""}` : spot?.name || "—"}
+                                        </span>
+                                      </div>
+                                      <span className="text-[11px] text-muted-foreground shrink-0">
+                                        {visit?.visit_date ? format(new Date(visit.visit_date), "MMM d, yyyy") : "—"}
+                                      </span>
+                                    </div>
+                                    <div className="grid grid-cols-4 sm:grid-cols-8 gap-x-2 gap-y-1 text-center">
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground">Last</p>
+                                        <p className="text-sm font-medium text-foreground">{lastStock ?? "—"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground">Current</p>
+                                        <p className="text-sm font-medium text-foreground">{currentStock ?? "—"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground">Audited</p>
+                                        <p className="text-sm font-medium text-foreground">{auditedCount ?? "—"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground">Sold</p>
+                                        <p className="text-sm font-medium text-primary">{unitsSold || "—"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground">Added</p>
+                                        <p className="text-sm font-medium text-chart-2">{added > 0 ? `+${added}` : "—"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground">Removed</p>
+                                        <p className="text-sm font-medium text-destructive">{removed > 0 ? `-${removed}` : "—"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground">False</p>
+                                        <p className="text-sm font-medium text-chart-4">{falseCoins || "—"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground">Jam</p>
+                                        <p className="text-[11px] font-medium text-muted-foreground">{jamLabel}</p>
+                                      </div>
+                                    </div>
                                   </div>
-                                  <span className="text-[11px] text-muted-foreground shrink-0">
-                                    {visit?.visit_date ? format(new Date(visit.visit_date), "MMM d, yyyy") : "—"}
-                                  </span>
-                                </div>
-                                <div className="grid grid-cols-4 sm:grid-cols-8 gap-x-2 gap-y-1 text-center">
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground">Last</p>
-                                    <p className="text-sm font-medium text-foreground">{lastStock ?? "—"}</p>
+                                );
+                              } else {
+                                // Sale card
+                                const row = entry.data;
+                                const sale = row.sale as any;
+                                const warehouseName = sale?.warehouse?.name || "—";
+                                return (
+                                  <div
+                                    key={`sale-${row.id}`}
+                                    className="rounded-lg border border-border/60 p-3 hover:bg-muted/30 cursor-pointer transition-colors"
+                                    onClick={() => sale?.id && navigate(`/sales/${sale.id}`)}
+                                  >
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <Badge className={`text-[10px] px-1.5 py-0 shrink-0 ${movementColors["warehouse_sale"]}`}>
+                                          warehouse_sale
+                                        </Badge>
+                                        <span className="text-xs text-muted-foreground truncate">
+                                          {sale?.buyer_name ? `${sale.buyer_name} › ${warehouseName}` : warehouseName}
+                                        </span>
+                                      </div>
+                                      <span className="text-[11px] text-muted-foreground shrink-0">
+                                        {sale?.sale_date ? format(new Date(sale.sale_date), "MMM d, yyyy") : "—"}
+                                      </span>
+                                    </div>
+                                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-x-2 gap-y-1 text-center">
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground">Sale #</p>
+                                        <p className="text-sm font-medium text-foreground">{sale?.sale_number || "—"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground">Qty</p>
+                                        <p className="text-sm font-medium text-destructive">-{row.quantity}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground">Unit Price</p>
+                                        <p className="text-sm font-medium text-foreground">{fmt2(row.unit_price)}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground">Total</p>
+                                        <p className="text-sm font-medium text-primary">{fmt2(row.total_price)}</p>
+                                      </div>
+                                    </div>
                                   </div>
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground">Current</p>
-                                    <p className="text-sm font-medium text-foreground">{currentStock ?? "—"}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground">Audited</p>
-                                    <p className="text-sm font-medium text-foreground">{auditedCount ?? "—"}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground">Sold</p>
-                                    <p className="text-sm font-medium text-primary">{unitsSold || "—"}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground">Added</p>
-                                    <p className="text-sm font-medium text-chart-2">{added > 0 ? `+${added}` : "—"}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground">Removed</p>
-                                    <p className="text-sm font-medium text-destructive">{removed > 0 ? `-${removed}` : "—"}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground">False</p>
-                                    <p className="text-sm font-medium text-chart-4">{falseCoins || "—"}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground">Jam</p>
-                                    <p className="text-[11px] font-medium text-muted-foreground">{jamLabel}</p>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </>
-                    ) : null}
+                                );
+                              }
+                            })}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </>
                 )}
               </CardContent>
