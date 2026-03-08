@@ -48,6 +48,8 @@ export interface SlotData {
   machine_serial: string;
   location_id: string;
   product_name: string | null;
+  spot_id: string;
+  spot_name: string;
 }
 
 export interface MaintenanceTicket {
@@ -58,6 +60,7 @@ export interface MaintenanceTicket {
   status: string;
   location_id: string;
   machine_id: string | null;
+  spot_id: string | null;
   created_at: string;
 }
 
@@ -162,7 +165,7 @@ export function useRouteDetail(routeId: string | undefined) {
       // Get spots for locations
       const { data: spots } = await supabase
         .from("spots")
-        .select("id, location_id")
+        .select("id, name, location_id")
         .in("location_id", locationIds);
       if (!spots?.length) return [];
 
@@ -207,6 +210,7 @@ export function useRouteDetail(routeId: string | undefined) {
       // Build lookup: machine -> setup -> spot -> location
       const setupSpotMap = Object.fromEntries(setups.map((s) => [s.id, s.spot_id]));
       const spotLocationMap = Object.fromEntries(spots.map((s) => [s.id, s.location_id]));
+      const spotNameMap = Object.fromEntries(spots.map((s) => [s.id, s.name]));
       const machineMap = Object.fromEntries(machines.map((m) => [m.id, m]));
 
       return slots.map((slot) => {
@@ -224,6 +228,8 @@ export function useRouteDetail(routeId: string | undefined) {
           machine_serial: machine?.serial_number || "Unknown",
           location_id: locationId || "",
           product_name: slot.current_product_id ? productMap[slot.current_product_id] || null : null,
+          spot_id: spotId || "",
+          spot_name: spotId ? (spotNameMap[spotId] || "") : "",
         };
       });
     },
@@ -235,7 +241,7 @@ export function useRouteDetail(routeId: string | undefined) {
     queryFn: async (): Promise<MaintenanceTicket[]> => {
       const { data, error } = await supabase
         .from("maintenance_tickets")
-        .select("id, issue_type, description, priority, status, location_id, machine_id, created_at")
+        .select("id, issue_type, description, priority, status, location_id, machine_id, spot_id, created_at")
         .in("location_id", locationIds)
         .neq("status", "completed");
       if (error) throw error;
