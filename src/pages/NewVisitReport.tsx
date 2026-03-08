@@ -1887,6 +1887,38 @@ export default function NewVisitReport() {
                 {totals.totalRefilled} units
               </div>
             </div>
+
+            {/* Refill Source Bodega */}
+            <div className="space-y-2">
+              <Label>Refill Source (Bodega)</Label>
+              <Select value={sourceWarehouseId} onValueChange={setSourceWarehouseId}>
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder="Select bodega..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {refillSourceWarehouses.map((wh) => (
+                    <SelectItem key={wh.id} value={wh.id}>{wh.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Return Vehicle */}
+            {requiresReturnVehicle && (
+              <div className="space-y-2">
+                <Label>Return Vehicle {requiresReturnVehicle && <span className="text-destructive">*</span>}</Label>
+                <Select value={returnWarehouseId} onValueChange={setReturnWarehouseId}>
+                  <SelectTrigger className="bg-background">
+                    <SelectValue placeholder="Select vehicle..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {returnVehicleWarehouses.map((wh) => (
+                      <SelectItem key={wh.id} value={wh.id}>{wh.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
         </Card>
 
