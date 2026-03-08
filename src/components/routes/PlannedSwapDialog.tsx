@@ -27,6 +27,7 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
   const [selectedSlotId, setSelectedSlotId] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [newProductId, setNewProductId] = useState("");
+  const [loadQuantity, setLoadQuantity] = useState<number | "">("")
 
   // Reset all when dialog closes
   useEffect(() => {
