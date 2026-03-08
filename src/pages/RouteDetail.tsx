@@ -249,6 +249,7 @@ export default function RouteDetail() {
                 key={stop.id}
                 stop={stop}
                 slots={slots}
+                demandMap={demandMap}
                 tickets={tickets}
                 onUpdateStop={(u) => updateStop.mutate(u)}
                 onRemoveStop={(sid) => removeStop.mutate(sid)}
