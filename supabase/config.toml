@@ -1,4 +1,1 @@
 project_id = "aptwrtpbdylldrfycqej"
-
-[functions.submit-visit-report]
-verify_jwt = false
