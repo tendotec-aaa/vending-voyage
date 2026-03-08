@@ -263,7 +263,7 @@ export function useDashboardStats(
 
       // Client-side filter for deployed machines only
       return (data || [])
-        .filter((row: any) => row.machine?.status === "deployed")
+        .filter((row: any) => row.machine?.status === "deployed" && row.machine?.setup?.spot != null)
         .map((row: any) => {
           const locationName =
             row.machine?.setup?.spot?.location?.name ?? "Unknown";

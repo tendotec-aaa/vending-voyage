@@ -23,7 +23,7 @@ export function KPICard({
   loading,
 }: KPICardProps) {
   return (
-    <Card className="p-6 bg-card border-border hover:shadow-md transition-shadow">
+    <Card className="p-6 bg-card border-border hover:shadow-md transition-shadow overflow-hidden relative">
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <p className="text-sm font-medium text-muted-foreground">{title}</p>
