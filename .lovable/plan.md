@@ -1,54 +1,43 @@
 
 
-## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
+## Plan: Sort Slots by Slot Number + Machine Position (Grid Layout Order)
 
-### What was implemented:
+The desired order is: **slot_number ascending, then position_on_setup ascending** — creating a top-left → top-right → bottom-left → bottom-right reading pattern across machines.
 
-1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
+### Current behavior
+- **NewVisitReport**: `machineSlots` fetched with `.order('slot_number')` — groups by slot number but doesn't sub-sort by machine position.
+- **VisitDetail**: `enrichedSlots` built from `lineItems` ordered by `created_at` — no slot/position sorting at all.
 
-2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
+### Changes (2 files, sort logic only — no structural changes)
 
-3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
+#### 1. `src/pages/NewVisitReport.tsx` (~line 545)
+After generating `generatedSlots` from `machineSlots.map(...)`, add a `.sort()` before the cache overlay step:
 
-4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
+Sort by `slotNumber` ascending first, then by the machine's `position_on_setup` ascending. The machine's `position_on_setup` is available by looking up the machine from the `machines` array.
 
-5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
+#### 2. `src/pages/VisitDetail.tsx` (~line 255)
+After building `enrichedSlots` from `lineItems.map(...)`, add a `.sort()`:
 
-6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
+Sort by `slotNumber` ascending first, then by `machine.position_on_setup` ascending. The `position_on_setup` is already available via `li.slot?.machine?.position_on_setup`.
 
-7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
+### Sort function (same logic in both files)
 
-### Architecture now:
-- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
-- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
-- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
-- **Audit trail**: Complete history of every stock movement with performer tracking
+```text
+Primary:  slot.slotNumber  ASC
+Secondary: machine.position_on_setup  ASC
+```
 
----
+This produces the grid order:
+- Slot 1, Position 1 (top-left)
+- Slot 1, Position 2 (top-center)  
+- Slot 1, Position 3 (top-right)
+- Slot 2, Position 1 (bottom-left)
+- Slot 2, Position 2 (bottom-center)
+- Slot 2, Position 3 (bottom-right)
 
-## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
+### Impact
+- No data model changes
+- No query changes
+- No submission logic changes
+- Pure display-order sort applied after data is already built
 
-### Format
-`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
-- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
-- No category/subcategory → `XX-482910`
-
-### What was implemented:
-
-1. **`src/lib/skuGenerator.ts`** — Rewritten with:
-   - `generateCode(name)` — extracts first letter of each word, max 2 chars
-   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
-   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
-
-2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
-
-3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
-
-4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
-
-5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
-
-### Uniqueness guarantees:
-- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
-- **Retry loop** regenerates SKU on collision, up to 3 attempts
-- **Single helper function** used by all item creation flows
