@@ -345,8 +345,9 @@ Deno.serve(async (req) => {
         updateData.capacity = s.newToyCapacity;
         updateData.coin_acceptor = s.newPricePerUnit;
       } else {
-        if (s.toyId) updateData.current_product_id = s.toyId;
+        // Only set current_product_id during installation — routine visits must NOT touch it
         if (visitType === "installation") {
+          if (s.toyId) updateData.current_product_id = s.toyId;
           updateData.capacity = s.capacity;
           updateData.coin_acceptor = s.pricePerUnit;
         }
