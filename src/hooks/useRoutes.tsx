@@ -48,6 +48,8 @@ export interface SlotData {
   machine_serial: string;
   location_id: string;
   product_name: string | null;
+  spot_id: string;
+  spot_name: string;
 }
 
 export interface MaintenanceTicket {
