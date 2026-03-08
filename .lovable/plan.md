@@ -1,83 +1,82 @@
+## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
+### What was implemented:
 
-## Bug Root Cause Analysis
+1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
 
-**Three interconnected bugs caused the data corruption:**
+2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
 
-### Bug 1 — Frontend Cache Poisoning (`NewVisitReport.tsx`, line 626)
+3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
 
-```
-toyId: cs.toyId || slot.toyId,
-```
+4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
 
-The form auto-caches to localStorage on every change. When the operator opens a new visit for the same spot, the cache overlay restores `toyId` from the **previous** form session. If the slot's product was swapped between visits, the cached `toyId` is stale — it points to the OLD product (SLIME BLANDIBLUE) instead of the CURRENT one (POKEMON 55MM).
+5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
 
-Meanwhile, `previousProductId` (line 587) is always freshly initialized from `slot.current_product_id` and is **never** restored from cache. This created the mismatch:
-- `toyId` = SLIME (stale cache) 
-- `previousProductId` = POKEMON (fresh from DB)
+6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
 
-**Evidence:** The snapshot correctly recorded `previous_product_id` = POKEMON (from `previousProductId`), but the ledger and line items used `toyId` = SLIME.
+7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
 
-### Bug 2 — Edge Function Overwrites `current_product_id` (line 348)
-
-```typescript
-} else {
-  if (s.toyId) updateData.current_product_id = s.toyId;
-```
-
-During a normal (non-swap, non-installation) visit, the edge function **rewrites** `machine_slots.current_product_id` with the stale `toyId`. This corrupted the slot from POKEMON to SLIME. The slot now shows `current_product_id = SLIME` and `current_stock = -120` (because the ledger recorded sales/removals against the wrong item).
-
-For routine visits, `current_product_id` should NEVER be touched — only installations and swaps change the product.
-
-### Bug 3 — No Safety Net in Edge Function Normal Flow
-
-The normal flow uses `s.toyId` everywhere (lines 517, 549, 564, 602-604) instead of the more authoritative `s.previousProductId || s.toyId`. Even without the cache bug, this is fragile.
+### Architecture now:
+- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
+- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
+- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
+- **Audit trail**: Complete history of every stock movement with performer tracking
 
 ---
 
-## Fix Plan (3 files, no migrations)
+## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
 
-### 1. `src/pages/NewVisitReport.tsx` (line 626)
+### Format
+`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
+- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
+- No category/subcategory → `XX-482910`
 
-**Remove `toyId` from cache restoration.** The product identity must always come fresh from the DB, never from stale cache. Also remove `toyName` cache restore since it follows `toyId`.
+### What was implemented:
 
-Change the cache overlay block to remove lines that restore `toyId` and `toyName`:
-```typescript
-// REMOVED: toyId: cs.toyId || slot.toyId,
-// REMOVED: toyName cache restore
-// Keep all other restorable fields (unitsSold, unitsRefilled, etc.)
-```
+1. **`src/lib/skuGenerator.ts`** — Rewritten with:
+   - `generateCode(name)` — extracts first letter of each word, max 2 chars
+   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
+   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
 
-### 2. `supabase/functions/submit-visit-report/index.ts` — machine_slots update (lines 346-352)
+2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
-Only set `current_product_id` during **installation** visits. For routine/audit/maintenance visits, the product does not change:
+3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
 
-```typescript
-} else {
-  if (visitType === "installation") {
-    if (s.toyId) updateData.current_product_id = s.toyId;
-    updateData.capacity = s.capacity;
-    updateData.coin_acceptor = s.pricePerUnit;
-  }
-}
-```
+4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
-### 3. `supabase/functions/submit-visit-report/index.ts` — normal flow product ID (lines 506-615)
+5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
 
-Add a safety net: derive the authoritative product ID from `previousProductId` first, falling back to `toyId`:
+### Uniqueness guarantees:
+- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
+- **Retry loop** regenerates SKU on collision, up to 3 attempts
+- **Single helper function** used by all item creation flows
 
-```typescript
-// === NORMAL (NON-SWAP) FLOW ===
-const productId = s.previousProductId || s.toyId;
-if (!productId) continue;
-```
+---
 
-Then replace all `s.toyId` references in the normal flow (slot ledger entries and warehouse ledger entries) with `productId`. This ensures even if `toyId` is stale, the correct product from the DB-sourced snapshot is used.
+## ✅ COMPLETED: Sales Order System with Atomic RPC
 
-### Files Modified
+### What was implemented:
 
-| File | Change |
-|------|--------|
-| `src/pages/NewVisitReport.tsx` | Remove `toyId`/`toyName` from cache overlay (line 626-628) |
-| `supabase/functions/submit-visit-report/index.ts` | Guard `current_product_id` update to installation-only (line 348); use `previousProductId \|\| toyId` in normal flow (lines 507-614) |
+1. **BEFORE INSERT trigger `compute_ledger_running_balance`** — Auto-computes `running_balance` on `inventory_ledger` inserts. All callers (existing and new) no longer need to compute it — the trigger overwrites whatever value is passed. Existing code continues working with zero breakage.
 
+2. **`sales` table** — Header with `sale_number`, `sale_date`, `buyer_name`, `buyer_contact`, `warehouse_id`, `subtotal`, `tax_rate`, `tax_amount`, `total_amount`, `currency`, `paid`, `status`, `notes`, `created_by`. RLS enabled.
+
+3. **`sale_items` table** — Line items with `sale_id`, `item_detail_id`, `quantity`, `unit_price`, `total_price`. Cascading delete on sale. RLS enabled.
+
+4. **`create_sales_order` RPC** — SECURITY DEFINER PostgreSQL function. Accepts single JSON payload. Atomically inserts sale header, all line items, and `inventory_ledger` entries (movement_type: `warehouse_sale`, negative quantity). Running balance = 0 placeholder (trigger computes real value). Full transaction safety.
+
+5. **`useSales.tsx` hook** — Queries sales with nested items, warehouses, item catalog. `createSale` mutation calls RPC. `useStockCheck` for pre-submit validation.
+
+6. **`Sales.tsx` list page** — Searchable table with sale number, buyer, date, items count, total, paid badge.
+
+7. **`NewSale.tsx` form** — Multi-line item entry with warehouse selection, tax rate, buyer info. Soft stock warning via AlertDialog when quantity exceeds `quantity_on_hand` — user can confirm and proceed (allows negative inventory).
+
+8. **`SaleDetail.tsx`** — Read-only detail with header cards, line items table.
+
+9. **Sidebar + routing** — DollarSign icon under Supply Chain. Routes: `/sales`, `/sales/new`, `/sales/:id`.
+
+### Architecture:
+- **Single atomic write path**: All sales go through `create_sales_order` RPC (no multi-step client inserts)
+- **No running_balance in frontend**: RPC passes `0`, BEFORE INSERT trigger computes correct value
+- **Soft stock warnings**: UI warns but allows proceeding — inventory can go negative
+- **Ledger integrity**: Every sale creates `warehouse_sale` ledger entries, existing AFTER INSERT trigger syncs `inventory.quantity_on_hand`
