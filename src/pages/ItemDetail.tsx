@@ -635,8 +635,6 @@ export default function ItemDetail() {
   const totalRevenue = (salesData || []).reduce(
     (sum, s) => sum + (Number(s.cash_collected) || 0), 0
   );
-  const grossProfit = totalRevenue - totalInventoryCost;
-  const marginPct = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
   const totalReceived = purchaseBatches.reduce(
     (sum: number, b: any) => sum + (b.quantity_received || 0), 0
   );
