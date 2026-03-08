@@ -1399,15 +1399,29 @@ export default function ItemDetail() {
           <TabsContent value="ledger">
             <Card>
               <CardContent className="p-2 sm:p-4">
+                {/* View Toggle */}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-medium text-foreground">
+                    {ledgerView === "logistics" ? "Logistics View" : "Accounting View"}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Raw Accounting</span>
+                    <Switch
+                      checked={ledgerView === "accounting"}
+                      onCheckedChange={(checked) => setLedgerView(checked ? "accounting" : "logistics")}
+                    />
+                  </div>
+                </div>
+
                 {ledgerEntries.length === 0 ? (
                   <p className="text-muted-foreground p-4">No ledger entries yet.</p>
-                ) : (
+                ) : ledgerView === "accounting" ? (
+                  /* ===== ACCOUNTING VIEW (raw, current behavior + Performed By) ===== */
                   <>
                     <div className="space-y-1">
                       {ledgerEntries.map((entry) => {
-                        const locationLabel = warehouseStock.find((w: any) => w.warehouse?.id === entry.warehouse_id)?.warehouse?.name || "Warehouse";
+                        const locationLabel = warehouseNameMap.get(entry.warehouse_id || "") || "Warehouse";
                         
-                        // Resolve actual event date
                         let eventDate = entry.created_at;
                         if (entry.reference_id && entry.reference_type === "visit" && (visitDatesMap as any)[entry.reference_id]) {
                           eventDate = (visitDatesMap as any)[entry.reference_id];
@@ -1415,14 +1429,9 @@ export default function ItemDetail() {
                           eventDate = (purchaseDatesMap as any)[entry.reference_id];
                         }
 
-                        // Categorize: In / Dep / Out (warehouse-only view)
-                        // IN: Warehouse inbound (positive qty) — receives, returns from field, surplus adjustments
                         const isIn = entry.quantity > 0;
-                        // DEP: Warehouse outbound to field (refill, swap refill — negative qty)
                         const isDep = entry.quantity < 0 && ["refill", "swap_out"].includes(entry.movement_type);
-                        // OUT: Shortage adjustments (negative qty, not deployment)
                         const isOut = entry.quantity < 0 && !isDep;
-
                         const inward = isIn ? entry.quantity : null;
                         const deployed = isDep ? Math.abs(entry.quantity) : null;
                         const outward = isOut ? Math.abs(entry.quantity) : null;
@@ -1432,7 +1441,6 @@ export default function ItemDetail() {
                             key={entry.id}
                             className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 border-b border-border/40 last:border-0"
                           >
-                            {/* Left: date + type badge */}
                             <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <Badge className={`text-[10px] px-1.5 py-0 ${movementColors[entry.movement_type] || ""}`}>
@@ -1446,7 +1454,6 @@ export default function ItemDetail() {
                                 {entry.notes || "—"}
                               </span>
                             </div>
-                            {/* Right: In / Dep / Out / Bal + date */}
                             <div className="flex items-center gap-3 shrink-0">
                               <div className="text-right min-w-[35px]">
                                 <span className="text-[10px] text-muted-foreground block">In</span>
@@ -1470,6 +1477,12 @@ export default function ItemDetail() {
                                 <span className="text-[10px] text-muted-foreground block">Bal</span>
                                 <span className="text-sm font-medium text-foreground">{entry.running_balance}</span>
                               </div>
+                              <div className="text-right min-w-[50px]">
+                                <span className="text-[10px] text-muted-foreground block">By</span>
+                                <span className="text-[11px] font-medium text-foreground truncate">
+                                  {entry.performed_by ? performerMap.get(entry.performed_by) || "—" : "—"}
+                                </span>
+                              </div>
                               <span className="text-[10px] text-muted-foreground w-16 text-right">
                                 {eventDate ? format(new Date(eventDate), "MMM d, yy") : "—"}
                               </span>
@@ -1492,9 +1505,7 @@ export default function ItemDetail() {
                       <span className="font-semibold text-foreground">Totals</span>
                       <div className="flex gap-4">
                         <span className="text-chart-2 font-medium">
-                          In: +{ledgerEntries.reduce((s, e) => {
-                            return s + (e.quantity > 0 ? e.quantity : 0);
-                          }, 0).toLocaleString()}
+                          In: +{ledgerEntries.reduce((s, e) => s + (e.quantity > 0 ? e.quantity : 0), 0).toLocaleString()}
                         </span>
                         <span className="font-medium text-primary">
                           Dep: {ledgerEntries.reduce((s, e) => {
@@ -1512,6 +1523,126 @@ export default function ItemDetail() {
                       </div>
                     </div>
                   </>
+                ) : (
+                  /* ===== LOGISTICS VIEW (grouped transfers, color-coded) ===== */
+                  <div className="space-y-1">
+                    {logisticsRows.map((row, idx) => {
+                      if (row.type === "transfer") {
+                        const { outEntry, inEntry } = row;
+                        const originName = warehouseNameMap.get(outEntry?.warehouse_id || "") || "Unknown";
+                        const destName = warehouseNameMap.get(inEntry?.warehouse_id || "") || "Unknown";
+                        const qty = Math.abs(outEntry?.quantity || inEntry?.quantity || 0);
+                        const performer = outEntry?.performed_by || inEntry?.performed_by;
+                        const date = outEntry?.created_at || inEntry?.created_at;
+
+                        return (
+                          <div
+                            key={`transfer-${idx}`}
+                            className="flex items-center gap-2 p-2 rounded-md border-l-2 border-l-primary bg-primary/5 hover:bg-primary/10 border-b border-border/40 last:border-b-0"
+                          >
+                            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge className="text-[10px] px-1.5 py-0 bg-primary/10 text-primary border-primary/20">
+                                  transfer
+                                </Badge>
+                                <span className="text-xs font-medium text-foreground flex items-center gap-1">
+                                  {originName}
+                                  <ArrowRightLeft className="h-3.5 w-3.5 text-primary inline mx-0.5" />
+                                  {destName}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-muted-foreground truncate">
+                                {outEntry?.notes || inEntry?.notes || "—"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <div className="text-right min-w-[40px]">
+                                <span className="text-[10px] text-muted-foreground block">Qty</span>
+                                <span className="text-sm font-semibold text-primary">{qty}</span>
+                              </div>
+                              <div className="text-right min-w-[50px]">
+                                <span className="text-[10px] text-muted-foreground block">By</span>
+                                <span className="text-[11px] font-medium text-foreground truncate">
+                                  {performer ? performerMap.get(performer) || "—" : "—"}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground w-16 text-right">
+                                {date ? format(new Date(date), "MMM d, yy") : "—"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Single entry row
+                      const entry = row.entry;
+                      const isPositive = entry.quantity > 0;
+                      const isNegativeOut = entry.quantity < 0 && ["sale", "warehouse_sale", "false_coin", "removal", "swap_out", "assembly_consumption"].includes(entry.movement_type);
+                      const locationLabel = warehouseNameMap.get(entry.warehouse_id || "") || "—";
+
+                      // Color-coded left border
+                      let borderClass = "border-l-border";
+                      if (isPositive) borderClass = "border-l-chart-2";
+                      else if (["sale", "warehouse_sale", "false_coin"].includes(entry.movement_type)) borderClass = "border-l-destructive";
+                      else if (isNegativeOut) borderClass = "border-l-chart-4";
+
+                      let eventDate = entry.created_at;
+                      if (entry.reference_id && entry.reference_type === "visit" && (visitDatesMap as any)[entry.reference_id]) {
+                        eventDate = (visitDatesMap as any)[entry.reference_id];
+                      } else if (entry.reference_id && entry.reference_type === "purchase" && (purchaseDatesMap as any)[entry.reference_id]) {
+                        eventDate = (purchaseDatesMap as any)[entry.reference_id];
+                      }
+
+                      return (
+                        <div
+                          key={entry.id}
+                          className={`flex items-center gap-2 p-2 rounded-md border-l-2 ${borderClass} hover:bg-muted/50 border-b border-border/40 last:border-b-0`}
+                        >
+                          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge className={`text-[10px] px-1.5 py-0 ${movementColors[entry.movement_type] || ""}`}>
+                                {entry.movement_type.replace(/_/g, " ")}
+                              </Badge>
+                              {locationLabel !== "—" && (
+                                <span className="text-xs text-muted-foreground">
+                                  🏭 {locationLabel}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-muted-foreground truncate">
+                              {entry.notes || "—"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="text-right min-w-[45px]">
+                              <span className="text-[10px] text-muted-foreground block">Mov</span>
+                              <span className={`text-sm font-semibold ${isPositive ? "text-chart-2" : "text-destructive"}`}>
+                                {entry.quantity > 0 ? `+${entry.quantity}` : `${entry.quantity}`}
+                              </span>
+                            </div>
+                            <div className="text-right min-w-[50px]">
+                              <span className="text-[10px] text-muted-foreground block">By</span>
+                              <span className="text-[11px] font-medium text-foreground truncate">
+                                {entry.performed_by ? performerMap.get(entry.performed_by) || "—" : "—"}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground w-16 text-right">
+                              {eventDate ? format(new Date(eventDate), "MMM d, yy") : "—"}
+                            </span>
+                            {isAdmin && entry.movement_type !== "reversal" && (
+                              <button
+                                onClick={() => setShowReverseConfirm(entry)}
+                                className="text-muted-foreground hover:text-destructive transition-colors p-0.5"
+                                title="Reverse this entry"
+                              >
+                                <Undo2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </CardContent>
             </Card>
