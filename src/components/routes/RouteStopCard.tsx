@@ -24,7 +24,7 @@ interface Props {
   onRemoveStop: (stopId: string) => void;
 }
 
-export function RouteStopCard({ stop, slots, tickets, onUpdateStop, onRemoveStop }: Props) {
+export function RouteStopCard({ stop, slots, tickets, demandMap, onUpdateStop, onRemoveStop }: Props) {
   const [swapOpen, setSwapOpen] = useState(false);
   const isMobile = useIsMobile();
   const locationSlots = slots.filter((s) => s.location_id === stop.location_id);
