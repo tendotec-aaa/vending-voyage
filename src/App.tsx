@@ -28,6 +28,8 @@ import NewSale from "./pages/NewSale";
 import SaleDetail from "./pages/SaleDetail";
 import Spots from "./pages/Spots";
 import SpotDetail from "./pages/SpotDetail";
+import RoutesPage from "./pages/Routes";
+import RouteDetail from "./pages/RouteDetail";
 import Users from "./pages/Users";
 import UserDetail from "./pages/UserDetail";
 import Settings from "./pages/Settings";
