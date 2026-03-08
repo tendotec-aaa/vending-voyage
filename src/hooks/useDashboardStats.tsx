@@ -240,7 +240,8 @@ export function useDashboardStats(
         .from("inventory")
         .select("quantity_on_hand, item_detail:item_details(name, sku), warehouse:warehouses(name)")
         .not("warehouse_id", "is", null)
-        .lt("quantity_on_hand", 100);
+        .lt("quantity_on_hand", 4000)
+        .neq("quantity_on_hand", 0);
       if (error) throw error;
       return (data || []).map((row: any) => ({
         itemName: row.item_detail?.name ?? "Unknown",
@@ -262,7 +263,7 @@ export function useDashboardStats(
 
       // Client-side filter for deployed machines only
       return (data || [])
-        .filter((row: any) => row.machine?.status === "deployed")
+        .filter((row: any) => row.machine?.status === "deployed" && row.machine?.setup?.spot != null)
         .map((row: any) => {
           const locationName =
             row.machine?.setup?.spot?.location?.name ?? "Unknown";

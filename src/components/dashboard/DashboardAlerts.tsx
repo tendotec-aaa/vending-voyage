@@ -80,7 +80,7 @@ export function DashboardAlerts({
             <AlertTitle>
               <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
                 <Package className="h-4 w-4" />
-                <span>{lowStockItems.length} Warehouse Item{lowStockItems.length > 1 ? "s" : ""} Below 100 Units</span>
+                <span>{lowStockItems.length} Warehouse Item{lowStockItems.length > 1 ? "s" : ""} Below 4,000 Units</span>
                 <ChevronDown className={`h-4 w-4 ml-auto transition-transform ${lowStockOpen ? "rotate-180" : ""}`} />
               </CollapsibleTrigger>
             </AlertTitle>
