@@ -623,9 +623,8 @@ export default function NewVisitReport() {
             issueDescription: cs.issueDescription || "",
             severity: cs.severity || "",
             replaceAllToys: cs.replaceAllToys || false,
-            toyId: cs.toyId || slot.toyId,
-            // Always prefer the freshly resolved name from products over cached "Unassigned"
-            toyName: slot.toyName !== "Unassigned" ? slot.toyName : (cs.toyName && cs.toyName !== "Unassigned" ? cs.toyName : slot.toyName),
+            // toyId and toyName are NEVER restored from cache — product identity must always come fresh from DB
+            // to prevent stale cache from pointing to the wrong product after a swap
             pricePerUnit: cs.pricePerUnit || slot.pricePerUnit,
             capacity: cs.capacity || slot.capacity,
             toyCapacity: cs.toyCapacity || slot.toyCapacity,
