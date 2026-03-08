@@ -284,7 +284,7 @@ export function useRouteDetail(routeId: string | undefined) {
         .from("visit_line_items")
         .select("slot_id, quantity_added, spot_visit_id")
         .in("spot_visit_id", visitIds)
-        .in("action_type", ["refill", "swap_in"]);
+        .in("action_type", ["restock", "swap_in"]);
       if (!lineItems?.length) return new Map();
 
       // Aggregate: total quantity_added per slot, divided by number of visits for that spot
