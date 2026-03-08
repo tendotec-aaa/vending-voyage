@@ -28,13 +28,14 @@ export default function RouteDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { updateRoute } = useRoutes();
-  const { routeQuery, stopsQuery, slotsQuery, maintenanceQuery, addStop, removeStop, updateStop } = useRouteDetail(id);
+  const { routeQuery, stopsQuery, slotsQuery, maintenanceQuery, demandMapQuery, addStop, removeStop, updateStop } = useRouteDetail(id);
   const [addLocationId, setAddLocationId] = useState("");
 
   const route = routeQuery.data;
   const stops = stopsQuery.data || [];
   const slots = slotsQuery.data || [];
   const tickets = maintenanceQuery.data || [];
+  const demandMap = demandMapQuery.data || new Map<string, number>();
   const stopLocationIds = stops.map((s) => s.location_id).filter(Boolean);
 
   // Fetch locations for adding stops
@@ -111,7 +112,10 @@ export default function RouteDetail() {
             pickMap.set(swap.newProductId, existing);
           } else {
             if (!slot.current_product_id || !slot.product_name) continue;
-            const needed = Math.ceil(((slot.capacity || 150) - (slot.current_stock || 0)) * multiplier);
+            const historicalDemand = demandMap.get(slot.id);
+            const needed = Math.ceil(
+              (historicalDemand ?? Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0))) * multiplier
+            );
             if (needed <= 0) continue;
             lines.push(`  [${spotLabel}] ➔ REFILL: ${slot.product_name} (${needed} units)`);
             const existing = pickMap.get(slot.current_product_id) || { productName: slot.product_name, refillQty: 0, swapQty: 0 };
@@ -245,6 +249,7 @@ export default function RouteDetail() {
                 key={stop.id}
                 stop={stop}
                 slots={slots}
+                demandMap={demandMap}
                 tickets={tickets}
                 onUpdateStop={(u) => updateStop.mutate(u)}
                 onRemoveStop={(sid) => removeStop.mutate(sid)}
@@ -270,7 +275,7 @@ export default function RouteDetail() {
           </TabsContent>
 
           <TabsContent value="picklist" className="mt-4">
-            <PickList stops={stops} slots={slots} tickets={tickets} />
+            <PickList stops={stops} slots={slots} tickets={tickets} demandMap={demandMap} />
           </TabsContent>
         </Tabs>
       </div>

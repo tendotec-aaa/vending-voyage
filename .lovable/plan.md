@@ -1,50 +1,82 @@
+## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
+### What was implemented:
 
-## Predictive Demand Loading & Swap-Only Logic
+1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
 
-### Overview
+2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
 
-Four files need changes. No database migrations required -- all data already exists in `spot_visits` and `visit_line_items`.
+3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
 
-### 1. `src/hooks/useRoutes.tsx` -- Add `demandMapQuery`
+4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
 
-New query inside `useRouteDetail`, enabled when `slotsQuery.data` has items:
+5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
 
-- Extract unique `spot_id` values from the slots data
-- For each spot, fetch the last 2 `spot_visits` ordered by `visit_date DESC` (batch query using `.in("spot_id", spotIds).order("visit_date", { ascending: false })`)
-- Since Supabase doesn't support per-group LIMIT, fetch all visits for those spots, then in JS keep only the 2 most recent per `spot_id`
-- With those visit IDs, fetch `visit_line_items` where `action_type` is `refill` or `swap_in`, selecting `slot_id` and `quantity_added`
-- Aggregate in JS: for each `slot_id`, compute `total quantity_added / number of visits` (i.e., average per visit across the last 2 visits)
-- Return `Map<string, number>` (slot_id to avg demand)
-- Expose `demandMapQuery` from the hook return object
+6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
 
-### 2. `src/components/routes/PickList.tsx` -- Demand-based refill + swap-only fix
+7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
 
-- Add `demandMap: Map<string, number>` prop
-- In the refill branch (the `else`), replace the formula:
-  ```
-  // OLD: (capacity - current_stock) * multiplier
-  // NEW:
-  const historicalDemand = demandMap.get(slot.id);
-  const needed = Math.ceil(
-    (historicalDemand ?? Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0))) * multiplier
-  );
-  ```
-- The swap branch already correctly skips the refill `else`, so swapped slots won't generate ghost refills (confirmed by code review -- the `if/else` structure is correct)
+### Architecture now:
+- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
+- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
+- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
+- **Audit trail**: Complete history of every stock movement with performer tracking
 
-### 3. `src/components/routes/RouteStopCard.tsx` -- Same formula for mobile/desktop summaries
+---
 
-- Add `demandMap: Map<string, number>` prop
-- Update `slotSummaries` computation (line 50) to use the same historical demand formula instead of `capacity - current_stock`
+## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
 
-### 4. `src/pages/RouteDetail.tsx` -- Wire demandMap + update Copy Summary
+### Format
+`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
+- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
+- No category/subcategory → `XX-482910`
 
-- Destructure `demandMapQuery` from `useRouteDetail(id)`
-- Create `const demandMap = demandMapQuery.data || new Map<string, number>()`
-- Pass `demandMap` to `<PickList>` and `<RouteStopCard>`
-- Update `handleCopyRouteSummary` (line 114) to use the same historical demand formula in the refill calculation
+### What was implemented:
 
-### Constraints confirmed
+1. **`src/lib/skuGenerator.ts`** — Rewritten with:
+   - `generateCode(name)` — extracts first letter of each word, max 2 chars
+   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
+   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
 
-All calculations are read-only aggregations. No writes to `machine_slots`, `inventory`, or `inventory_ledger` occur. This remains a planning-only tool.
+2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
+3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
+
+4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
+
+5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
+
+### Uniqueness guarantees:
+- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
+- **Retry loop** regenerates SKU on collision, up to 3 attempts
+- **Single helper function** used by all item creation flows
+
+---
+
+## ✅ COMPLETED: Sales Order System with Atomic RPC
+
+### What was implemented:
+
+1. **BEFORE INSERT trigger `compute_ledger_running_balance`** — Auto-computes `running_balance` on `inventory_ledger` inserts. All callers (existing and new) no longer need to compute it — the trigger overwrites whatever value is passed. Existing code continues working with zero breakage.
+
+2. **`sales` table** — Header with `sale_number`, `sale_date`, `buyer_name`, `buyer_contact`, `warehouse_id`, `subtotal`, `tax_rate`, `tax_amount`, `total_amount`, `currency`, `paid`, `status`, `notes`, `created_by`. RLS enabled.
+
+3. **`sale_items` table** — Line items with `sale_id`, `item_detail_id`, `quantity`, `unit_price`, `total_price`. Cascading delete on sale. RLS enabled.
+
+4. **`create_sales_order` RPC** — SECURITY DEFINER PostgreSQL function. Accepts single JSON payload. Atomically inserts sale header, all line items, and `inventory_ledger` entries (movement_type: `warehouse_sale`, negative quantity). Running balance = 0 placeholder (trigger computes real value). Full transaction safety.
+
+5. **`useSales.tsx` hook** — Queries sales with nested items, warehouses, item catalog. `createSale` mutation calls RPC. `useStockCheck` for pre-submit validation.
+
+6. **`Sales.tsx` list page** — Searchable table with sale number, buyer, date, items count, total, paid badge.
+
+7. **`NewSale.tsx` form** — Multi-line item entry with warehouse selection, tax rate, buyer info. Soft stock warning via AlertDialog when quantity exceeds `quantity_on_hand` — user can confirm and proceed (allows negative inventory).
+
+8. **`SaleDetail.tsx`** — Read-only detail with header cards, line items table.
+
+9. **Sidebar + routing** — DollarSign icon under Supply Chain. Routes: `/sales`, `/sales/new`, `/sales/:id`.
+
+### Architecture:
+- **Single atomic write path**: All sales go through `create_sales_order` RPC (no multi-step client inserts)
+- **No running_balance in frontend**: RPC passes `0`, BEFORE INSERT trigger computes correct value
+- **Soft stock warnings**: UI warns but allows proceeding — inventory can go negative
+- **Ledger integrity**: Every sale creates `warehouse_sale` ledger entries, existing AFTER INSERT trigger syncs `inventory.quantity_on_hand`
