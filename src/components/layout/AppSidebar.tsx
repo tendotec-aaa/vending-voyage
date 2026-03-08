@@ -49,6 +49,7 @@ const assetsItems = [
 const supplyChainItems = [
   { title: "Suppliers", icon: Building2, url: "/suppliers" },
   { title: "Purchases", icon: ShoppingCart, url: "/purchases" },
+  { title: "Sales", icon: DollarSign, url: "/sales" },
 ];
 
 const locationsItems = [
