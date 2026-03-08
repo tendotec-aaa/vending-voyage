@@ -597,12 +597,12 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Return removed units to warehouse
-        if (s.unitsRemoved > 0) {
-          const whBal = await getRunningBalance(db, s.toyId, sourceWarehouseId, null);
+        // Return removed units to return vehicle/warehouse
+        if (s.unitsRemoved > 0 && removalWarehouseId) {
+          const whBal = await getRunningBalance(db, s.toyId, removalWarehouseId, null);
           await appendLedger(db, {
             item_detail_id: s.toyId,
-            warehouse_id: sourceWarehouseId,
+            warehouse_id: removalWarehouseId,
             movement_type: "removal",
             quantity: s.unitsRemoved,
             running_balance: whBal + s.unitsRemoved,
