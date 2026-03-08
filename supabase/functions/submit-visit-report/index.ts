@@ -171,7 +171,11 @@ Deno.serve(async (req) => {
       observationSeverity,
       slots,
       sourceWarehouseId,
+      returnWarehouseId,
     } = payload;
+
+    // Determine the warehouse for removals/swap-outs (fall back to source for backward compat)
+    const removalWarehouseId = returnWarehouseId || sourceWarehouseId;
 
     const warnings: string[] = [];
 
