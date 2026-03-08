@@ -890,6 +890,10 @@ export default function NewVisitReport() {
       toast.error("Please select a visit type");
       return;
     }
+    if (requiresReturnVehicle && !returnWarehouseId) {
+      toast.error("Please select a return vehicle");
+      return;
+    }
     if (!confirmAccurate) {
       toast.error("Please confirm the report is accurate");
       return;
