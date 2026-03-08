@@ -1,13 +1,28 @@
+import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { RecentVisits } from "@/components/dashboard/RecentVisits";
 import { RevenueChart } from "@/components/dashboard/RevenueChart";
-import { MachineStatusChart } from "@/components/dashboard/MachineStatusChart";
+import { MachineIssues } from "@/components/dashboard/MachineIssues";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { UpcomingRoutes } from "@/components/dashboard/UpcomingRoutes";
-import { DollarSign, TrendingUp, Truck, ClipboardCheck } from "lucide-react";
+import { useDashboardStats } from "@/hooks/useDashboardStats";
+import { DollarSign, TrendingUp, Truck, MapPin } from "lucide-react";
 
 const Index = () => {
+  const [issuesPeriod, setIssuesPeriod] = useState<"weekly" | "monthly">("weekly");
+  const stats = useDashboardStats(issuesPeriod);
+
+  const fmtCurrency = (n: number) =>
+    "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const fmtPct = (pct: number) => {
+    const sign = pct >= 0 ? "+" : "";
+    return `${sign}${pct.toFixed(1)}%`;
+  };
+
+  const weekTotal = stats.chartData?.reduce((s, d) => s + d.revenue, 0) ?? 0;
+
   return (
     <AppLayout 
       title="Dashboard" 
@@ -16,53 +31,102 @@ const Index = () => {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <KPICard
-          title="Today's Revenue"
-          value="$3,847"
-          change="+18.2% vs yesterday"
-          changeType="positive"
+          title="Monthly Revenue"
+          value={fmtCurrency(stats.monthlyRevenue?.current ?? 0)}
+          change={
+            stats.monthlyRevenue
+              ? `${fmtPct(stats.monthlyRevenue.pctChange)} vs last month`
+              : undefined
+          }
+          changeType={
+            stats.monthlyRevenue
+              ? stats.monthlyRevenue.pctChange > 0
+                ? "positive"
+                : stats.monthlyRevenue.pctChange < 0
+                ? "negative"
+                : "neutral"
+              : "neutral"
+          }
           icon={DollarSign}
           iconColor="text-emerald-600"
+          loading={stats.isLoadingMonthly}
         />
         <KPICard
           title="Weekly Revenue"
-          value="$25,604"
-          change="+12.5% vs last week"
-          changeType="positive"
+          value={fmtCurrency(stats.weeklyRevenue?.current ?? 0)}
+          change={
+            stats.weeklyRevenue
+              ? `${fmtPct(stats.weeklyRevenue.pctChange)} vs last week`
+              : undefined
+          }
+          changeType={
+            stats.weeklyRevenue
+              ? stats.weeklyRevenue.pctChange > 0
+                ? "positive"
+                : stats.weeklyRevenue.pctChange < 0
+                ? "negative"
+                : "neutral"
+              : "neutral"
+          }
           icon={TrendingUp}
           iconColor="text-primary"
+          loading={stats.isLoadingWeekly}
         />
         <KPICard
           title="Active Machines"
-          value="142"
-          change="187 total in fleet"
+          value={String(stats.activeMachines?.deployed ?? 0)}
+          change={
+            stats.activeMachines
+              ? `${stats.activeMachines.total} total in fleet`
+              : undefined
+          }
           changeType="neutral"
           icon={Truck}
           iconColor="text-amber-600"
+          loading={stats.isLoadingMachines}
         />
         <KPICard
-          title="Visits Today"
-          value="24"
-          change="32 scheduled"
+          title="Active Spots"
+          value={String(stats.activeSpots?.active ?? 0)}
+          change={
+            stats.activeSpots
+              ? `${stats.activeSpots.totalLocations} locations`
+              : undefined
+          }
           changeType="neutral"
-          icon={ClipboardCheck}
+          icon={MapPin}
           iconColor="text-violet-600"
+          loading={stats.isLoadingSpots}
         />
       </div>
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="lg:col-span-2">
-          <RevenueChart />
+          <RevenueChart
+            data={stats.chartData}
+            weekTotal={weekTotal}
+            isLoading={stats.isLoadingChart}
+          />
         </div>
         <div>
-          <MachineStatusChart />
+          <MachineIssues
+            openTickets={stats.machineIssues?.openTickets ?? []}
+            completedTickets={stats.machineIssues?.completedTickets ?? []}
+            isLoading={stats.isLoadingIssues}
+            period={issuesPeriod}
+            onPeriodChange={setIssuesPeriod}
+          />
         </div>
       </div>
 
       {/* Secondary Content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <RecentVisits />
+          <RecentVisits
+            visits={stats.recentVisits as any}
+            isLoading={stats.isLoadingVisits}
+          />
         </div>
         <div className="space-y-6">
           <QuickActions />

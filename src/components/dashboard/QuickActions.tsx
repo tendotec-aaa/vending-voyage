@@ -1,6 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, ClipboardList, Package, AlertTriangle } from "lucide-react";
+import { Layers, ClipboardList, Package, AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export function QuickActions() {
@@ -18,12 +18,12 @@ export function QuickActions() {
           <span className="text-sm">New Visit</span>
         </Button>
         <Button 
-          onClick={() => navigate("/machines/new")}
+          onClick={() => navigate("/warehouse/assembly/new")}
           variant="secondary"
           className="h-auto py-4 flex flex-col items-center gap-2"
         >
-          <Plus className="w-5 h-5" />
-          <span className="text-sm">Add Machine</span>
+          <Layers className="w-5 h-5" />
+          <span className="text-sm">Assemble Item</span>
         </Button>
         <Button 
           onClick={() => navigate("/inventory")}
