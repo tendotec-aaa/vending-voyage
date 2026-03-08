@@ -15,7 +15,8 @@ import {
    Warehouse,
    Boxes,
    Target,
-   DollarSign
+   DollarSign,
+   Route
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -36,6 +37,7 @@ const dashboardItem = { title: "Dashboard", icon: LayoutDashboard, url: "/" };
 
 const operationsItems = [
   { title: "Visit Reports", icon: ClipboardList, url: "/visits" },
+  { title: "Routes", icon: Route, url: "/routes" },
   { title: "Maintenance", icon: Wrench, url: "/maintenance" },
 ];
 

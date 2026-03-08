@@ -1,93 +1,82 @@
+## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
+### What was implemented:
 
-## Advanced Route Planning with Predictive Loading & Swaps
+1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
 
-This is a large feature spanning 6 new files and 2 modifications. The `routes` and `route_stops` tables already exist with the required columns (`demand_multiplier`, `planned_actions` JSONB, `sort_order`, `arrival_status`).
+2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
 
-### Files to Create
+3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
 
-| File | Purpose |
-|------|---------|
-| `src/hooks/useRoutes.tsx` | CRUD hook for routes + route_stops; queries for location/spot/machine/slot data needed by the pick list |
-| `src/pages/Routes.tsx` | Route list page with status badges, date, driver name |
-| `src/pages/RouteDetail.tsx` | Route builder + pick list view (single page with tabs) |
-| `src/components/routes/RouteStopCard.tsx` | Card per location stop: demand multiplier dropdown, planned swaps list, open maintenance tickets |
-| `src/components/routes/PickList.tsx` | Aggregated loading manifesto: groups items by product, shows refill + swap quantities, maintenance alerts |
-| `src/components/routes/PlannedSwapDialog.tsx` | Dialog to select a machine slot and pick a new product for a planned swap |
+4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
 
-### Files to Modify
+5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
 
-| File | Changes |
-|------|---------|
-| `src/App.tsx` | Add `/routes`, `/routes/:id` routes |
-| `src/components/layout/AppSidebar.tsx` | Add "Routes" link under Operations group with `Route` icon |
+6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
 
-### Data Flow & Queries
+7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
 
-**useRoutes hook:**
-- `routesQuery`: Fetch all routes with driver profile join
-- `routeDetailQuery(routeId)`: Fetch single route + its `route_stops` with location join, ordered by `sort_order`
-- `slotsForRoute(locationIds)`: Fetch all machine_slots for machines deployed at spots belonging to the selected locations (joins: `machine_slots -> machines -> setups -> spots -> locations`). Returns slot ID, current_product_id, current_stock, capacity, machine serial, slot number
-- `maintenanceForRoute(locationIds)`: Fetch open `maintenance_tickets` (status != 'completed') for the selected locations
-- `createRoute`, `updateRoute`, `deleteRoute` mutations
-- `addStop`, `removeStop`, `updateStop` mutations (update `demand_multiplier`, `planned_actions` JSONB)
+### Architecture now:
+- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
+- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
+- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
+- **Audit trail**: Complete history of every stock movement with performer tracking
 
-**planned_actions JSONB structure:**
-```json
-[
-  {
-    "type": "swap",
-    "slotId": "uuid",
-    "machineSerial": "SN-001",
-    "slotNumber": 1,
-    "oldProductId": "uuid",
-    "oldProductName": "SLIME 55MM",
-    "newProductId": "uuid", 
-    "newProductName": "POKEMON 55MM",
-    "capacity": 150
-  }
-]
-```
+---
 
-### Pick List Calculation (client-side, read-only)
+## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
 
-For each slot across all stops:
-1. Check if slot has a planned swap in that stop's `planned_actions`
-2. **If swap**: Add `capacity` units of `newProductId` to the pick list (ignore old product refill)
-3. **If no swap**: Add `Math.ceil((capacity - current_stock) * (1 + demand_multiplier))` units of `current_product_id`
-4. Aggregate by product across all stops, show totals
+### Format
+`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
+- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
+- No category/subcategory → `XX-482910`
 
-### Route Builder UI (RouteDetail page)
+### What was implemented:
 
-**Header**: Route name, date picker, driver dropdown (from `user_profiles`), status badge
+1. **`src/lib/skuGenerator.ts`** — Rewritten with:
+   - `generateCode(name)` — extracts first letter of each word, max 2 chars
+   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
+   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
 
-**Tabs:**
-- **Stops** tab: Sortable list of `RouteStopCard` components. Each card shows:
-  - Location name + address
-  - Demand multiplier dropdown (0%, 10%, 25%, 50%)
-  - Spots/machines summary (count of slots needing refill)
-  - "Plan Swap" button opening `PlannedSwapDialog`
-  - List of planned swaps with remove button
-  - Open maintenance tickets for that location (from `maintenance_tickets`)
-- **Pick List** tab: `PickList` component showing aggregated product quantities, grouped by product name, with total units needed
+2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
-**Add Stop**: Location combobox at the bottom, filtered to exclude already-added locations
+3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
 
-### Mobile Driver View
+4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
-When viewing a route on mobile, the Stops tab renders as a clean vertical checklist:
-- Location name + address
-- Per-slot action summary: "Refill: POKEMON 55MM x 45" or "Swap: SLIME -> POKEMON (150 units)"
-- Maintenance alerts in orange badges
-- No editing controls on mobile (read-only)
+5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
 
-### Sidebar Addition
+### Uniqueness guarantees:
+- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
+- **Retry loop** regenerates SKU on collision, up to 3 attempts
+- **Single helper function** used by all item creation flows
 
-Add `{ title: "Routes", icon: Route, url: "/routes" }` to the `operationsItems` array in `AppSidebar.tsx`, using the `Route` icon from lucide-react.
+---
 
-### Constraints
+## ✅ COMPLETED: Sales Order System with Atomic RPC
 
-- **No inventory mutations**: All data is read-only. No `inventory_ledger` inserts, no `machine_slots` updates
-- **Uses existing tables**: `routes` and `route_stops` with their existing columns
-- **The types.ts file won't have these tables** since they're not in the generated types yet. All Supabase queries will use `.from("routes")` with manual TypeScript interfaces in the hook
+### What was implemented:
 
+1. **BEFORE INSERT trigger `compute_ledger_running_balance`** — Auto-computes `running_balance` on `inventory_ledger` inserts. All callers (existing and new) no longer need to compute it — the trigger overwrites whatever value is passed. Existing code continues working with zero breakage.
+
+2. **`sales` table** — Header with `sale_number`, `sale_date`, `buyer_name`, `buyer_contact`, `warehouse_id`, `subtotal`, `tax_rate`, `tax_amount`, `total_amount`, `currency`, `paid`, `status`, `notes`, `created_by`. RLS enabled.
+
+3. **`sale_items` table** — Line items with `sale_id`, `item_detail_id`, `quantity`, `unit_price`, `total_price`. Cascading delete on sale. RLS enabled.
+
+4. **`create_sales_order` RPC** — SECURITY DEFINER PostgreSQL function. Accepts single JSON payload. Atomically inserts sale header, all line items, and `inventory_ledger` entries (movement_type: `warehouse_sale`, negative quantity). Running balance = 0 placeholder (trigger computes real value). Full transaction safety.
+
+5. **`useSales.tsx` hook** — Queries sales with nested items, warehouses, item catalog. `createSale` mutation calls RPC. `useStockCheck` for pre-submit validation.
+
+6. **`Sales.tsx` list page** — Searchable table with sale number, buyer, date, items count, total, paid badge.
+
+7. **`NewSale.tsx` form** — Multi-line item entry with warehouse selection, tax rate, buyer info. Soft stock warning via AlertDialog when quantity exceeds `quantity_on_hand` — user can confirm and proceed (allows negative inventory).
+
+8. **`SaleDetail.tsx`** — Read-only detail with header cards, line items table.
+
+9. **Sidebar + routing** — DollarSign icon under Supply Chain. Routes: `/sales`, `/sales/new`, `/sales/:id`.
+
+### Architecture:
+- **Single atomic write path**: All sales go through `create_sales_order` RPC (no multi-step client inserts)
+- **No running_balance in frontend**: RPC passes `0`, BEFORE INSERT trigger computes correct value
+- **Soft stock warnings**: UI warns but allows proceeding — inventory can go negative
+- **Ledger integrity**: Every sale creates `warehouse_sale` ledger entries, existing AFTER INSERT trigger syncs `inventory.quantity_on_hand`

@@ -28,6 +28,8 @@ import NewSale from "./pages/NewSale";
 import SaleDetail from "./pages/SaleDetail";
 import Spots from "./pages/Spots";
 import SpotDetail from "./pages/SpotDetail";
+import RoutesPage from "./pages/Routes";
+import RouteDetail from "./pages/RouteDetail";
 import Users from "./pages/Users";
 import UserDetail from "./pages/UserDetail";
 import Settings from "./pages/Settings";
@@ -62,6 +64,8 @@ const App = () => (
             <Route path="/setups" element={<ProtectedRoute><Setups /></ProtectedRoute>} />
             <Route path="/visits" element={<ProtectedRoute><Visits /></ProtectedRoute>} />
             <Route path="/visits/new" element={<ProtectedRoute><NewVisitReport /></ProtectedRoute>} />
+            <Route path="/routes" element={<ProtectedRoute><RoutesPage /></ProtectedRoute>} />
+            <Route path="/routes/:id" element={<ProtectedRoute><RouteDetail /></ProtectedRoute>} />
             <Route path="/visits/:id" element={<ProtectedRoute><VisitDetail /></ProtectedRoute>} />
             <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
             <Route path="/inventory/:id" element={<ProtectedRoute><ItemDetail /></ProtectedRoute>} />

@@ -1065,6 +1065,89 @@ export type Database = {
           },
         ]
       }
+      route_stops: {
+        Row: {
+          arrival_status: string | null
+          created_at: string | null
+          demand_multiplier: number | null
+          id: string
+          location_id: string | null
+          planned_actions: Json | null
+          route_id: string | null
+          sort_order: number | null
+        }
+        Insert: {
+          arrival_status?: string | null
+          created_at?: string | null
+          demand_multiplier?: number | null
+          id?: string
+          location_id?: string | null
+          planned_actions?: Json | null
+          route_id?: string | null
+          sort_order?: number | null
+        }
+        Update: {
+          arrival_status?: string | null
+          created_at?: string | null
+          demand_multiplier?: number | null
+          id?: string
+          location_id?: string | null
+          planned_actions?: Json | null
+          route_id?: string | null
+          sort_order?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "route_stops_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "route_stops_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "routes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      routes: {
+        Row: {
+          created_at: string | null
+          driver_id: string | null
+          id: string
+          name: string
+          scheduled_for: string
+          status: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          driver_id?: string | null
+          id?: string
+          name: string
+          scheduled_for: string
+          status?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          driver_id?: string | null
+          id?: string
+          name?: string
+          scheduled_for?: string
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "routes_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sale_items: {
         Row: {
           created_at: string
