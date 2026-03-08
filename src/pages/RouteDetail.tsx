@@ -28,13 +28,14 @@ export default function RouteDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { updateRoute } = useRoutes();
-  const { routeQuery, stopsQuery, slotsQuery, maintenanceQuery, addStop, removeStop, updateStop } = useRouteDetail(id);
+  const { routeQuery, stopsQuery, slotsQuery, maintenanceQuery, demandMapQuery, addStop, removeStop, updateStop } = useRouteDetail(id);
   const [addLocationId, setAddLocationId] = useState("");
 
   const route = routeQuery.data;
   const stops = stopsQuery.data || [];
   const slots = slotsQuery.data || [];
   const tickets = maintenanceQuery.data || [];
+  const demandMap = demandMapQuery.data || new Map<string, number>();
   const stopLocationIds = stops.map((s) => s.location_id).filter(Boolean);
 
   // Fetch locations for adding stops
