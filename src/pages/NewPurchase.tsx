@@ -1,3 +1,4 @@
+import { generateSkuCode } from "@/lib/skuGenerator";
 import { fmt2, fmt3 } from "@/lib/formatters";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
