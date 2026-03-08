@@ -128,10 +128,12 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
   const canConfirm = !!selectedSlotId && !!newProductId && !!selectedSlot && !!selectedProduct && !!loadQuantity && loadQuantity > 0;
 
   const handleConfirm = () => {
-    if (!selectedSlot || !selectedProduct || !loadQuantity) return;
+    if (!selectedSlot || !selectedProduct || !loadQuantity || !selectedSpot) return;
     onConfirm({
       type: "swap",
       slotId: selectedSlot.id,
+      spotId: selectedSpot.spotId,
+      spotName: selectedSpot.spotName,
       machineSerial: selectedSlot.machine_serial,
       slotNumber: selectedSlot.slot_number,
       oldProductId: selectedSlot.current_product_id || "",
