@@ -1065,6 +1065,116 @@ export type Database = {
           },
         ]
       }
+      sale_items: {
+        Row: {
+          created_at: string
+          id: string
+          item_detail_id: string
+          quantity: number
+          sale_id: string
+          total_price: number
+          unit_price: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_detail_id: string
+          quantity: number
+          sale_id: string
+          total_price: number
+          unit_price: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_detail_id?: string
+          quantity?: number
+          sale_id?: string
+          total_price?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sale_items_item_detail_id_fkey"
+            columns: ["item_detail_id"]
+            isOneToOne: false
+            referencedRelation: "item_details"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_items_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales: {
+        Row: {
+          buyer_contact: string | null
+          buyer_name: string | null
+          created_at: string
+          created_by: string | null
+          currency: string
+          id: string
+          notes: string | null
+          paid: boolean
+          sale_date: string
+          sale_number: string
+          status: string
+          subtotal: number
+          tax_amount: number
+          tax_rate: number
+          total_amount: number
+          warehouse_id: string | null
+        }
+        Insert: {
+          buyer_contact?: string | null
+          buyer_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          id?: string
+          notes?: string | null
+          paid?: boolean
+          sale_date?: string
+          sale_number: string
+          status?: string
+          subtotal?: number
+          tax_amount?: number
+          tax_rate?: number
+          total_amount?: number
+          warehouse_id?: string | null
+        }
+        Update: {
+          buyer_contact?: string | null
+          buyer_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          id?: string
+          notes?: string | null
+          paid?: boolean
+          sale_date?: string
+          sale_number?: string
+          status?: string
+          subtotal?: number
+          tax_amount?: number
+          tax_rate?: number
+          total_amount?: number
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       setups: {
         Row: {
           created_at: string | null
