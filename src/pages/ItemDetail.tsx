@@ -181,7 +181,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   const { data: logisticsHistory = [] } = useQuery({
