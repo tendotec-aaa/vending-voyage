@@ -129,7 +129,7 @@ export function RouteStopCard({ stop, slots, tickets, onUpdateStop, onRemoveStop
               <div key={a.slotId} className="flex items-center justify-between bg-muted/50 rounded px-2 py-1 text-sm">
                 <span className="flex items-center gap-1 text-foreground">
                   <ArrowLeftRight className="w-3.5 h-3.5 text-primary" />
-                  {a.machineSerial} Slot {a.slotNumber}: {a.oldProductName} → {a.newProductName}
+                  {a.spotName} Slot {a.slotNumber}: {a.oldProductName} → {a.newProductName}
                 </span>
                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleRemoveSwap(a.slotId)}>
                   <X className="w-3 h-3" />
