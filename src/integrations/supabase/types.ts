@@ -1661,6 +1661,7 @@ export type Database = {
           description: string | null
           id: string
           is_system: boolean
+          is_transitional: boolean | null
           name: string
         }
         Insert: {
@@ -1669,6 +1670,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_system?: boolean
+          is_transitional?: boolean | null
           name: string
         }
         Update: {
@@ -1677,6 +1679,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_system?: boolean
+          is_transitional?: boolean | null
           name?: string
         }
         Relationships: []
@@ -1748,6 +1751,14 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      unload_vehicle: {
+        Args: {
+          p_destination_warehouse_id: string
+          p_user_id: string
+          p_vehicle_id: string
+        }
+        Returns: undefined
       }
     }
     Enums: {
