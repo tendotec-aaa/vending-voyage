@@ -422,11 +422,11 @@ Deno.serve(async (req) => {
         }
 
         // -- Old product: return removed units to warehouse (ledger only, trigger syncs inventory) --
-        if (oldProductId && s.unitsRemoved > 0 && sourceWarehouseId) {
-          const whBal = await getRunningBalance(db, oldProductId, sourceWarehouseId, null);
+        if (oldProductId && s.unitsRemoved > 0 && removalWarehouseId) {
+          const whBal = await getRunningBalance(db, oldProductId, removalWarehouseId, null);
           await appendLedger(db, {
             item_detail_id: oldProductId,
-            warehouse_id: sourceWarehouseId,
+            warehouse_id: removalWarehouseId,
             movement_type: "swap_out",
             quantity: s.unitsRemoved,
             running_balance: whBal + s.unitsRemoved,
