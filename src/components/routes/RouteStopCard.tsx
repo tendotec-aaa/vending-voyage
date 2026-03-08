@@ -45,7 +45,7 @@ export function RouteStopCard({ stop, slots, tickets, onUpdateStop, onRemoveStop
   const slotSummaries = locationSlots.map((slot) => {
     const swap = plannedActions.find((a) => a.slotId === slot.id);
     if (swap) {
-      return { type: "swap" as const, text: `Swap: ${swap.oldProductName} → ${swap.newProductName} (${swap.capacity} units)` };
+      return { type: "swap" as const, text: `${swap.spotName} Slot ${swap.slotNumber}: ${swap.oldProductName} → ${swap.newProductName} (${swap.capacity} units)` };
     }
     const needed = Math.ceil(((slot.capacity || 150) - (slot.current_stock || 0)) * multiplier);
     if (needed <= 0) return null;
