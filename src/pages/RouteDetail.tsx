@@ -143,7 +143,10 @@ export default function RouteDetail() {
       if (item.swapQty > 0) parts.push(`Swap: ${item.swapQty}`);
       lines.push(`• ${item.productName.toUpperCase()} — ${total} (${parts.join(", ")})`);
     }
+    lines.push("");
+    lines.push("———————————————");
     lines.push(`🔢 Total Units to Load: ${grandTotal}`);
+    lines.push("———————————————");
 
     // Maintenance summary
     if (tickets.length > 0) {
