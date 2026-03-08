@@ -644,9 +644,13 @@ export default function ItemDetail() {
   }, 0);
   const weightedAvgCost = totalStock > 0 ? totalInventoryCost / totalStock : 0;
 
-  const totalUnitsSold = (salesData || []).reduce(
+  const fieldUnitsSold = (salesData || []).reduce(
     (sum, s) => sum + (s.units_sold || 0), 0
   );
+  const warehouseUnitsSold = (warehouseSales || []).reduce(
+    (sum: number, s: any) => sum + (s.quantity || 0), 0
+  );
+  const totalUnitsSold = fieldUnitsSold + warehouseUnitsSold;
   const totalRevenue = (salesData || []).reduce(
     (sum, s) => sum + (Number(s.cash_collected) || 0), 0
   );
