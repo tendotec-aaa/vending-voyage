@@ -603,6 +603,7 @@ export default function ItemDetail() {
   };
 
 
+  if (!user || isLoading || itemTypesLoading)
     return (
       <AppLayout>
         <div className="text-muted-foreground p-6">Loading...</div>
