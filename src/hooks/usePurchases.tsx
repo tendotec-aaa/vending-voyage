@@ -167,20 +167,25 @@ export function usePurchases() {
           if (!itemDetailId && item.item_name) {
             const insertData: Record<string, any> = {
               name: item.item_name,
-              sku: item.sku || Date.now().toString(36).toUpperCase(),
               type: "merchandise" as const,
             };
             if ((item as any).category_id) insertData.category_id = (item as any).category_id;
             if ((item as any).subcategory_id) insertData.subcategory_id = (item as any).subcategory_id;
             if ((item as any).item_type_id) insertData.item_type_id = (item as any).item_type_id;
 
-            const { data: newItem, error: newItemError } = await supabase
-              .from("item_details")
-              .insert(insertData as any)
-              .select()
-              .single();
+            // Look up category/subcategory names for SKU generation
+            let catName: string | undefined;
+            let subName: string | undefined;
+            if ((item as any).category_id) {
+              const { data: cat } = await supabase.from("categories").select("name").eq("id", (item as any).category_id).single();
+              catName = cat?.name;
+            }
+            if ((item as any).subcategory_id) {
+              const { data: sub } = await supabase.from("subcategories").select("name").eq("id", (item as any).subcategory_id).single();
+              subName = sub?.name;
+            }
 
-            if (newItemError) throw newItemError;
+            const newItem = await insertItemDetailWithRetrySku(insertData as any, catName, subName);
             itemDetailId = newItem.id;
           }
 

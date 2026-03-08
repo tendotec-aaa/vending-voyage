@@ -35,22 +35,27 @@ export function useAssemblies() {
       // 1. Create or link output item
       let outputItemDetailId = data.item_detail_id;
       if (!outputItemDetailId && data.item_name) {
-        const sku = Date.now().toString(36).toUpperCase();
         const insertData: Record<string, any> = {
           name: data.item_name,
-          sku,
           type: "merchandise" as const,
         };
         if (data.category_id) insertData.category_id = data.category_id;
         if (data.subcategory_id) insertData.subcategory_id = data.subcategory_id;
         if (data.item_type_id) insertData.item_type_id = data.item_type_id;
 
-        const { data: newItem, error } = await supabase
-          .from("item_details")
-          .insert(insertData as any)
-          .select()
-          .single();
-        if (error) throw error;
+        // Look up category/subcategory names for SKU
+        let catName: string | undefined;
+        let subName: string | undefined;
+        if (data.category_id) {
+          const { data: cat } = await supabase.from("categories").select("name").eq("id", data.category_id).single();
+          catName = cat?.name;
+        }
+        if (data.subcategory_id) {
+          const { data: sub } = await supabase.from("subcategories").select("name").eq("id", data.subcategory_id).single();
+          subName = sub?.name;
+        }
+
+        const newItem = await insertItemDetailWithRetrySku(insertData as any, catName, subName);
         outputItemDetailId = newItem.id;
       }
 
