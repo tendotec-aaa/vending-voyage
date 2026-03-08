@@ -196,7 +196,7 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
               <SelectContent>
                 {(productsQuery.data || []).map((p) => (
                   <SelectItem key={p.id} value={p.id}>
-                    {p.name} — ({p.available} available)
+                    {p.name} — (<span className="font-bold text-primary">{p.available}</span> in stock)
                   </SelectItem>
                 ))}
                 {productsQuery.data?.length === 0 && selectedCategoryId && (
