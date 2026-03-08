@@ -17,7 +17,7 @@ interface PickItem {
   swapQty: number;
 }
 
-export function PickList({ stops, slots, tickets }: Props) {
+export function PickList({ stops, slots, tickets, demandMap }: Props) {
   const pickMap = new Map<string, PickItem>();
 
   for (const stop of stops) {
