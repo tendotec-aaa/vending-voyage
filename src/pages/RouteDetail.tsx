@@ -30,6 +30,7 @@ export default function RouteDetail() {
   const { updateRoute } = useRoutes();
   const { routeQuery, stopsQuery, slotsQuery, maintenanceQuery, velocityMapQuery, addStop, removeStop, updateStop } = useRouteDetail(id);
   const [addLocationId, setAddLocationId] = useState("");
+  const [manifestoOverrides, setManifestoOverrides] = useState<Map<string, number>>(new Map());
 
   const route = routeQuery.data;
   const stops = stopsQuery.data || [];
@@ -64,6 +65,32 @@ export default function RouteDetail() {
     setAddLocationId("");
   };
 
+  // Build pick map (shared between copy and PickList)
+  const buildPickMap = () => {
+    const pickMap = new Map<string, { productName: string; refillQty: number; swapQty: number }>();
+    for (const stop of stops) {
+      const multiplier = stop.demand_multiplier || 1;
+      const actions = (stop.planned_actions || []) as PlannedAction[];
+      const locationSlots = slots.filter((s) => s.location_id === stop.location_id);
+      for (const slot of locationSlots) {
+        const swap = actions.find((a) => a.slotId === slot.id);
+        if (swap) {
+          const existing = pickMap.get(swap.newProductId) || { productName: swap.newProductName, refillQty: 0, swapQty: 0 };
+          existing.swapQty += swap.capacity;
+          pickMap.set(swap.newProductId, existing);
+        } else {
+          if (!slot.current_product_id || !slot.product_name) continue;
+          const needed = computeSlotRefill(slot, velocityMap, multiplier);
+          if (needed <= 0) continue;
+          const existing = pickMap.get(slot.current_product_id) || { productName: slot.product_name, refillQty: 0, swapQty: 0 };
+          existing.refillQty += needed;
+          pickMap.set(slot.current_product_id, existing);
+        }
+      }
+    }
+    return pickMap;
+  };
+
   const handleCopyRouteSummary = () => {
     if (!route) return;
 
@@ -71,83 +98,65 @@ export default function RouteDetail() {
       ? `${route.driver.first_names || ""} ${route.driver.last_names || ""}`.trim()
       : "Unassigned";
 
+    const pickMap = buildPickMap();
+    const pickItems = Array.from(pickMap.entries()).sort((a, b) => {
+      const totalA = a[1].refillQty + a[1].swapQty;
+      const totalB = b[1].refillQty + b[1].swapQty;
+      return totalB - totalA;
+    });
+
+    // Apply overrides
+    const getTotal = (productId: string, item: { refillQty: number; swapQty: number }) => {
+      return manifestoOverrides.has(productId) ? manifestoOverrides.get(productId)! : item.refillQty + item.swapQty;
+    };
+
+    const grandTotal = pickItems.reduce((sum, [pid, item]) => sum + getTotal(pid, item), 0);
+
     const lines: string[] = [
       `📋 ROUTE: ${route.name}`,
       `📅 ${format(new Date(route.scheduled_for), "EEEE, MMM d, yyyy")}`,
       `🚗 Driver: ${driverName}`,
       "",
-      "--- STOPS ---",
+      "📦 LOADING MANIFEST:",
     ];
 
-    // Pick list aggregation
-    const pickMap = new Map<string, { productName: string; refillQty: number; swapQty: number }>();
+    for (const [productId, item] of pickItems) {
+      const total = getTotal(productId, item);
+      const parts: string[] = [];
+      if (item.refillQty > 0) parts.push(`Refill: ${item.refillQty}`);
+      if (item.swapQty > 0) parts.push(`Swap: ${item.swapQty}`);
+      lines.push(`• ${item.productName} — ${total} (${parts.join(", ")})`);
+    }
+
+    lines.push("———————————————");
+    lines.push(`🔢 Total Units to Load: ${grandTotal}`);
+    lines.push("———————————————");
+
+    // Stops section
+    lines.push("");
+    lines.push("--- STOPS ---");
 
     for (const stop of stops) {
       const locationName = stop.location?.name || "Unknown Location";
       const multiplier = stop.demand_multiplier || 1;
       const actions = (stop.planned_actions || []) as PlannedAction[];
       const locationSlots = slots.filter((s) => s.location_id === stop.location_id);
-      const locationTickets = tickets.filter((t) => t.location_id === stop.location_id);
 
       lines.push("");
       lines.push(`📍 ${locationName}`);
 
-      // Group slots by spot_name
-      const spotGroups = new Map<string, typeof locationSlots>();
       for (const slot of locationSlots) {
-        const spotLabel = slot.spot_name || `Machine at ${locationName}`;
-        const group = spotGroups.get(spotLabel) || [];
-        group.push(slot);
-        spotGroups.set(spotLabel, group);
-      }
-
-      for (const [spotLabel, spotSlots] of spotGroups) {
-        for (const slot of spotSlots) {
-          const swap = actions.find((a) => a.slotId === slot.id);
-
-          if (swap) {
-            lines.push(`  [${spotLabel}] ➔ SWAP: ${swap.oldProductName} TO ${swap.newProductName} (${swap.capacity} units)`);
-            const existing = pickMap.get(swap.newProductId) || { productName: swap.newProductName, refillQty: 0, swapQty: 0 };
-            existing.swapQty += swap.capacity;
-            pickMap.set(swap.newProductId, existing);
-          } else {
-            if (!slot.current_product_id || !slot.product_name) continue;
-            const needed = computeSlotRefill(slot, velocityMap, multiplier);
-            if (needed <= 0) continue;
-            lines.push(`  [${spotLabel}] ➔ REFILL: ${slot.product_name} (${needed} units)`);
-            const existing = pickMap.get(slot.current_product_id) || { productName: slot.product_name, refillQty: 0, swapQty: 0 };
-            existing.refillQty += needed;
-            pickMap.set(slot.current_product_id, existing);
-          }
+        const swap = actions.find((a) => a.slotId === slot.id);
+        if (swap) {
+          lines.push(`  • SWAP: ${swap.oldProductName} → ${swap.newProductName} (${swap.capacity} units)`);
+        } else {
+          if (!slot.current_product_id || !slot.product_name) continue;
+          const needed = computeSlotRefill(slot, velocityMap, multiplier);
+          if (needed <= 0) continue;
+          lines.push(`  • +${needed} units - ${slot.product_name}`);
         }
       }
-
-      // Maintenance for this location
-      for (const ticket of locationTickets) {
-        const spotLabel = ticket.spot_id
-          ? (slots.find((s) => s.spot_id === ticket.spot_id)?.spot_name || `Machine at ${locationName}`)
-          : `Machine at ${locationName}`;
-        lines.push(`  [${spotLabel}] ➔ REPAIR: ${ticket.issue_type}${ticket.description ? ` — ${ticket.description}` : ""}`);
-      }
     }
-
-    // Loading manifest
-    const pickItems = Array.from(pickMap.values()).sort((a, b) => (b.refillQty + b.swapQty) - (a.refillQty + a.swapQty));
-    const grandTotal = pickItems.reduce((sum, i) => sum + i.refillQty + i.swapQty, 0);
-
-    lines.push("");
-    lines.push("📦 LOADING MANIFEST:");
-    for (const item of pickItems) {
-      const total = item.refillQty + item.swapQty;
-      const parts: string[] = [];
-      if (item.refillQty > 0) parts.push(`Refill: ${item.refillQty}`);
-      if (item.swapQty > 0) parts.push(`Swap: ${item.swapQty}`);
-      lines.push(`• ${item.productName.toUpperCase()} — ${total} (${parts.join(", ")})`);
-    }
-    lines.push("");
-    lines.push("———————————————");
-    lines.push(`🔢 Total Units to Load: ${grandTotal}`);
-    lines.push("———————————————");
 
     // Maintenance summary
     if (tickets.length > 0) {
@@ -158,6 +167,10 @@ export default function RouteDetail() {
         lines.push(`• ${t.issue_type} — ${locName} (${t.priority})`);
       }
     }
+
+    // Disclaimer
+    lines.push("");
+    lines.push("** This is only a suggestion please note the actual amount in the visit report correctly.");
 
     const text = lines.join("\n");
     navigator.clipboard.writeText(text).then(() => {
@@ -272,7 +285,13 @@ export default function RouteDetail() {
           </TabsContent>
 
           <TabsContent value="picklist" className="mt-4">
-            <PickList stops={stops} slots={slots} tickets={tickets} velocityMap={velocityMap} />
+            <PickList
+              stops={stops}
+              slots={slots}
+              tickets={tickets}
+              velocityMap={velocityMap}
+              onOverridesChange={setManifestoOverrides}
+            />
           </TabsContent>
         </Tabs>
       </div>
