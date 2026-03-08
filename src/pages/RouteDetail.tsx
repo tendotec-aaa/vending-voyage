@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { useRouteDetail } from "@/hooks/useRoutes";
+import { useRouteDetail, computeSlotRefill } from "@/hooks/useRoutes";
 import { useRoutes } from "@/hooks/useRoutes";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import type { PlannedAction } from "@/hooks/useRoutes";
+import type { PlannedAction, VelocityData } from "@/hooks/useRoutes";
 
 const statusColors: Record<string, string> = {
   planned: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
@@ -28,14 +28,14 @@ export default function RouteDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { updateRoute } = useRoutes();
-  const { routeQuery, stopsQuery, slotsQuery, maintenanceQuery, demandMapQuery, addStop, removeStop, updateStop } = useRouteDetail(id);
+  const { routeQuery, stopsQuery, slotsQuery, maintenanceQuery, velocityMapQuery, addStop, removeStop, updateStop } = useRouteDetail(id);
   const [addLocationId, setAddLocationId] = useState("");
 
   const route = routeQuery.data;
   const stops = stopsQuery.data || [];
   const slots = slotsQuery.data || [];
   const tickets = maintenanceQuery.data || [];
-  const demandMap = demandMapQuery.data || new Map<string, number>();
+  const velocityMap = velocityMapQuery.data || new Map<string, VelocityData>();
   const stopLocationIds = stops.map((s) => s.location_id).filter(Boolean);
 
   // Fetch locations for adding stops
@@ -112,10 +112,7 @@ export default function RouteDetail() {
             pickMap.set(swap.newProductId, existing);
           } else {
             if (!slot.current_product_id || !slot.product_name) continue;
-            const historicalDemand = demandMap.get(slot.id);
-            const needed = Math.ceil(
-              (historicalDemand ?? Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0))) * multiplier
-            );
+            const needed = computeSlotRefill(slot, velocityMap, multiplier);
             if (needed <= 0) continue;
             lines.push(`  [${spotLabel}] ➔ REFILL: ${slot.product_name} (${needed} units)`);
             const existing = pickMap.get(slot.current_product_id) || { productName: slot.product_name, refillQty: 0, swapQty: 0 };
@@ -249,7 +246,7 @@ export default function RouteDetail() {
                 key={stop.id}
                 stop={stop}
                 slots={slots}
-                demandMap={demandMap}
+                velocityMap={velocityMap}
                 tickets={tickets}
                 onUpdateStop={(u) => updateStop.mutate(u)}
                 onRemoveStop={(sid) => removeStop.mutate(sid)}
@@ -275,7 +272,7 @@ export default function RouteDetail() {
           </TabsContent>
 
           <TabsContent value="picklist" className="mt-4">
-            <PickList stops={stops} slots={slots} tickets={tickets} demandMap={demandMap} />
+            <PickList stops={stops} slots={slots} tickets={tickets} velocityMap={velocityMap} />
           </TabsContent>
         </Tabs>
       </div>

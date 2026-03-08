@@ -66,6 +66,32 @@ export interface MaintenanceTicket {
   created_at: string;
 }
 
+export interface VelocityData {
+  dailyVelocity: number;
+  daysSinceLastVisit: number;
+}
+
+/**
+ * Compute how many units to refill for a single slot using the velocity model.
+ * - If velocity data exists: baseRefill = dailyVelocity × daysSinceLastVisit
+ * - Fallback (no history): top-off empty space = capacity - current_stock
+ * - Swapped slots should NOT call this function; they use full capacity of new product.
+ */
+export function computeSlotRefill(
+  slot: SlotData,
+  velocityMap: Map<string, VelocityData>,
+  multiplier: number
+): number {
+  const v = velocityMap.get(slot.id);
+  if (v && v.dailyVelocity > 0) {
+    const baseRefill = v.dailyVelocity * v.daysSinceLastVisit;
+    return Math.ceil(baseRefill * multiplier);
+  }
+  // Fallback: top-off empty space
+  const emptySpace = Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0));
+  return Math.ceil(emptySpace * multiplier);
+}
+
 export function useRoutes() {
   const queryClient = useQueryClient();
 
@@ -251,16 +277,18 @@ export function useRouteDetail(routeId: string | undefined) {
     },
   });
 
-  // Historical demand: avg quantity_added per slot from last 2 visits per spot
+  // Sales velocity model: compute daily velocity and days-since-last-visit per slot
   const slotSpotIds = [...new Set((slotsQuery.data || []).map((s) => s.spot_id).filter(Boolean))];
-  const demandMapQuery = useQuery({
-    queryKey: ["route-demand-map", slotSpotIds],
+  const velocityMapQuery = useQuery({
+    queryKey: ["route-velocity-map", slotSpotIds],
     enabled: slotSpotIds.length > 0,
-    queryFn: async (): Promise<Map<string, number>> => {
+    queryFn: async (): Promise<Map<string, VelocityData>> => {
+      const now = new Date();
+
       // Fetch all visits for these spots, ordered by date desc
       const { data: allVisits } = await supabase
         .from("spot_visits")
-        .select("id, spot_id, visit_date")
+        .select("id, spot_id, visit_date, days_since_last_visit")
         .in("spot_id", slotSpotIds)
         .order("visit_date", { ascending: false });
       if (!allVisits?.length) return new Map();
@@ -287,32 +315,78 @@ export function useRouteDetail(routeId: string | undefined) {
         .in("action_type", ["restock", "swap_in"]);
       if (!lineItems?.length) return new Map();
 
-      // Aggregate: total quantity_added per slot, divided by number of visits for that spot
-      const slotTotals = new Map<string, number>();
-      const slotSpotMap = new Map<string, string>(); // slot_id -> spot_id
-      
-      // Build visit->spot lookup
+      // Build visit->spot and visit->date lookups
       const visitSpotMap = new Map<string, string>();
+      const visitDateMap = new Map<string, Date>();
+      const visitDaysSinceMap = new Map<string, number | null>();
       for (const v of recentVisits) {
         visitSpotMap.set(v.id, v.spot_id!);
+        visitDateMap.set(v.id, new Date(v.visit_date!));
+        visitDaysSinceMap.set(v.id, v.days_since_last_visit);
       }
 
+      // Per spot: find newest visit date and compute daysBetweenVisits
+      const spotVisitDates = new Map<string, Date[]>();
+      for (const v of recentVisits) {
+        const dates = spotVisitDates.get(v.spot_id!) || [];
+        dates.push(new Date(v.visit_date!));
+        spotVisitDates.set(v.spot_id!, dates);
+      }
+
+      // Per spot: daysBetweenVisits (span of the 2 visits), daysSinceLastVisit (today - newest)
+      const spotTimingMap = new Map<string, { daysBetween: number; daysSinceLast: number; visitCount: number; singleVisitDaysSince: number | null }>();
+      for (const [spotId, dates] of spotVisitDates) {
+        dates.sort((a, b) => b.getTime() - a.getTime()); // newest first
+        const newestDate = dates[0];
+        const daysSinceLast = Math.max(1, Math.round((now.getTime() - newestDate.getTime()) / (1000 * 60 * 60 * 24)));
+
+        if (dates.length >= 2) {
+          const oldestDate = dates[dates.length - 1];
+          const daysBetween = Math.max(1, Math.round((newestDate.getTime() - oldestDate.getTime()) / (1000 * 60 * 60 * 24)));
+          spotTimingMap.set(spotId, { daysBetween, daysSinceLast, visitCount: dates.length, singleVisitDaysSince: null });
+        } else {
+          // Single visit: use days_since_last_visit from the visit record as the period
+          const visitId = recentVisits.find((v) => v.spot_id === spotId)!.id;
+          const daysFromRecord = visitDaysSinceMap.get(visitId);
+          spotTimingMap.set(spotId, { daysBetween: 0, daysSinceLast: daysSinceLast, visitCount: 1, singleVisitDaysSince: daysFromRecord ?? null });
+        }
+      }
+
+      // Aggregate quantity_added per slot, tracking which spot each slot belongs to
+      const slotTotals = new Map<string, number>();
+      const slotSpotLookup = new Map<string, string>();
       for (const li of lineItems) {
         if (!li.slot_id || !li.quantity_added || li.quantity_added <= 0) continue;
         const spotId = visitSpotMap.get(li.spot_visit_id!);
         if (!spotId) continue;
         slotTotals.set(li.slot_id, (slotTotals.get(li.slot_id) || 0) + li.quantity_added);
-        slotSpotMap.set(li.slot_id, spotId);
+        slotSpotLookup.set(li.slot_id, spotId);
       }
 
-      // Compute average per slot = total / number of visits for that spot
-      const demandMap = new Map<string, number>();
-      for (const [slotId, total] of slotTotals) {
-        const spotId = slotSpotMap.get(slotId)!;
-        const numVisits = visitCountBySpot.get(spotId) || 1;
-        demandMap.set(slotId, total / numVisits);
+      // Build velocity map per slot
+      const velocityMap = new Map<string, VelocityData>();
+      for (const [slotId, totalAdded] of slotTotals) {
+        const spotId = slotSpotLookup.get(slotId)!;
+        const timing = spotTimingMap.get(spotId);
+        if (!timing) continue;
+
+        let dailyVelocity: number;
+        if (timing.visitCount >= 2) {
+          // 2 visits: velocity = totalAdded / daysBetweenVisits
+          dailyVelocity = totalAdded / timing.daysBetween;
+        } else {
+          // Single visit: velocity = totalAdded / days_since_last_visit from that visit (or default 14)
+          const period = timing.singleVisitDaysSince && timing.singleVisitDaysSince > 0 ? timing.singleVisitDaysSince : 14;
+          dailyVelocity = totalAdded / period;
+        }
+
+        velocityMap.set(slotId, {
+          dailyVelocity,
+          daysSinceLastVisit: timing.daysSinceLast,
+        });
       }
-      return demandMap;
+
+      return velocityMap;
     },
   });
 
@@ -367,7 +441,7 @@ export function useRouteDetail(routeId: string | undefined) {
     stopsQuery,
     slotsQuery,
     maintenanceQuery,
-    demandMapQuery,
+    velocityMapQuery,
     addStop,
     removeStop,
     updateStop,
