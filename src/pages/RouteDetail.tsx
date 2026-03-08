@@ -111,8 +111,10 @@ export default function RouteDetail() {
             existing.swapQty += swap.capacity;
             pickMap.set(swap.newProductId, existing);
           } else {
-            if (!slot.current_product_id || !slot.product_name) continue;
-            const needed = Math.ceil(((slot.capacity || 150) - (slot.current_stock || 0)) * multiplier);
+            const historicalDemand = demandMap.get(slot.current_product_id ? slot.id : "");
+            const needed = Math.ceil(
+              (historicalDemand ?? Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0))) * multiplier
+            );
             if (needed <= 0) continue;
             lines.push(`  [${spotLabel}] ➔ REFILL: ${slot.product_name} (${needed} units)`);
             const existing = pickMap.get(slot.current_product_id) || { productName: slot.product_name, refillQty: 0, swapQty: 0 };

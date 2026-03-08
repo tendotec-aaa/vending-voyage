@@ -48,7 +48,10 @@ export function RouteStopCard({ stop, slots, tickets, demandMap, onUpdateStop, o
     if (swap) {
       return { type: "swap" as const, text: `${swap.spotName} Slot ${swap.slotNumber}: ${swap.oldProductName} → ${swap.newProductName} (${swap.capacity} units)` };
     }
-    const needed = Math.ceil(((slot.capacity || 150) - (slot.current_stock || 0)) * multiplier);
+    const historicalDemand = demandMap.get(slot.id);
+    const needed = Math.ceil(
+      (historicalDemand ?? Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0))) * multiplier
+    );
     if (needed <= 0) return null;
     return { type: "refill" as const, text: `Refill: ${slot.product_name || "Unknown"} × ${needed}` };
   }).filter(Boolean);
