@@ -19,6 +19,7 @@ interface Props {
   stop: RouteStop;
   slots: SlotData[];
   tickets: MaintenanceTicket[];
+  demandMap: Map<string, number>;
   onUpdateStop: (updates: { id: string; demand_multiplier?: number; planned_actions?: PlannedAction[] }) => void;
   onRemoveStop: (stopId: string) => void;
 }
