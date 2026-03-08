@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trash2, ArrowLeftRight, Wrench, X, MapPin } from "lucide-react";
 import { PlannedSwapDialog } from "./PlannedSwapDialog";
-import type { RouteStop, SlotData, MaintenanceTicket, PlannedAction } from "@/hooks/useRoutes";
+import type { RouteStop, SlotData, MaintenanceTicket, PlannedAction, VelocityData } from "@/hooks/useRoutes";
+import { computeSlotRefill } from "@/hooks/useRoutes";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const bufferOptions = [
@@ -19,12 +20,12 @@ interface Props {
   stop: RouteStop;
   slots: SlotData[];
   tickets: MaintenanceTicket[];
-  demandMap: Map<string, number>;
+  velocityMap: Map<string, VelocityData>;
   onUpdateStop: (updates: { id: string; demand_multiplier?: number; planned_actions?: PlannedAction[] }) => void;
   onRemoveStop: (stopId: string) => void;
 }
 
-export function RouteStopCard({ stop, slots, tickets, demandMap, onUpdateStop, onRemoveStop }: Props) {
+export function RouteStopCard({ stop, slots, tickets, velocityMap, onUpdateStop, onRemoveStop }: Props) {
   const [swapOpen, setSwapOpen] = useState(false);
   const isMobile = useIsMobile();
   const locationSlots = slots.filter((s) => s.location_id === stop.location_id);
@@ -48,10 +49,7 @@ export function RouteStopCard({ stop, slots, tickets, demandMap, onUpdateStop, o
     if (swap) {
       return { type: "swap" as const, text: `${swap.spotName} Slot ${swap.slotNumber}: ${swap.oldProductName} → ${swap.newProductName} (${swap.capacity} units)` };
     }
-    const historicalDemand = demandMap.get(slot.id);
-    const needed = Math.ceil(
-      (historicalDemand ?? Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0))) * multiplier
-    );
+    const needed = computeSlotRefill(slot, velocityMap, multiplier);
     if (needed <= 0) return null;
     return { type: "refill" as const, text: `Refill: ${slot.product_name || "Unknown"} × ${needed}` };
   }).filter(Boolean);

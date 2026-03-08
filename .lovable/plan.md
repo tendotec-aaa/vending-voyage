@@ -1,96 +1,82 @@
+## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
+### What was implemented:
 
-## Sales Velocity & Time-Elapsed Refill Model
+1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
 
-### Core Problem
-The current `demandMapQuery` returns **avg quantity_added per visit** (e.g., 50 units). But it ignores *when* those visits happened. If visits were 7 days apart, daily velocity is ~7 units/day. If the next route is 14 days later, you need ~98 units -- not 50. Time is the missing variable.
+2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
 
-### New Formula
-```
-Daily Velocity = Total quantity_added across last 2 visits / Total days spanning those visits
-Predicted Need = Daily Velocity × Days Since Last Visit × (1 + Buffer Multiplier offset)
-```
+3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
 
-Fallbacks:
-- 1 visit only: `quantity_added / days_since_last_visit` (from that visit record)
-- 0 visits: empty space = `capacity - current_stock` (top-off rule)
+4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
 
-### Changes
+5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
 
-#### 1. `src/hooks/useRoutes.tsx` -- Replace `demandMapQuery` with velocity model
+6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
 
-The query will return `Map<string, { dailyVelocity: number; daysSinceLastVisit: number }>` instead of `Map<string, number>`.
+7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
 
-**Data fetched:**
-- Last 2 `spot_visits` per spot (already done), but now also capture `visit_date`
-- `visit_line_items` with `quantity_added` (already done)
-- Compute per-slot: `totalAdded / daysBetweenFirstAndLastVisit` = daily velocity
-- Compute per-spot: `daysElapsed = today - mostRecentVisitDate`
+### Architecture now:
+- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
+- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
+- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
+- **Audit trail**: Complete history of every stock movement with performer tracking
 
-**For single-visit spots:** velocity = `totalAdded / days_since_last_visit` from that visit (already stored). If that's null/0, default to 2 units/day.
+---
 
-**Export a new interface:**
-```typescript
-export interface VelocityData {
-  dailyVelocity: number;
-  daysSinceLastVisit: number;
-}
-```
+## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
 
-Return type becomes `Map<string, VelocityData>`.
+### Format
+`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
+- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
+- No category/subcategory → `XX-482910`
 
-#### 2. Unified calculation helper (in useRoutes.tsx, exported)
+### What was implemented:
 
-```typescript
-export function computeSlotRefill(
-  slot: SlotData,
-  velocityMap: Map<string, VelocityData>,
-  multiplier: number
-): number {
-  const v = velocityMap.get(slot.id);
-  if (v && v.dailyVelocity > 0) {
-    const baseRefill = v.dailyVelocity * v.daysSinceLastVisit;
-    return Math.ceil(baseRefill * multiplier);
-  }
-  // Fallback: top-off empty space
-  const emptySpace = Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0));
-  return Math.ceil(emptySpace * multiplier);
-}
-```
+1. **`src/lib/skuGenerator.ts`** — Rewritten with:
+   - `generateCode(name)` — extracts first letter of each word, max 2 chars
+   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
+   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
 
-#### 3. `src/components/routes/PickList.tsx`
+2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
-- Change prop from `demandMap: Map<string, number>` to `velocityMap: Map<string, VelocityData>`
-- Replace inline demand formula with `computeSlotRefill(slot, velocityMap, multiplier)`
-- Swap branch unchanged (full capacity of new product)
+3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
 
-#### 4. `src/components/routes/RouteStopCard.tsx`
+4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
-- Same prop change: `velocityMap` instead of `demandMap`
-- `slotSummaries` uses `computeSlotRefill(slot, velocityMap, multiplier)`
+5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
 
-#### 5. `src/pages/RouteDetail.tsx`
+### Uniqueness guarantees:
+- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
+- **Retry loop** regenerates SKU on collision, up to 3 attempts
+- **Single helper function** used by all item creation flows
 
-- Rename `demandMap` to `velocityMap` throughout
-- `handleCopyRouteSummary` uses `computeSlotRefill` for refill lines
-- Pass `velocityMap` to `PickList` and `RouteStopCard`
+---
 
-### Velocity Calculation Detail (in the query)
+## ✅ COMPLETED: Sales Order System with Atomic RPC
 
-```text
-Per spot: keep last 2 visits sorted by visit_date DESC → [Visit A (newest), Visit B (oldest)]
+### What was implemented:
 
-daysBetweenVisits = Visit A date - Visit B date (in days, min 1)
-daysSinceLastVisit = today - Visit A date (in days, min 1)
+1. **BEFORE INSERT trigger `compute_ledger_running_balance`** — Auto-computes `running_balance` on `inventory_ledger` inserts. All callers (existing and new) no longer need to compute it — the trigger overwrites whatever value is passed. Existing code continues working with zero breakage.
 
-Per slot: totalAdded from line items across both visits
-dailyVelocity = totalAdded / daysBetweenVisits
+2. **`sales` table** — Header with `sale_number`, `sale_date`, `buyer_name`, `buyer_contact`, `warehouse_id`, `subtotal`, `tax_rate`, `tax_amount`, `total_amount`, `currency`, `paid`, `status`, `notes`, `created_by`. RLS enabled.
 
-Single visit only:
-  dailyVelocity = totalAdded / (visit.days_since_last_visit || 14)
-  daysSinceLastVisit = today - visit date
-```
+3. **`sale_items` table** — Line items with `sale_id`, `item_detail_id`, `quantity`, `unit_price`, `total_price`. Cascading delete on sale. RLS enabled.
 
-### No database changes required
-All data (`spot_visits.visit_date`, `visit_line_items.quantity_added`, `spot_visits.days_since_last_visit`) already exists.
+4. **`create_sales_order` RPC** — SECURITY DEFINER PostgreSQL function. Accepts single JSON payload. Atomically inserts sale header, all line items, and `inventory_ledger` entries (movement_type: `warehouse_sale`, negative quantity). Running balance = 0 placeholder (trigger computes real value). Full transaction safety.
 
+5. **`useSales.tsx` hook** — Queries sales with nested items, warehouses, item catalog. `createSale` mutation calls RPC. `useStockCheck` for pre-submit validation.
+
+6. **`Sales.tsx` list page** — Searchable table with sale number, buyer, date, items count, total, paid badge.
+
+7. **`NewSale.tsx` form** — Multi-line item entry with warehouse selection, tax rate, buyer info. Soft stock warning via AlertDialog when quantity exceeds `quantity_on_hand` — user can confirm and proceed (allows negative inventory).
+
+8. **`SaleDetail.tsx`** — Read-only detail with header cards, line items table.
+
+9. **Sidebar + routing** — DollarSign icon under Supply Chain. Routes: `/sales`, `/sales/new`, `/sales/:id`.
+
+### Architecture:
+- **Single atomic write path**: All sales go through `create_sales_order` RPC (no multi-step client inserts)
+- **No running_balance in frontend**: RPC passes `0`, BEFORE INSERT trigger computes correct value
+- **Soft stock warnings**: UI warns but allows proceeding — inventory can go negative
+- **Ledger integrity**: Every sale creates `warehouse_sale` ledger entries, existing AFTER INSERT trigger syncs `inventory.quantity_on_hand`

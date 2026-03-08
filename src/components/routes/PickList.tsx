@@ -1,13 +1,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Package, Wrench } from "lucide-react";
-import type { RouteStop, SlotData, MaintenanceTicket, PlannedAction } from "@/hooks/useRoutes";
+import type { RouteStop, SlotData, MaintenanceTicket, PlannedAction, VelocityData } from "@/hooks/useRoutes";
+import { computeSlotRefill } from "@/hooks/useRoutes";
 
 interface Props {
   stops: RouteStop[];
   slots: SlotData[];
   tickets: MaintenanceTicket[];
-  demandMap: Map<string, number>;
+  velocityMap: Map<string, VelocityData>;
 }
 
 interface PickItem {
@@ -17,7 +18,7 @@ interface PickItem {
   swapQty: number;
 }
 
-export function PickList({ stops, slots, tickets, demandMap }: Props) {
+export function PickList({ stops, slots, tickets, velocityMap }: Props) {
   const pickMap = new Map<string, PickItem>();
 
   for (const stop of stops) {
@@ -39,12 +40,10 @@ export function PickList({ stops, slots, tickets, demandMap }: Props) {
         existing.swapQty += swap.capacity;
         pickMap.set(swap.newProductId, existing);
       } else {
-        // Normal refill — use historical demand if available, else empty space
+        // Velocity-based refill
         if (!slot.current_product_id || !slot.product_name) continue;
-        const historicalDemand = demandMap.get(slot.id);
-        const needed = Math.ceil(
-          (historicalDemand ?? Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0))) * multiplier
-        );
+        const needed = computeSlotRefill(slot, velocityMap, multiplier);
+        if (needed <= 0) continue;
 
         const existing = pickMap.get(slot.current_product_id) || {
           productId: slot.current_product_id,
