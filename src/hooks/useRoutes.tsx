@@ -241,7 +241,7 @@ export function useRouteDetail(routeId: string | undefined) {
     queryFn: async (): Promise<MaintenanceTicket[]> => {
       const { data, error } = await supabase
         .from("maintenance_tickets")
-        .select("id, issue_type, description, priority, status, location_id, machine_id, created_at")
+        .select("id, issue_type, description, priority, status, location_id, machine_id, spot_id, created_at")
         .in("location_id", locationIds)
         .neq("status", "completed");
       if (error) throw error;
