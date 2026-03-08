@@ -505,7 +505,9 @@ Deno.serve(async (req) => {
       }
 
       // === NORMAL (NON-SWAP) FLOW ===
-      if (!s.toyId) continue;
+      // Use previousProductId (fresh from DB snapshot) as authoritative, fallback to toyId
+      const productId = s.previousProductId || s.toyId;
+      if (!productId) continue;
 
       // --- Slot ledger: record separate entries for sale, refill, removal, jam ---
       let slotRunBal = s.lastStock;
@@ -515,7 +517,7 @@ Deno.serve(async (req) => {
       if (saleQty > 0) {
         slotRunBal -= saleQty;
         await appendLedger(db, {
-          item_detail_id: s.toyId,
+          item_detail_id: productId,
           slot_id: s.slotId,
           movement_type: "sale",
           quantity: -saleQty,
@@ -531,7 +533,7 @@ Deno.serve(async (req) => {
       if (s.jamStatus === "by_coin") {
         slotRunBal += 1;
         await appendLedger(db, {
-          item_detail_id: s.toyId,
+          item_detail_id: productId,
           slot_id: s.slotId,
           movement_type: "adjustment",
           quantity: 1,
@@ -547,7 +549,7 @@ Deno.serve(async (req) => {
       if (s.unitsRemoved > 0) {
         slotRunBal -= s.unitsRemoved;
         await appendLedger(db, {
-          item_detail_id: s.toyId,
+          item_detail_id: productId,
           slot_id: s.slotId,
           movement_type: "removal",
           quantity: -s.unitsRemoved,
@@ -563,7 +565,7 @@ Deno.serve(async (req) => {
       if (s.unitsRefilled > 0) {
         slotRunBal += s.unitsRefilled;
         await appendLedger(db, {
-          item_detail_id: s.toyId,
+          item_detail_id: productId,
           slot_id: s.slotId,
           movement_type: "refill",
           quantity: s.unitsRefilled,
@@ -579,9 +581,9 @@ Deno.serve(async (req) => {
       if (sourceWarehouseId) {
         // Deduct refilled units from warehouse
         if (s.unitsRefilled > 0) {
-          const whBal = await getRunningBalance(db, s.toyId, sourceWarehouseId, null);
+          const whBal = await getRunningBalance(db, productId, sourceWarehouseId, null);
           await appendLedger(db, {
-            item_detail_id: s.toyId,
+            item_detail_id: productId,
             warehouse_id: sourceWarehouseId,
             movement_type: "refill",
             quantity: -s.unitsRefilled,
@@ -600,9 +602,9 @@ Deno.serve(async (req) => {
 
         // Return removed units to return vehicle/warehouse
         if (s.unitsRemoved > 0 && removalWarehouseId) {
-          const whBal = await getRunningBalance(db, s.toyId, removalWarehouseId, null);
+          const whBal = await getRunningBalance(db, productId, removalWarehouseId, null);
           await appendLedger(db, {
-            item_detail_id: s.toyId,
+            item_detail_id: productId,
             warehouse_id: removalWarehouseId,
             movement_type: "removal",
             quantity: s.unitsRemoved,
