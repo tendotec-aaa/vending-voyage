@@ -152,7 +152,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   // Fetch assemblies that produced this item (for assembled items)
