@@ -208,12 +208,30 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
             </Select>
           </div>
 
+          {/* Load Quantity */}
+          {selectedSlotId && newProductId && (
+            <div>
+              <Label>Load Quantity</Label>
+              <Input
+                type="number"
+                min={1}
+                max={selectedProduct?.available}
+                placeholder={`Max: ${selectedProduct?.available ?? "—"}`}
+                value={loadQuantity}
+                onChange={(e) => setLoadQuantity(e.target.value ? Number(e.target.value) : "")}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Slot capacity: {selectedSlot?.capacity || 150} · Available in bodega: {selectedProduct?.available ?? 0}
+              </p>
+            </div>
+          )}
+
           {/* Preview */}
           {canConfirm && selectedSpot && (
             <div className="text-sm text-muted-foreground bg-muted p-3 rounded-lg space-y-1">
               <p><strong>Spot:</strong> {selectedSpot.spotName}</p>
               <p><strong>Swap:</strong> Slot {selectedSlot!.slot_number} — {selectedSlot!.product_name || "Empty"} → {selectedProduct!.name}</p>
-              <p><strong>Load:</strong> {selectedSlot!.capacity || 150} units of {selectedProduct!.name}</p>
+              <p><strong>Load:</strong> {loadQuantity} units of {selectedProduct!.name}</p>
             </div>
           )}
 
