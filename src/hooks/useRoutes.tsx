@@ -165,7 +165,7 @@ export function useRouteDetail(routeId: string | undefined) {
       // Get spots for locations
       const { data: spots } = await supabase
         .from("spots")
-        .select("id, location_id")
+        .select("id, name, location_id")
         .in("location_id", locationIds);
       if (!spots?.length) return [];
 
