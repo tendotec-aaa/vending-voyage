@@ -751,7 +751,8 @@ export default function NewVisitReport() {
         hasObservationIssue,
         observationIssueLog,
         observationSeverity,
-        sourceWarehouseId,
+        sourceWarehouseId: sourceWarehouseId || null,
+        returnWarehouseId: returnWarehouseId || null,
         slots: slots.map(s => ({
           slotId: s.slotId,
           machineId: s.machineId,
