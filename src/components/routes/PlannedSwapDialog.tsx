@@ -25,7 +25,7 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, onConfirm }: Prop
       const { data } = await supabase
         .from("item_details")
         .select("id, name")
-        .eq("type", "toy")
+        .eq("type", "merchandise")
         .order("name");
       return data || [];
     },

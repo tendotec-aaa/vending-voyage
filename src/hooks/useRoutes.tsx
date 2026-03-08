@@ -277,7 +277,10 @@ export function useRouteDetail(routeId: string | undefined) {
 
   const updateStop = useMutation({
     mutationFn: async ({ id, ...updates }: { id: string; demand_multiplier?: number; planned_actions?: PlannedAction[] }) => {
-      const { error } = await supabase.from("route_stops").update(updates).eq("id", id);
+      const payload: Record<string, unknown> = {};
+      if (updates.demand_multiplier !== undefined) payload.demand_multiplier = updates.demand_multiplier;
+      if (updates.planned_actions !== undefined) payload.planned_actions = JSON.parse(JSON.stringify(updates.planned_actions));
+      const { error } = await supabase.from("route_stops").update(payload as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
