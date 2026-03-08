@@ -16,6 +16,8 @@ export interface Route {
 export interface PlannedAction {
   type: "swap";
   slotId: string;
+  spotId: string;
+  spotName: string;
   machineSerial: string;
   slotNumber: number;
   oldProductId: string;
