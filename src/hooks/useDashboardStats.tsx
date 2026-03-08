@@ -12,18 +12,14 @@ import {
   differenceInCalendarDays,
 } from "date-fns";
 
-// UTC-5 offset helper: shift a UTC Date so that "start of day" in UTC
-// corresponds to midnight in UTC-5 (i.e. 05:00 UTC).
-const TZ_OFFSET_HOURS = 5; // UTC-5
+const TZ_OFFSET_HOURS = 5;
 
 function nowLocal(): Date {
-  // Shift "now" so date-fns calendar helpers align with UTC-5
   const utcNow = new Date();
   return new Date(utcNow.getTime() - TZ_OFFSET_HOURS * 60 * 60 * 1000);
 }
 
 function toISOStringUTC5(localDate: Date): string {
-  // Convert the shifted date back to real UTC for Supabase queries
   const real = new Date(localDate.getTime() + TZ_OFFSET_HOURS * 60 * 60 * 1000);
   return real.toISOString();
 }
@@ -31,36 +27,27 @@ function toISOStringUTC5(localDate: Date): string {
 function getMonthBounds() {
   const local = nowLocal();
   const currentMonthStart = startOfMonth(local);
-  const currentEnd = local; // now (MTD)
-
-  const dayOfMonth = local.getDate(); // e.g. 8
+  const currentEnd = local;
+  const dayOfMonth = local.getDate();
   const prevMonthStart = startOfMonth(subMonths(local, 1));
   const prevMonthLastDay = endOfMonth(subMonths(local, 1));
-  // Cap to min(dayOfMonth, last day of prev month)
-  const prevEnd = min([
-    addDays(prevMonthStart, dayOfMonth - 1),
-    prevMonthLastDay,
-  ]);
+  const prevEnd = min([addDays(prevMonthStart, dayOfMonth - 1), prevMonthLastDay]);
 
   return {
     currentStart: toISOStringUTC5(currentMonthStart),
     currentEnd: toISOStringUTC5(currentEnd),
     prevStart: toISOStringUTC5(prevMonthStart),
-    // add 1 day to make it inclusive through end of that day
     prevEnd: toISOStringUTC5(addDays(prevEnd, 1)),
   };
 }
 
 function getWeekBounds() {
   const local = nowLocal();
-  const currentWeekStart = startOfWeek(local, { weekStartsOn: 1 }); // Monday
+  const currentWeekStart = startOfWeek(local, { weekStartsOn: 1 });
   const currentEnd = local;
-
-  const daysSinceMonday = differenceInCalendarDays(local, currentWeekStart); // 0-6
+  const daysSinceMonday = differenceInCalendarDays(local, currentWeekStart);
   const prevWeekStart = subWeeks(currentWeekStart, 1);
-  const prevEnd = addDays(prevWeekStart, daysSinceMonday + 1); // +1 for inclusive
-
-  // Full week for chart (Mon-Sun)
+  const prevEnd = addDays(prevWeekStart, daysSinceMonday + 1);
   const weekChartEnd = addDays(currentWeekStart, 7);
 
   return {
@@ -92,22 +79,18 @@ async function fetchRevenue(start: string, end: string) {
       .gte("sale_date", start.slice(0, 10))
       .lte("sale_date", end.slice(0, 10)),
   ]);
-
   if (visitsRes.error) throw visitsRes.error;
   if (salesRes.error) throw salesRes.error;
 
-  const visitSum = (visitsRes.data || []).reduce(
-    (s, v) => s + (Number(v.total_cash_collected) || 0),
-    0
-  );
-  const saleSum = (salesRes.data || []).reduce(
-    (s, v) => s + (Number(v.total_amount) || 0),
-    0
-  );
+  const visitSum = (visitsRes.data || []).reduce((s, v) => s + (Number(v.total_cash_collected) || 0), 0);
+  const saleSum = (salesRes.data || []).reduce((s, v) => s + (Number(v.total_amount) || 0), 0);
   return visitSum + saleSum;
 }
 
-export function useDashboardStats(issuesPeriod: "weekly" | "monthly" = "weekly") {
+export function useDashboardStats(
+  issuesPeriod: "weekly" | "monthly" = "weekly",
+  leaderboardPeriod: "weekly" | "monthly" = "weekly"
+) {
   const monthBounds = getMonthBounds();
   const weekBounds = getWeekBounds();
 
@@ -148,7 +131,6 @@ export function useDashboardStats(issuesPeriod: "weekly" | "monthly" = "weekly")
           .gte("sale_date", weekBounds.chartStart.slice(0, 10))
           .lte("sale_date", weekBounds.chartEnd.slice(0, 10)),
       ]);
-
       if (visitsRes.error) throw visitsRes.error;
       if (salesRes.error) throw salesRes.error;
 
@@ -159,7 +141,7 @@ export function useDashboardStats(issuesPeriod: "weekly" | "monthly" = "weekly")
       for (const v of visitsRes.data || []) {
         const d = new Date(v.visit_date!);
         const shifted = new Date(d.getTime() - TZ_OFFSET_HOURS * 60 * 60 * 1000);
-        const dayIdx = (shifted.getDay() + 6) % 7; // Mon=0
+        const dayIdx = (shifted.getDay() + 6) % 7;
         buckets[dayNames[dayIdx]] += Number(v.total_cash_collected) || 0;
       }
       for (const s of salesRes.data || []) {
@@ -176,13 +158,8 @@ export function useDashboardStats(issuesPeriod: "weekly" | "monthly" = "weekly")
     queryKey: ["dashboard-active-machines"],
     queryFn: async () => {
       const [deployedRes, totalRes] = await Promise.all([
-        supabase
-          .from("machines")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "deployed"),
-        supabase
-          .from("machines")
-          .select("id", { count: "exact", head: true }),
+        supabase.from("machines").select("id", { count: "exact", head: true }).eq("status", "deployed"),
+        supabase.from("machines").select("id", { count: "exact", head: true }),
       ]);
       if (deployedRes.error) throw deployedRes.error;
       if (totalRes.error) throw totalRes.error;
@@ -194,13 +171,8 @@ export function useDashboardStats(issuesPeriod: "weekly" | "monthly" = "weekly")
     queryKey: ["dashboard-active-spots"],
     queryFn: async () => {
       const [activeRes, totalLocationsRes] = await Promise.all([
-        supabase
-          .from("spots")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "active"),
-        supabase
-          .from("locations")
-          .select("id", { count: "exact", head: true }),
+        supabase.from("spots").select("id", { count: "exact", head: true }).eq("status", "active"),
+        supabase.from("locations").select("id", { count: "exact", head: true }),
       ]);
       if (activeRes.error) throw activeRes.error;
       if (totalLocationsRes.error) throw totalLocationsRes.error;
@@ -228,7 +200,6 @@ export function useDashboardStats(issuesPeriod: "weekly" | "monthly" = "weekly")
   const machineIssues = useQuery({
     queryKey: ["dashboard-machine-issues", issuesPeriod],
     queryFn: async () => {
-      // 1. All open tickets (pinned regardless of date)
       const openRes = await supabase
         .from("maintenance_tickets")
         .select(`
@@ -238,10 +209,8 @@ export function useDashboardStats(issuesPeriod: "weekly" | "monthly" = "weekly")
         `)
         .neq("status", "completed")
         .order("created_at", { ascending: false });
-
       if (openRes.error) throw openRes.error;
 
-      // 2. Completed tickets filtered by period
       const periodStart =
         issuesPeriod === "weekly" ? weekBounds.currentStart : monthBounds.currentStart;
 
@@ -256,28 +225,119 @@ export function useDashboardStats(issuesPeriod: "weekly" | "monthly" = "weekly")
         .gte("resolved_at", periodStart)
         .order("resolved_at", { ascending: false })
         .limit(10);
-
       if (completedRes.error) throw completedRes.error;
 
-      // Merge & deduplicate
       const openTickets = (openRes.data || []).map((t) => ({ ...t, _pinned: true }));
-      const completedTickets = (completedRes.data || []).map((t) => ({
-        ...t,
-        _pinned: false,
-      }));
-
+      const completedTickets = (completedRes.data || []).map((t) => ({ ...t, _pinned: false }));
       return { openTickets, completedTickets };
     },
   });
 
-  const isLoading =
-    monthlyRevenue.isLoading ||
-    weeklyRevenue.isLoading ||
-    chartData.isLoading ||
-    activeMachines.isLoading ||
-    activeSpots.isLoading ||
-    recentVisits.isLoading ||
-    machineIssues.isLoading;
+  const lowStockItems = useQuery({
+    queryKey: ["dashboard-low-stock"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("inventory")
+        .select("quantity_on_hand, item_detail:item_details(name, sku), warehouse:warehouses(name)")
+        .not("warehouse_id", "is", null)
+        .lt("quantity_on_hand", 100);
+      if (error) throw error;
+      return (data || []).map((row: any) => ({
+        itemName: row.item_detail?.name ?? "Unknown",
+        sku: row.item_detail?.sku ?? "",
+        warehouseName: row.warehouse?.name ?? "Unknown",
+        quantity: row.quantity_on_hand ?? 0,
+      }));
+    },
+  });
+
+  const criticalSlots = useQuery({
+    queryKey: ["dashboard-critical-slots"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("machine_slots")
+        .select("slot_number, current_stock, machine:machines(serial_number, status, setup:setups(spot:spots(location:locations(name))))")
+        .lte("current_stock", 5);
+      if (error) throw error;
+
+      // Client-side filter for deployed machines only
+      return (data || [])
+        .filter((row: any) => row.machine?.status === "deployed")
+        .map((row: any) => {
+          const locationName =
+            row.machine?.setup?.spot?.location?.name ?? "Unknown";
+          return {
+            machineSerial: row.machine?.serial_number ?? "Unknown",
+            locationName,
+            slotNumber: row.slot_number,
+            currentStock: row.current_stock ?? 0,
+          };
+        });
+    },
+  });
+
+  // Leaderboard bounds
+  const lbBounds =
+    leaderboardPeriod === "weekly"
+      ? {
+          start: weekBounds.currentStart,
+          end: weekBounds.currentEnd,
+          prevStart: weekBounds.prevStart,
+          prevEnd: weekBounds.prevEnd,
+        }
+      : {
+          start: monthBounds.currentStart,
+          end: monthBounds.currentEnd,
+          prevStart: monthBounds.prevStart,
+          prevEnd: monthBounds.prevEnd,
+        };
+
+  const topSpots = useQuery({
+    queryKey: ["dashboard-top-spots", leaderboardPeriod],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_top_spots_revenue", {
+        p_start: lbBounds.start,
+        p_end: lbBounds.end,
+        p_prev_start: lbBounds.prevStart,
+        p_prev_end: lbBounds.prevEnd,
+      });
+      if (error) throw error;
+      return (data || []).map((r: any) => ({
+        name: r.spot_name,
+        value: Number(r.current_revenue) || 0,
+        pctChange: pctChange(Number(r.current_revenue) || 0, Number(r.prev_revenue) || 0),
+      }));
+    },
+  });
+
+  const topItems = useQuery({
+    queryKey: ["dashboard-top-items", leaderboardPeriod],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_top_items_volume", {
+        p_start: lbBounds.start,
+        p_end: lbBounds.end,
+        p_prev_start: lbBounds.prevStart,
+        p_prev_end: lbBounds.prevEnd,
+      });
+      if (error) throw error;
+      return (data || []).map((r: any) => ({
+        name: r.item_name,
+        value: Number(r.current_volume) || 0,
+        pctChange: pctChange(Number(r.current_volume) || 0, Number(r.prev_volume) || 0),
+      }));
+    },
+  });
+
+  // Derived metrics
+  const arpm =
+    (monthlyRevenue.data?.current ?? 0) / (activeMachines.data?.deployed || 1);
+
+  const prevArpm =
+    (monthlyRevenue.data?.previous ?? 0) / (activeMachines.data?.deployed || 1);
+
+  const arpmPctChange = pctChange(arpm, prevArpm);
+
+  const stockoutRiskCount = criticalSlots.data?.length ?? 0;
 
   return {
     monthlyRevenue: monthlyRevenue.data,
@@ -287,7 +347,6 @@ export function useDashboardStats(issuesPeriod: "weekly" | "monthly" = "weekly")
     activeSpots: activeSpots.data,
     recentVisits: recentVisits.data,
     machineIssues: machineIssues.data,
-    isLoading,
     isLoadingMonthly: monthlyRevenue.isLoading,
     isLoadingWeekly: weeklyRevenue.isLoading,
     isLoadingChart: chartData.isLoading,
@@ -295,5 +354,16 @@ export function useDashboardStats(issuesPeriod: "weekly" | "monthly" = "weekly")
     isLoadingSpots: activeSpots.isLoading,
     isLoadingVisits: recentVisits.isLoading,
     isLoadingIssues: machineIssues.isLoading,
+    lowStockItems: lowStockItems.data ?? [],
+    criticalSlots: criticalSlots.data ?? [],
+    isLoadingLowStock: lowStockItems.isLoading,
+    isLoadingCriticalSlots: criticalSlots.isLoading,
+    topSpots: topSpots.data ?? [],
+    topItems: topItems.data ?? [],
+    isLoadingTopSpots: topSpots.isLoading,
+    isLoadingTopItems: topItems.isLoading,
+    arpm,
+    arpmPctChange,
+    stockoutRiskCount,
   };
 }

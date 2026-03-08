@@ -6,12 +6,15 @@ import { RevenueChart } from "@/components/dashboard/RevenueChart";
 import { MachineIssues } from "@/components/dashboard/MachineIssues";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { UpcomingRoutes } from "@/components/dashboard/UpcomingRoutes";
+import { DashboardAlerts } from "@/components/dashboard/DashboardAlerts";
+import { Leaderboard } from "@/components/dashboard/Leaderboard";
 import { useDashboardStats } from "@/hooks/useDashboardStats";
-import { DollarSign, TrendingUp, Truck, MapPin } from "lucide-react";
+import { DollarSign, TrendingUp, Truck, MapPin, Calculator, AlertTriangle } from "lucide-react";
 
 const Index = () => {
   const [issuesPeriod, setIssuesPeriod] = useState<"weekly" | "monthly">("weekly");
-  const stats = useDashboardStats(issuesPeriod);
+  const [leaderboardPeriod, setLeaderboardPeriod] = useState<"weekly" | "monthly">("weekly");
+  const stats = useDashboardStats(issuesPeriod, leaderboardPeriod);
 
   const fmtCurrency = (n: number) =>
     "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -21,15 +24,25 @@ const Index = () => {
     return `${sign}${pct.toFixed(1)}%`;
   };
 
+  const fmtUnits = (n: number) => n.toLocaleString("en-US") + " units";
+
   const weekTotal = stats.chartData?.reduce((s, d) => s + d.revenue, 0) ?? 0;
 
   return (
-    <AppLayout 
-      title="Dashboard" 
+    <AppLayout
+      title="Dashboard"
       subtitle="Welcome back! Here's your operations overview."
     >
+      {/* Actionable Warnings */}
+      <DashboardAlerts
+        lowStockItems={stats.lowStockItems}
+        criticalSlots={stats.criticalSlots}
+        isLoadingLowStock={stats.isLoadingLowStock}
+        isLoadingCriticalSlots={stats.isLoadingCriticalSlots}
+      />
+
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-6">
         <KPICard
           title="Monthly Revenue"
           value={fmtCurrency(stats.monthlyRevenue?.current ?? 0)}
@@ -98,9 +111,33 @@ const Index = () => {
           iconColor="text-violet-600"
           loading={stats.isLoadingSpots}
         />
+        <KPICard
+          title="ARPM"
+          value={fmtCurrency(stats.arpm)}
+          change={`${fmtPct(stats.arpmPctChange)} vs last month`}
+          changeType={
+            stats.arpmPctChange > 0
+              ? "positive"
+              : stats.arpmPctChange < 0
+              ? "negative"
+              : "neutral"
+          }
+          icon={Calculator}
+          iconColor="text-primary"
+          loading={stats.isLoadingMonthly || stats.isLoadingMachines}
+        />
+        <KPICard
+          title="Stockout Risk"
+          value={String(stats.stockoutRiskCount)}
+          change="slots below 5 units"
+          changeType={stats.stockoutRiskCount > 0 ? "negative" : "neutral"}
+          icon={AlertTriangle}
+          iconColor="text-destructive"
+          loading={stats.isLoadingCriticalSlots}
+        />
       </div>
 
-      {/* Main Content Grid */}
+      {/* Revenue Chart + Machine Issues */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="lg:col-span-2">
           <RevenueChart
@@ -118,6 +155,26 @@ const Index = () => {
             onPeriodChange={setIssuesPeriod}
           />
         </div>
+      </div>
+
+      {/* Leaderboards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <Leaderboard
+          title="Top Spots ($$)"
+          items={stats.topSpots}
+          formatValue={fmtCurrency}
+          isLoading={stats.isLoadingTopSpots}
+          period={leaderboardPeriod}
+          onPeriodChange={setLeaderboardPeriod}
+        />
+        <Leaderboard
+          title="Top Items (Volume)"
+          items={stats.topItems}
+          formatValue={fmtUnits}
+          isLoading={stats.isLoadingTopItems}
+          period={leaderboardPeriod}
+          onPeriodChange={setLeaderboardPeriod}
+        />
       </div>
 
       {/* Secondary Content */}

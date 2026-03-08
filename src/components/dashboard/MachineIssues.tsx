@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, Clock } from "lucide-react";
+import { AlertTriangle, Clock, CheckCircle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 interface Ticket {
@@ -35,16 +35,27 @@ const priorityColors: Record<string, string> = {
 };
 
 function TicketRow({ ticket }: { ticket: Ticket }) {
+  const isOpen = ticket.status !== "completed";
+
   return (
-    <div className="flex items-start justify-between p-3 rounded-lg bg-background border border-border">
+    <div
+      className={`flex items-start justify-between p-3 rounded-lg bg-background border ${
+        isOpen ? "border-destructive/30" : "border-border"
+      }`}
+    >
       <div className="flex-1 min-w-0 space-y-1">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge className={priorityColors[ticket.priority] || "bg-secondary text-secondary-foreground"}>
             {ticket.priority}
           </Badge>
-          {ticket.status !== "completed" && (
+          {isOpen ? (
             <Badge variant="outline" className="text-xs border-destructive/50 text-destructive">
               Open
+            </Badge>
+          ) : (
+            <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs gap-1">
+              <CheckCircle className="w-3 h-3" />
+              Resolved
             </Badge>
           )}
           <span className="text-sm font-medium text-foreground truncate">
