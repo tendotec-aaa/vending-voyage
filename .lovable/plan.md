@@ -1,82 +1,48 @@
-## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
-### What was implemented:
 
-1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
+## Hierarchical Swap Selection: Spot → Slot | Category → In-Stock Product
 
-2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
+### What Changes
 
-3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
+**File: `src/components/routes/PlannedSwapDialog.tsx`** -- Complete rewrite with 4-step cascading selection:
 
-4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
+**Step 1 - "Where" section:**
+- **Dropdown 1: Select Spot** -- Groups the passed `slots` by `spot_id`/`spot_name`. Displays spot names (e.g., "Main Entrance"). Falls back to `"Machine at [location]"` if `spot_name` is empty.
+- **Dropdown 2: Select Slot** -- Disabled until a Spot is selected. Filters `slots` to only those matching the selected `spot_id`. Display format: `"Slot [Number]: [Current Product Name]"` (or "Empty").
 
-5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
+**Step 2 - "What" section:**
+- **Dropdown 3: Select Category** -- Fetches categories from the `categories` table. Standard dropdown.
+- **Dropdown 4: Select New Product** -- Disabled until a Category is selected. Queries `item_details` filtered by `category_id` and `type = 'merchandise'`, then joins with `inventory` table to only show products where `quantity_on_hand > 0` (summed across all warehouses). Display format: `"[Product Name] — ([Qty] available)"`.
 
-6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
+**New query** inside the dialog (enabled when `open && selectedCategoryId` is set):
+```sql
+-- Pseudocode for the in-stock product query
+SELECT id.id, id.name, SUM(inv.quantity_on_hand) as available
+FROM item_details id
+JOIN inventory inv ON inv.item_detail_id = id.id
+  AND inv.warehouse_id IS NOT NULL
+WHERE id.category_id = :categoryId
+  AND id.type = 'merchandise'
+GROUP BY id.id, id.name
+HAVING SUM(inv.quantity_on_hand) > 0
+ORDER BY id.name
+```
 
-7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
+**UI/UX:**
+- Confirm button disabled until all 4 selections are made
+- Preview card shows: Spot name, slot number, old → new product, and load quantity
+- Resetting a parent dropdown clears its children (selecting a new Spot clears Slot; selecting a new Category clears Product)
 
-### Architecture now:
-- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
-- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
-- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
-- **Audit trail**: Complete history of every stock movement with performer tracking
+**Props change:** Add `locationName: string` prop so the fallback can read `"Machine at [Location Name]"` instead of using the spot ID.
 
----
+**File: `src/components/routes/RouteStopCard.tsx`** -- Pass `locationName={stop.location?.name || "Unknown"}` to `PlannedSwapDialog`.
 
-## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
+**No changes** to `useRoutes.tsx` -- the slot data already contains `spot_id` and `spot_name`. No database changes needed. Planning only -- no ledger or `machine_slots` writes.
 
-### Format
-`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
-- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
-- No category/subcategory → `XX-482910`
+### Technical Details
 
-### What was implemented:
+- State: `selectedSpotId`, `selectedSlotId`, `selectedCategoryId`, `newProductId`
+- 3 queries: categories (static), in-stock products (dependent on category), existing swap-products query removed
+- The `PlannedAction` interface already has all needed fields -- no changes
+- The inventory query uses a raw approach: fetch `item_details` by category, then fetch `inventory` rows for those items with `warehouse_id IS NOT NULL`, aggregate in JS (avoids needing a DB function)
 
-1. **`src/lib/skuGenerator.ts`** — Rewritten with:
-   - `generateCode(name)` — extracts first letter of each word, max 2 chars
-   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
-   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
-
-2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
-
-3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
-
-4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
-
-5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
-
-### Uniqueness guarantees:
-- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
-- **Retry loop** regenerates SKU on collision, up to 3 attempts
-- **Single helper function** used by all item creation flows
-
----
-
-## ✅ COMPLETED: Sales Order System with Atomic RPC
-
-### What was implemented:
-
-1. **BEFORE INSERT trigger `compute_ledger_running_balance`** — Auto-computes `running_balance` on `inventory_ledger` inserts. All callers (existing and new) no longer need to compute it — the trigger overwrites whatever value is passed. Existing code continues working with zero breakage.
-
-2. **`sales` table** — Header with `sale_number`, `sale_date`, `buyer_name`, `buyer_contact`, `warehouse_id`, `subtotal`, `tax_rate`, `tax_amount`, `total_amount`, `currency`, `paid`, `status`, `notes`, `created_by`. RLS enabled.
-
-3. **`sale_items` table** — Line items with `sale_id`, `item_detail_id`, `quantity`, `unit_price`, `total_price`. Cascading delete on sale. RLS enabled.
-
-4. **`create_sales_order` RPC** — SECURITY DEFINER PostgreSQL function. Accepts single JSON payload. Atomically inserts sale header, all line items, and `inventory_ledger` entries (movement_type: `warehouse_sale`, negative quantity). Running balance = 0 placeholder (trigger computes real value). Full transaction safety.
-
-5. **`useSales.tsx` hook** — Queries sales with nested items, warehouses, item catalog. `createSale` mutation calls RPC. `useStockCheck` for pre-submit validation.
-
-6. **`Sales.tsx` list page** — Searchable table with sale number, buyer, date, items count, total, paid badge.
-
-7. **`NewSale.tsx` form** — Multi-line item entry with warehouse selection, tax rate, buyer info. Soft stock warning via AlertDialog when quantity exceeds `quantity_on_hand` — user can confirm and proceed (allows negative inventory).
-
-8. **`SaleDetail.tsx`** — Read-only detail with header cards, line items table.
-
-9. **Sidebar + routing** — DollarSign icon under Supply Chain. Routes: `/sales`, `/sales/new`, `/sales/:id`.
-
-### Architecture:
-- **Single atomic write path**: All sales go through `create_sales_order` RPC (no multi-step client inserts)
-- **No running_balance in frontend**: RPC passes `0`, BEFORE INSERT trigger computes correct value
-- **Soft stock warnings**: UI warns but allows proceeding — inventory can go negative
-- **Ledger integrity**: Every sale creates `warehouse_sale` ledger entries, existing AFTER INSERT trigger syncs `inventory.quantity_on_hand`
