@@ -1,3 +1,4 @@
+import { generateSkuCode } from "@/lib/skuGenerator";
 import { fmt2, fmt3 } from "@/lib/formatters";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
@@ -80,7 +81,7 @@ export default function NewPurchase() {
 
   // Line items state
   const [lineItems, setLineItems] = useState<LineItem[]>([
-    { item_name: "", sku: Date.now().toString(36).toUpperCase(), quantity_ordered: 1, unit_cost: 0, cbm: 0, fees: [] },
+    { item_name: "", sku: generateSkuCode(), quantity_ordered: 1, unit_cost: 0, cbm: 0, fees: [] },
   ]);
 
   // Global fees state
@@ -100,7 +101,7 @@ export default function NewPurchase() {
   });
 
   // Generate SKU
-  const generateSku = () => Date.now().toString(36).toUpperCase();
+  const generateSku = () => generateSkuCode();
 
   // Add line item
   const addLineItem = () => {

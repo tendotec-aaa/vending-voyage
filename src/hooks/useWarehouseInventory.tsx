@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { insertItemDetailWithRetrySku } from "@/lib/skuGenerator";
 
 export interface WarehouseItem {
   id: string;
@@ -185,25 +186,25 @@ export function useWarehouseInventory(warehouseFilter?: string) {
       name,
       categoryId,
       subcategoryId,
+      categoryName,
+      subcategoryName,
     }: {
       name: string;
       categoryId?: string;
       subcategoryId?: string;
+      categoryName?: string;
+      subcategoryName?: string;
     }) => {
-      const sku = Date.now().toString(36).toUpperCase();
-      const { data, error } = await supabase
-        .from("item_details")
-        .insert({
+      const data = await insertItemDetailWithRetrySku(
+        {
           name: name.trim(),
-          sku,
           type: "merchandise" as const,
           category_id: categoryId || null,
           subcategory_id: subcategoryId || null,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
+        },
+        categoryName,
+        subcategoryName
+      );
       return data;
     },
     onSuccess: () => {
