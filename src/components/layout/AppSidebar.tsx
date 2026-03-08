@@ -37,6 +37,7 @@ const dashboardItem = { title: "Dashboard", icon: LayoutDashboard, url: "/" };
 
 const operationsItems = [
   { title: "Visit Reports", icon: ClipboardList, url: "/visits" },
+  { title: "Routes", icon: Route, url: "/routes" },
   { title: "Maintenance", icon: Wrench, url: "/maintenance" },
 ];
 
