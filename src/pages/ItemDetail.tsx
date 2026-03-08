@@ -294,7 +294,86 @@ export default function ItemDetail() {
     enabled: purchaseRefIds.length > 0,
   });
 
-  // Stock discrepancies
+  // All warehouses (for resolving transfer origin/destination names)
+  const { data: allWarehouses = [] } = useQuery({
+    queryKey: ["all-warehouses"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("warehouses").select("id, name");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
+  // User profiles for performed_by names
+  const performedByIds = useMemo(() => {
+    return [...new Set(ledgerEntries.filter(e => e.performed_by).map(e => e.performed_by!))];
+  }, [ledgerEntries]);
+
+  const { data: performerProfiles = [] } = useQuery({
+    queryKey: ["ledger-performers", performedByIds],
+    queryFn: async () => {
+      if (performedByIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("user_profiles")
+        .select("id, first_names, last_names")
+        .in("id", performedByIds);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: performedByIds.length > 0,
+  });
+
+  const performerMap = useMemo(() => {
+    const map = new Map<string, string>();
+    performerProfiles.forEach((p: any) => {
+      const name = [p.first_names, p.last_names].filter(Boolean).join(" ") || "—";
+      map.set(p.id, name);
+    });
+    return map;
+  }, [performerProfiles]);
+
+  const warehouseNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    allWarehouses.forEach((w: any) => map.set(w.id, w.name));
+    return map;
+  }, [allWarehouses]);
+
+  // Logistics view: group transfers by reference_id
+  const logisticsRows = useMemo(() => {
+    const transferGroups = new Map<string, any[]>();
+    ledgerEntries.forEach(e => {
+      if (e.movement_type === "transfer" && e.reference_id) {
+        const group = transferGroups.get(e.reference_id) || [];
+        group.push(e);
+        transferGroups.set(e.reference_id, group);
+      }
+    });
+
+    const rows: any[] = [];
+    const processedIds = new Set<string>();
+
+    ledgerEntries.forEach(e => {
+      if (processedIds.has(e.id)) return;
+
+      if (e.movement_type === "transfer" && e.reference_id) {
+        const group = transferGroups.get(e.reference_id);
+        if (group && group.length === 2) {
+          group.forEach(g => processedIds.add(g.id));
+          const outEntry = group.find(g => g.quantity < 0);
+          const inEntry = group.find(g => g.quantity > 0);
+          rows.push({ type: "transfer", outEntry, inEntry, date: outEntry?.created_at || inEntry?.created_at });
+          return;
+        }
+      }
+      processedIds.add(e.id);
+      rows.push({ type: "single", entry: e });
+    });
+
+    return rows;
+  }, [ledgerEntries]);
+
+
   const { data: discrepancies = [], refetch: refetchDiscrepancies } = useQuery({
     queryKey: ["stock-discrepancies", id],
     queryFn: async () => {
