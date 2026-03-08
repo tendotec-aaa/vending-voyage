@@ -1710,6 +1710,34 @@ export type Database = {
     }
     Functions: {
       create_sales_order: { Args: { payload: Json }; Returns: string }
+      get_top_items_volume: {
+        Args: {
+          p_end: string
+          p_prev_end: string
+          p_prev_start: string
+          p_start: string
+        }
+        Returns: {
+          current_volume: number
+          item_detail_id: string
+          item_name: string
+          prev_volume: number
+        }[]
+      }
+      get_top_spots_revenue: {
+        Args: {
+          p_end: string
+          p_prev_end: string
+          p_prev_start: string
+          p_start: string
+        }
+        Returns: {
+          current_revenue: number
+          prev_revenue: number
+          spot_id: string
+          spot_name: string
+        }[]
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["user_role"]
