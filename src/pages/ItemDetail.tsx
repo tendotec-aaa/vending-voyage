@@ -208,6 +208,21 @@ export default function ItemDetail() {
     enabled: !!id && !!user,
   });
 
+  const { data: warehouseSales = [] } = useQuery({
+    queryKey: ["item-warehouse-sales", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sale_items")
+        .select(`id, quantity, unit_price, total_price, created_at,
+          sale:sales(id, sale_number, sale_date, buyer_name,
+            warehouse:warehouses(name))`)
+        .eq("item_detail_id", id!);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id && !!user,
+  });
+
   const { data: snapshots = [] } = useQuery({
     queryKey: ["item-visit-snapshots", id],
     queryFn: async () => {
