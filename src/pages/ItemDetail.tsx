@@ -20,7 +20,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Pencil, Save, X, Camera, Upload, Trash2, DollarSign, Warehouse, Truck, ShoppingCart, AlertTriangle, Copy, Check, ChevronDown, Undo2, TrendingUp, Clock, RotateCcw, Activity } from "lucide-react";
+import { ArrowLeft, Pencil, Save, X, Camera, Upload, Trash2, DollarSign, Warehouse, Truck, ShoppingCart, AlertTriangle, Copy, Check, ChevronDown, Undo2, TrendingUp, Clock, RotateCcw, Activity, ArrowRightLeft } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { differenceInDays, addDays } from "date-fns";
 import { WarehouseSaleDialog } from "@/components/inventory/WarehouseSaleDialog";
