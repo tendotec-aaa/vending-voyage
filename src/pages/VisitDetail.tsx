@@ -315,6 +315,14 @@ export default function VisitDetail() {
     };
   });
 
+  // Sort by slot_number ASC, then machine position_on_setup ASC
+  enrichedSlots.sort((a: any, b: any) => {
+    if ((a.slotNumber || 0) !== (b.slotNumber || 0)) return (a.slotNumber || 0) - (b.slotNumber || 0);
+    const posA = lineItems.find((li: any) => li.id === a.id)?.slot?.machine?.position_on_setup || 0;
+    const posB = lineItems.find((li: any) => li.id === b.id)?.slot?.machine?.position_on_setup || 0;
+    return posA - posB;
+  });
+
   const getDaysColor = (days: number | null) => {
     if (days === null) return "text-muted-foreground";
     if (days < 15) return "text-green-600 dark:text-green-400";
