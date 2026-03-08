@@ -111,7 +111,8 @@ export default function RouteDetail() {
             existing.swapQty += swap.capacity;
             pickMap.set(swap.newProductId, existing);
           } else {
-            const historicalDemand = demandMap.get(slot.current_product_id ? slot.id : "");
+            if (!slot.current_product_id || !slot.product_name) continue;
+            const historicalDemand = demandMap.get(slot.id);
             const needed = Math.ceil(
               (historicalDemand ?? Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0))) * multiplier
             );
