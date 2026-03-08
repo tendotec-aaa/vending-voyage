@@ -210,6 +210,7 @@ export function useRouteDetail(routeId: string | undefined) {
       // Build lookup: machine -> setup -> spot -> location
       const setupSpotMap = Object.fromEntries(setups.map((s) => [s.id, s.spot_id]));
       const spotLocationMap = Object.fromEntries(spots.map((s) => [s.id, s.location_id]));
+      const spotNameMap = Object.fromEntries(spots.map((s) => [s.id, s.name]));
       const machineMap = Object.fromEntries(machines.map((m) => [m.id, m]));
 
       return slots.map((slot) => {
@@ -227,6 +228,8 @@ export function useRouteDetail(routeId: string | undefined) {
           machine_serial: machine?.serial_number || "Unknown",
           location_id: locationId || "",
           product_name: slot.current_product_id ? productMap[slot.current_product_id] || null : null,
+          spot_id: spotId || "",
+          spot_name: spotId ? (spotNameMap[spotId] || "") : "",
         };
       });
     },
