@@ -90,6 +90,7 @@ export default function ItemDetail() {
   const [showReverseConfirm, setShowReverseConfirm] = useState<any>(null);
   const [reversingEntry, setReversingEntry] = useState(false);
   const [showWarehouseSale, setShowWarehouseSale] = useState(false);
+  const [ledgerView, setLedgerView] = useState<"logistics" | "accounting">("logistics");
   const [form, setForm] = useState({
     name: "",
     description: "",
