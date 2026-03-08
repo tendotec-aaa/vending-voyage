@@ -80,7 +80,7 @@ export default function NewPurchase() {
 
   // Line items state
   const [lineItems, setLineItems] = useState<LineItem[]>([
-    { item_name: "", sku: Date.now().toString(36).toUpperCase(), quantity_ordered: 1, unit_cost: 0, cbm: 0, fees: [] },
+    { item_name: "", sku: generateSkuCode(), quantity_ordered: 1, unit_cost: 0, cbm: 0, fees: [] },
   ]);
 
   // Global fees state
