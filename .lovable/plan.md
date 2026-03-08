@@ -1,86 +1,82 @@
+## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
+### What was implemented:
 
-## Route Builder Logic Guardrails & Editable Manifesto
+1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
 
-### 1. Hard Cap Guardrail -- `computeSlotRefill` in `src/hooks/useRoutes.tsx`
+2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
 
-Current function calculates `velocity * days * multiplier` without checking if it exceeds available space. Fix:
+3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
 
-```typescript
-export function computeSlotRefill(
-  slot: SlotData,
-  velocityMap: Map<string, VelocityData>,
-  multiplier: number
-): number {
-  const emptySpace = Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0));
-  const v = velocityMap.get(slot.id);
-  if (v && v.dailyVelocity > 0) {
-    const velocityDemand = Math.ceil(v.dailyVelocity * v.daysSinceLastVisit * multiplier);
-    return Math.min(velocityDemand, emptySpace); // HARD CAP
-  }
-  // Velocity 0 or no history: top-off
-  return Math.ceil(emptySpace * multiplier);
-}
-```
+4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
 
-The key change: `Math.min(velocityDemand, emptySpace)` -- never suggest more than the machine can physically hold.
+5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
 
-### 2. Editable Loading Manifesto -- `src/components/routes/PickList.tsx`
+6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
 
-- Add local state: `useState<Map<string, number>>` for manual overrides keyed by `productId`
-- Each product row gets a number `<Input>` pre-filled with the calculated total, editable by the user
-- When the user changes a value, it updates the override map
-- Expose overrides to parent via a new `onOverridesChange` callback prop so RouteDetail can use them in Copy Summary
-- Show the system-suggested amount as a small label beside the input (e.g., "Suggested: 85")
+7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
 
-### 3. Auto-Naming & Date Navigation -- `src/pages/Routes.tsx`
+### Architecture now:
+- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
+- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
+- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
+- **Audit trail**: Complete history of every stock movement with performer tracking
 
-- Remove the "Route Name" `<Input>` from the create dialog
-- Add a list of fun prefixes: `["Thunder Run", "Salinas Mission", "Golden Route", "Iron Trail", "Swift Dash", "Eagle Run", "Blaze Path", "Storm Ride"]`
-- On create, auto-generate: `randomPrefix + " - " + format(selectedDate, "MMMM d")`
-- Keep the date picker
+---
 
-### 4. New WhatsApp Structure -- `handleCopyRouteSummary` in `src/pages/RouteDetail.tsx`
+## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
 
-Restructure the output to put the Loading Manifest FIRST (right after date/driver), use the new formatting with `•` bullets, use override values from the editable manifesto, and add the disclaimer at the bottom.
+### Format
+`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
+- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
+- No category/subcategory → `XX-482910`
 
-New structure:
-```
-📋 ROUTE: Thunder Run - March 15
-📅 Saturday, Mar 15, 2026
-🚗 Driver: John Doe
+### What was implemented:
 
-📦 LOADING MANIFEST:
-• Product Name — 100 (Refill: 80, Swap: 20)
-———————————————
-🔢 Total Units to Load: 250
-———————————————
+1. **`src/lib/skuGenerator.ts`** — Rewritten with:
+   - `generateCode(name)` — extracts first letter of each word, max 2 chars
+   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
+   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
 
---- STOPS ---
+2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
-📍 Location Name
-  • +50 units - Product A
-  • SWAP: Old → New (150 units)
+3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
 
-🔧 MAINTENANCE (2):
-• Jam — Location (high)
+4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
-** This is only a suggestion please note the actual amount in the visit report correctly.
-```
+5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
 
-### 5. State wiring in `src/pages/RouteDetail.tsx`
+### Uniqueness guarantees:
+- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
+- **Retry loop** regenerates SKU on collision, up to 3 attempts
+- **Single helper function** used by all item creation flows
 
-- Add `useState<Map<string, number>>` for manifesto overrides
-- Pass `onOverridesChange` to `<PickList>`
-- Use override values (falling back to calculated) in `handleCopyRouteSummary`
-- Pass `velocityMap` to `RouteStopCard` (already done)
+---
 
-### Files changed
+## ✅ COMPLETED: Sales Order System with Atomic RPC
 
-| File | Change |
-|------|--------|
-| `src/hooks/useRoutes.tsx` | Add `Math.min(velocityDemand, emptySpace)` hard cap |
-| `src/components/routes/PickList.tsx` | Add editable inputs, override state, callback prop |
-| `src/pages/Routes.tsx` | Remove name input, auto-generate name from prefix + date |
-| `src/pages/RouteDetail.tsx` | Override state, new WhatsApp format, manifest-first order, disclaimer |
+### What was implemented:
 
+1. **BEFORE INSERT trigger `compute_ledger_running_balance`** — Auto-computes `running_balance` on `inventory_ledger` inserts. All callers (existing and new) no longer need to compute it — the trigger overwrites whatever value is passed. Existing code continues working with zero breakage.
+
+2. **`sales` table** — Header with `sale_number`, `sale_date`, `buyer_name`, `buyer_contact`, `warehouse_id`, `subtotal`, `tax_rate`, `tax_amount`, `total_amount`, `currency`, `paid`, `status`, `notes`, `created_by`. RLS enabled.
+
+3. **`sale_items` table** — Line items with `sale_id`, `item_detail_id`, `quantity`, `unit_price`, `total_price`. Cascading delete on sale. RLS enabled.
+
+4. **`create_sales_order` RPC** — SECURITY DEFINER PostgreSQL function. Accepts single JSON payload. Atomically inserts sale header, all line items, and `inventory_ledger` entries (movement_type: `warehouse_sale`, negative quantity). Running balance = 0 placeholder (trigger computes real value). Full transaction safety.
+
+5. **`useSales.tsx` hook** — Queries sales with nested items, warehouses, item catalog. `createSale` mutation calls RPC. `useStockCheck` for pre-submit validation.
+
+6. **`Sales.tsx` list page** — Searchable table with sale number, buyer, date, items count, total, paid badge.
+
+7. **`NewSale.tsx` form** — Multi-line item entry with warehouse selection, tax rate, buyer info. Soft stock warning via AlertDialog when quantity exceeds `quantity_on_hand` — user can confirm and proceed (allows negative inventory).
+
+8. **`SaleDetail.tsx`** — Read-only detail with header cards, line items table.
+
+9. **Sidebar + routing** — DollarSign icon under Supply Chain. Routes: `/sales`, `/sales/new`, `/sales/:id`.
+
+### Architecture:
+- **Single atomic write path**: All sales go through `create_sales_order` RPC (no multi-step client inserts)
+- **No running_balance in frontend**: RPC passes `0`, BEFORE INSERT trigger computes correct value
+- **Soft stock warnings**: UI warns but allows proceeding — inventory can go negative
+- **Ledger integrity**: Every sale creates `warehouse_sale` ledger entries, existing AFTER INSERT trigger syncs `inventory.quantity_on_hand`

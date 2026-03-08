@@ -82,13 +82,13 @@ export function computeSlotRefill(
   velocityMap: Map<string, VelocityData>,
   multiplier: number
 ): number {
+  const emptySpace = Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0));
   const v = velocityMap.get(slot.id);
   if (v && v.dailyVelocity > 0) {
-    const baseRefill = v.dailyVelocity * v.daysSinceLastVisit;
-    return Math.ceil(baseRefill * multiplier);
+    const velocityDemand = Math.ceil(v.dailyVelocity * v.daysSinceLastVisit * multiplier);
+    return Math.min(velocityDemand, emptySpace); // HARD CAP: never exceed empty space
   }
-  // Fallback: top-off empty space
-  const emptySpace = Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0));
+  // Velocity 0 or no history: top-off
   return Math.ceil(emptySpace * multiplier);
 }
 

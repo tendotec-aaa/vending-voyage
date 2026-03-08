@@ -17,19 +17,28 @@ const statusColors: Record<string, string> = {
   completed: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
 };
 
+const ROUTE_PREFIXES = [
+  "Thunder Run", "Salinas Mission", "Golden Route", "Iron Trail",
+  "Swift Dash", "Eagle Run", "Blaze Path", "Storm Ride",
+];
+
+function generateRouteName(dateStr: string): string {
+  const prefix = ROUTE_PREFIXES[Math.floor(Math.random() * ROUTE_PREFIXES.length)];
+  const formatted = format(new Date(dateStr + "T12:00:00"), "MMMM d");
+  return `${prefix} - ${formatted}`;
+}
+
 export default function Routes() {
   const navigate = useNavigate();
   const { routesQuery, createRoute, deleteRoute } = useRoutes();
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
   const handleCreate = () => {
-    if (!name.trim()) return;
-    createRoute.mutate({ name: name.trim(), scheduled_for: date }, {
+    const name = generateRouteName(date);
+    createRoute.mutate({ name, scheduled_for: date }, {
       onSuccess: (data) => {
         setOpen(false);
-        setName("");
         navigate(`/routes/${data.id}`);
       },
     });
@@ -51,13 +60,12 @@ export default function Routes() {
               <DialogHeader><DialogTitle>Create Route</DialogTitle></DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label>Route Name</Label>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Monday Run - North" />
-                </div>
-                <div>
                   <Label>Scheduled Date</Label>
                   <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
                 </div>
+                <p className="text-sm text-muted-foreground">
+                  Name: <span className="font-medium text-foreground">{generateRouteName(date)}</span>
+                </p>
                 <Button onClick={handleCreate} disabled={createRoute.isPending} className="w-full">
                   {createRoute.isPending ? "Creating..." : "Create Route"}
                 </Button>
