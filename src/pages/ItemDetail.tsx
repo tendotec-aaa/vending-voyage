@@ -20,7 +20,9 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Pencil, Save, X, Camera, Upload, Trash2, DollarSign, Warehouse, Truck, ShoppingCart, AlertTriangle, Copy, Check, ChevronDown, Undo2 } from "lucide-react";
+import { ArrowLeft, Pencil, Save, X, Camera, Upload, Trash2, DollarSign, Warehouse, Truck, ShoppingCart, AlertTriangle, Copy, Check, ChevronDown, Undo2, TrendingUp, Clock, RotateCcw, Activity } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { differenceInDays, addDays } from "date-fns";
 import { WarehouseSaleDialog } from "@/components/inventory/WarehouseSaleDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -633,8 +635,6 @@ export default function ItemDetail() {
   const totalRevenue = (salesData || []).reduce(
     (sum, s) => sum + (Number(s.cash_collected) || 0), 0
   );
-  const grossProfit = totalRevenue - totalInventoryCost;
-  const marginPct = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
   const totalReceived = purchaseBatches.reduce(
     (sum: number, b: any) => sum + (b.quantity_received || 0), 0
   );
@@ -850,9 +850,9 @@ export default function ItemDetail() {
           </Card>
         </div>
 
-        {/* ===== SECTION 3: Financial Performance Panel ===== */}
+        {/* ===== SECTION 3: Item Intelligence Panel ===== */}
         <Card>
-          <CardHeader><CardTitle>Financial Performance</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Item Intelligence</CardTitle></CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 text-center">
               <div>
@@ -868,20 +868,153 @@ export default function ItemDetail() {
                 <p className="text-lg font-semibold text-foreground">${fmt2(totalRevenue)}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Gross Profit</p>
-                <p className={`text-lg font-semibold ${grossProfit >= 0 ? "text-chart-2" : "text-destructive"}`}>
-                  ${fmt2(grossProfit)}
-                </p>
+                <p className="text-sm text-muted-foreground">Avg Unit Cost</p>
+                <p className="text-lg font-semibold text-foreground">${fmt3(weightedAvgCost)}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Margin</p>
-                <p className={`text-lg font-semibold ${marginPct >= 0 ? "text-chart-2" : "text-destructive"}`}>
-                  {totalRevenue > 0 ? `${fmtPct(marginPct)}%` : "—"}
-                </p>
+                <p className="text-sm text-muted-foreground">Cost Recovery</p>
+                {(() => {
+                  const costRecovery = totalInventoryCost > 0 ? (totalRevenue / totalInventoryCost) * 100 : 0;
+                  return (
+                    <p className={`text-lg font-semibold ${costRecovery >= 100 ? "text-chart-2" : "text-chart-4"}`}>
+                      {totalInventoryCost > 0 ? `${fmtPct(costRecovery)}%` : "—"}
+                    </p>
+                  );
+                })()}
               </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* ===== Sell-Through Velocity (Merchandise Only) ===== */}
+        {item.type === "merchandise" && (() => {
+          // Get all visit dates from logistics history
+          const visitDates = logisticsHistory
+            .map((li: any) => li.spot_visit?.visit_date)
+            .filter(Boolean)
+            .map((d: string) => new Date(d));
+
+          if (visitDates.length < 2) {
+            const insufficientData = true;
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="h-5 w-5" /> Sell-Through Velocity
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">Insufficient data — need at least 2 visits to calculate velocity.</p>
+                </CardContent>
+              </Card>
+            );
+          }
+
+          const firstVisit = new Date(Math.min(...visitDates.map((d: Date) => d.getTime())));
+          const lastVisit = new Date(Math.max(...visitDates.map((d: Date) => d.getTime())));
+          const daysInRange = Math.max(1, differenceInDays(lastVisit, firstVisit));
+
+          if (daysInRange < 7) {
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="h-5 w-5" /> Sell-Through Velocity
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">Insufficient data — need at least 7 days of sales history to extrapolate reliably.</p>
+                </CardContent>
+              </Card>
+            );
+          }
+
+          const dailyRate = totalUnitsSold / daysInRange;
+          const weeklyRate = dailyRate * 7;
+          const monthlyRate = dailyRate * 30;
+          const stockRunwayDays = dailyRate > 0 ? Math.round(totalStock / dailyRate) : null;
+          const depletionDate = stockRunwayDays !== null ? addDays(new Date(), stockRunwayDays) : null;
+          const avgStock = totalReceived > 0 ? (totalReceived + totalStock) / 2 : totalStock;
+          const turnoverRate = avgStock > 0 ? totalUnitsSold / avgStock : 0;
+
+          // Color coding for runway
+          let runwayColor = "text-muted-foreground";
+          let runwayBg = "bg-muted";
+          if (stockRunwayDays !== null) {
+            if (stockRunwayDays < 15) { runwayColor = "text-destructive"; runwayBg = "bg-destructive"; }
+            else if (stockRunwayDays <= 30) { runwayColor = "text-chart-4"; runwayBg = "bg-chart-4"; }
+            else { runwayColor = "text-chart-2"; runwayBg = "bg-chart-2"; }
+          }
+
+          return (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5" /> Sell-Through Velocity
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* Sell Rates */}
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Daily</p>
+                    <p className="text-xl font-bold text-foreground">{fmtPct(dailyRate)}</p>
+                    <p className="text-xs text-muted-foreground">units/day</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Weekly</p>
+                    <p className="text-xl font-bold text-foreground">{fmtPct(weeklyRate)}</p>
+                    <p className="text-xs text-muted-foreground">units/week</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Monthly</p>
+                    <p className="text-xl font-bold text-foreground">{fmtPct(monthlyRate)}</p>
+                    <p className="text-xs text-muted-foreground">units/month</p>
+                  </div>
+                </div>
+
+                {/* Stock Runway */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium text-foreground">Stock Runway</span>
+                    </div>
+                    <span className={`text-sm font-bold ${runwayColor}`}>
+                      {stockRunwayDays !== null ? `~${stockRunwayDays} days` : "N/A"}
+                    </span>
+                  </div>
+                  {stockRunwayDays !== null && (
+                    <>
+                      <Progress value={Math.min(100, (stockRunwayDays / 90) * 100)} className={`h-2 [&>div]:${runwayBg}`} />
+                      <p className="text-xs text-muted-foreground">
+                        Estimated depletion: {depletionDate ? format(depletionDate, "MMM d, yyyy") : "—"}
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                {/* Turnover & Context */}
+                <div className="grid grid-cols-2 gap-4 text-center border-t border-border pt-4">
+                  <div>
+                    <div className="flex items-center justify-center gap-1 mb-1">
+                      <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">Turnover Rate</p>
+                    </div>
+                    <p className="text-lg font-semibold text-foreground">{fmtPct(turnoverRate)}x</p>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-center gap-1 mb-1">
+                      <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">Active Period</p>
+                    </div>
+                    <p className="text-lg font-semibold text-foreground">{daysInRange} days</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Stock Discrepancy Management */}
         {(() => {

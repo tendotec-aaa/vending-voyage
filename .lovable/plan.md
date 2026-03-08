@@ -1,43 +1,54 @@
 
 
-## Plan: Enhanced Item Analytics & Sell-Through Velocity
+## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
-### Problem
-The current Financial Performance card shows Gross Profit and Margin, which are almost always negative for new items since revenue hasn't caught up to inventory investment. These metrics aren't actionable for day-to-day operations.
+### What was implemented:
 
-### Proposed Changes (1 file: `src/pages/ItemDetail.tsx`)
+1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
 
-#### Replace Financial Performance Card with "Item Intelligence" Card
+2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
 
-Keep **Total Received**, **Inventory Value**, and **Revenue** (these are useful context). Replace **Gross Profit** and **Margin** with more actionable metrics:
+3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
 
-- **Avg Unit Cost** — weighted average cost per unit (already computed as `weightedAvgCost`). Tells the operator what each unit costs them.
-- **Cost Recovery %** — `(totalRevenue / totalInventoryCost) * 100`. Shows progress toward breaking even without the discouraging negative number. At 100% you've recovered your investment; above 100% you're profitable. More motivating than a negative gross profit.
+4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
 
-#### Add Merchandise-Only "Sell-Through Velocity" Section
+5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
 
-For `item.type === "merchandise"` only, add a new card below the financial card that shows:
+6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
 
-1. **Sell Rate** — computed from `salesData` (visit_line_items) and `logisticsHistory` (which has visit dates):
-   - Find the date range between the first and last visit for this product
-   - `totalUnitsSold / daysInRange` = daily rate
-   - Display as **daily**, **weekly** (x7), and **monthly** (x30) rates
+7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
 
-2. **Stock Runway** — `totalStock / dailySellRate` = estimated days until stockout
-   - Color-coded: green (>30 days), yellow (15-30), red (<15), gray if no sales data
-   - Shows approximate depletion date
+### Architecture now:
+- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
+- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
+- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
+- **Audit trail**: Complete history of every stock movement with performer tracking
 
-3. **Turnover Rate** — `totalUnitsSold / averageStock` — how many times inventory has been "turned over"
+---
 
-#### Data Sources (already fetched, no new queries needed)
-- `salesData` — has `units_sold` per visit line item
-- `logisticsHistory` — has visit dates via `spot_visit.visit_date`
-- `totalStock`, `totalWarehouse`, `totalMachine` — current stock levels
-- `totalUnitsSold`, `totalRevenue`, `totalInventoryCost` — already computed
+## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
 
-#### Implementation Details
-- Use the first and last visit dates from `logisticsHistory` to calculate the active selling period
-- If fewer than 7 days of sales history, show "Insufficient data" instead of extrapolating
-- The velocity card uses a 3-column grid layout matching the existing design
-- No new queries, no database changes — purely computed from existing data
+### Format
+`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
+- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
+- No category/subcategory → `XX-482910`
 
+### What was implemented:
+
+1. **`src/lib/skuGenerator.ts`** — Rewritten with:
+   - `generateCode(name)` — extracts first letter of each word, max 2 chars
+   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
+   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
+
+2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
+
+3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
+
+4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
+
+5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
+
+### Uniqueness guarantees:
+- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
+- **Retry loop** regenerates SKU on collision, up to 3 attempts
+- **Single helper function** used by all item creation flows
