@@ -106,7 +106,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   const { data: warehouseStock = [] } = useQuery({
@@ -120,7 +120,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   const { data: machineStock = [] } = useQuery({
@@ -133,7 +133,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   const { data: purchaseBatches = [] } = useQuery({
@@ -152,7 +152,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   // Fetch assemblies that produced this item (for assembled items)
@@ -167,7 +167,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   // --- New queries ---
@@ -181,7 +181,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   const { data: logisticsHistory = [] } = useQuery({
@@ -203,7 +203,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   const { data: snapshots = [] } = useQuery({
@@ -216,7 +216,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   const { data: ledgerEntries = [] } = useQuery({
@@ -236,7 +236,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   // Resolve ledger reference dates (visit_date for visits, received_at for purchases)
@@ -288,7 +288,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data || [];
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   // Machine deployment history for machine_model items
@@ -306,7 +306,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return machines;
     },
-    enabled: !!id && item?.type === "machine_model",
+    enabled: !!id && !!user && item?.type === "machine_model",
   });
 
   useEffect(() => {
