@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -26,6 +27,7 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
   const [selectedSlotId, setSelectedSlotId] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [newProductId, setNewProductId] = useState("");
+  const [loadQuantity, setLoadQuantity] = useState<number | "">("")
 
   // Reset all when dialog closes
   useEffect(() => {
@@ -34,6 +36,7 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
       setSelectedSlotId("");
       setSelectedCategoryId("");
       setNewProductId("");
+      setLoadQuantity("");
     }
   }, [open]);
 
@@ -122,10 +125,10 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
   const selectedProduct = productsQuery.data?.find((p) => p.id === newProductId);
   const selectedSpot = spotGroups.find((g) => g.spotId === selectedSpotId);
 
-  const canConfirm = !!selectedSlotId && !!newProductId && !!selectedSlot && !!selectedProduct;
+  const canConfirm = !!selectedSlotId && !!newProductId && !!selectedSlot && !!selectedProduct && !!loadQuantity && loadQuantity > 0;
 
   const handleConfirm = () => {
-    if (!selectedSlot || !selectedProduct) return;
+    if (!selectedSlot || !selectedProduct || !loadQuantity) return;
     onConfirm({
       type: "swap",
       slotId: selectedSlot.id,
@@ -135,7 +138,7 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
       oldProductName: selectedSlot.product_name || "Empty",
       newProductId: selectedProduct.id,
       newProductName: selectedProduct.name,
-      capacity: selectedSlot.capacity || 150,
+      capacity: loadQuantity,
     });
     onOpenChange(false);
   };
@@ -206,12 +209,30 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
             </Select>
           </div>
 
+          {/* Load Quantity */}
+          {selectedSlotId && newProductId && (
+            <div>
+              <Label>Load Quantity</Label>
+              <Input
+                type="number"
+                min={1}
+                max={selectedProduct?.available}
+                placeholder={`Max: ${selectedProduct?.available ?? "—"}`}
+                value={loadQuantity}
+                onChange={(e) => setLoadQuantity(e.target.value ? Number(e.target.value) : "")}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Slot capacity: {selectedSlot?.capacity || 150} · Available in bodega: {selectedProduct?.available ?? 0}
+              </p>
+            </div>
+          )}
+
           {/* Preview */}
           {canConfirm && selectedSpot && (
             <div className="text-sm text-muted-foreground bg-muted p-3 rounded-lg space-y-1">
               <p><strong>Spot:</strong> {selectedSpot.spotName}</p>
               <p><strong>Swap:</strong> Slot {selectedSlot!.slot_number} — {selectedSlot!.product_name || "Empty"} → {selectedProduct!.name}</p>
-              <p><strong>Load:</strong> {selectedSlot!.capacity || 150} units of {selectedProduct!.name}</p>
+              <p><strong>Load:</strong> {loadQuantity} units of {selectedProduct!.name}</p>
             </div>
           )}
 
