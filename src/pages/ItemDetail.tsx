@@ -236,7 +236,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!user,
   });
 
   // Resolve ledger reference dates (visit_date for visits, received_at for purchases)
