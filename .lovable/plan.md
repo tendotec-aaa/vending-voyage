@@ -1,54 +1,94 @@
 
 
-## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
+## Clarification: `running_balance` on `inventory_ledger`
 
-### What was implemented:
+### Current Reality
+- The `running_balance` column is `NOT NULL` with **no default** value.
+- There is **no BEFORE INSERT trigger** that auto-computes it.
+- The only trigger (`trg_sync_inventory_after_ledger`) is an AFTER INSERT trigger that syncs the `inventory.quantity_on_hand` table — it does not touch `running_balance`.
+- **Every existing ledger insert** (in `useReceiveStock`, `useAssemblies`, `WarehouseSaleDialog`, `submit-visit-report` edge function, `Visits.tsx` reversal logic) manually computes and passes `running_balance`.
 
-1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
+### What I Recommend
 
-2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
+**Create a BEFORE INSERT trigger** that auto-computes `running_balance` as `COALESCE(SUM(quantity), 0)` for the matching `(item_detail_id, warehouse_id)` or `(item_detail_id, slot_id)` pair. This way:
 
-3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
+1. The new `create_sales_order` RPC only passes the quantity delta — no running_balance math.
+2. All existing code continues to work (the trigger simply overwrites whatever value was passed).
+3. Future code never needs to worry about computing it.
 
-4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
+#### Trigger SQL
 
-5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
+```sql
+CREATE OR REPLACE FUNCTION public.compute_ledger_running_balance()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+  IF NEW.warehouse_id IS NOT NULL THEN
+    NEW.running_balance := COALESCE(
+      (SELECT SUM(quantity) FROM public.inventory_ledger
+       WHERE item_detail_id = NEW.item_detail_id 
+         AND warehouse_id = NEW.warehouse_id),
+      0
+    ) + NEW.quantity;
+  ELSIF NEW.slot_id IS NOT NULL THEN
+    NEW.running_balance := COALESCE(
+      (SELECT SUM(quantity) FROM public.inventory_ledger
+       WHERE item_detail_id = NEW.item_detail_id 
+         AND slot_id = NEW.slot_id),
+      0
+    ) + NEW.quantity;
+  ELSE
+    NEW.running_balance := NEW.quantity;
+  END IF;
+  RETURN NEW;
+END;
+$$;
 
-6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
+CREATE TRIGGER trg_compute_running_balance
+  BEFORE INSERT ON public.inventory_ledger
+  FOR EACH ROW
+  EXECUTE FUNCTION public.compute_ledger_running_balance();
+```
 
-7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
+This fires BEFORE the existing AFTER INSERT trigger, so `running_balance` is always correct regardless of what the caller passes.
 
-### Architecture now:
-- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
-- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
-- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
-- **Audit trail**: Complete history of every stock movement with performer tracking
+#### RPC `create_sales_order` ledger INSERT (exact SQL)
 
----
+```sql
+INSERT INTO public.inventory_ledger (
+  item_detail_id, warehouse_id, movement_type,
+  quantity, running_balance,
+  reference_id, reference_type, performed_by, notes
+)
+VALUES (
+  line_item.item_detail_id,
+  p_warehouse_id,
+  'warehouse_sale',
+  -(line_item.quantity),   -- negative delta only
+  0,                       -- placeholder; trigger overwrites this
+  v_sale_id,
+  'sale',
+  p_created_by,
+  'Sale ' || v_sale_number
+);
+```
 
-## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
+The `0` is a dummy value to satisfy the NOT NULL constraint. The BEFORE INSERT trigger replaces it with the correct computed balance before the row is written.
 
-### Format
-`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
-- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
-- No category/subcategory → `XX-482910`
+### Impact on Existing Code
+- **Zero breakage.** All existing inserts pass a `running_balance` value — the trigger simply overwrites it with the authoritative computed value. Existing behavior is preserved (and actually made more reliable).
+- Optionally, we can later refactor all existing code to pass `0` as well, but it's not required for this feature.
 
-### What was implemented:
+### Full Implementation Plan
 
-1. **`src/lib/skuGenerator.ts`** — Rewritten with:
-   - `generateCode(name)` — extracts first letter of each word, max 2 chars
-   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
-   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
+Once you approve this trigger approach, I will implement:
 
-2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
+1. **Migration 1**: BEFORE INSERT trigger `compute_ledger_running_balance`
+2. **Migration 2**: `sales` + `sale_items` tables with RLS
+3. **Migration 3**: `create_sales_order` RPC function (atomic transaction, no running_balance math)
+4. **Frontend**: `useSales.tsx` hook, `Sales.tsx` list page, `NewSale.tsx` form (with soft stock warning), `SaleDetail.tsx` detail page
+5. **Routing + sidebar**: 3 routes, sidebar link with DollarSign icon
 
-3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
-
-4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
-
-5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
-
-### Uniqueness guarantees:
-- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
-- **Retry loop** regenerates SKU on collision, up to 3 attempts
-- **Single helper function** used by all item creation flows
