@@ -367,6 +367,7 @@ export function useRouteDetail(routeId: string | undefined) {
     stopsQuery,
     slotsQuery,
     maintenanceQuery,
+    demandMapQuery,
     addStop,
     removeStop,
     updateStop,

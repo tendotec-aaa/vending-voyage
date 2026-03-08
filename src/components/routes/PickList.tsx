@@ -39,10 +39,12 @@ export function PickList({ stops, slots, tickets, demandMap }: Props) {
         existing.swapQty += swap.capacity;
         pickMap.set(swap.newProductId, existing);
       } else {
-        // Normal refill
+        // Normal refill — use historical demand if available, else empty space
         if (!slot.current_product_id || !slot.product_name) continue;
-        const needed = Math.ceil(((slot.capacity || 150) - (slot.current_stock || 0)) * multiplier);
-        if (needed <= 0) continue;
+        const historicalDemand = demandMap.get(slot.id);
+        const needed = Math.ceil(
+          (historicalDemand ?? Math.max(0, (slot.capacity || 150) - (slot.current_stock || 0))) * multiplier
+        );
 
         const existing = pickMap.get(slot.current_product_id) || {
           productId: slot.current_product_id,
