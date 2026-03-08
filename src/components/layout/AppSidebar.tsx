@@ -11,10 +11,11 @@ import {
   LogOut,
   Layers,
   Building2,
-  ShoppingCart,
+   ShoppingCart,
    Warehouse,
    Boxes,
-   Target
+   Target,
+   DollarSign
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
