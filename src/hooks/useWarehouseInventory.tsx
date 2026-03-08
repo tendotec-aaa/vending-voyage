@@ -37,6 +37,7 @@ export interface Warehouse {
   address: string | null;
   description: string | null;
   is_system: boolean;
+  is_transitional: boolean | null;
   created_at: string | null;
 }
 
@@ -76,7 +77,7 @@ export function useWarehouseInventory(warehouseFilter?: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("warehouses")
-        .select("id, name, address, description, is_system, created_at")
+        .select("id, name, address, description, is_system, is_transitional, created_at")
         .order("is_system", { ascending: true })
         .order("name");
 
@@ -99,13 +100,14 @@ export function useWarehouseInventory(warehouseFilter?: string) {
   });
 
   const createWarehouseMutation = useMutation({
-    mutationFn: async (data: { name: string; address?: string; description?: string }) => {
+    mutationFn: async (data: { name: string; address?: string; description?: string; is_transitional?: boolean }) => {
       const { data: result, error } = await supabase
         .from("warehouses")
         .insert({
           name: data.name,
           address: data.address || null,
           description: data.description || null,
+          is_transitional: data.is_transitional ?? false,
         })
         .select()
         .single();
@@ -120,6 +122,29 @@ export function useWarehouseInventory(warehouseFilter?: string) {
     },
     onError: (error) => {
       toast({ title: "Error", description: `Failed to create warehouse: ${error.message}`, variant: "destructive" });
+    },
+  });
+
+  const unloadVehicleMutation = useMutation({
+    mutationFn: async ({ vehicleId, destinationWarehouseId, userId }: {
+      vehicleId: string;
+      destinationWarehouseId: string;
+      userId: string;
+    }) => {
+      const { error } = await supabase.rpc("unload_vehicle", {
+        p_vehicle_id: vehicleId,
+        p_destination_warehouse_id: destinationWarehouseId,
+        p_user_id: userId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["warehouse-inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["inventory_ledger"] });
+      toast({ title: "Vehicle unloaded", description: "All inventory has been transferred to the destination bodega." });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: `Failed to unload vehicle: ${error.message}`, variant: "destructive" });
     },
   });
 
@@ -224,8 +249,10 @@ export function useWarehouseInventory(warehouseFilter?: string) {
     addInventory: addInventoryMutation.mutateAsync,
     createItemDetail: createItemDetailMutation.mutateAsync,
     createWarehouse: createWarehouseMutation.mutateAsync,
+    unloadVehicle: unloadVehicleMutation.mutateAsync,
     isAdding: addInventoryMutation.isPending,
     isCreatingItem: createItemDetailMutation.isPending,
     isCreatingWarehouse: createWarehouseMutation.isPending,
+    isUnloading: unloadVehicleMutation.isPending,
   };
 }

@@ -10,10 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Plus } from "lucide-react";
 
 interface CreateWarehouseDialogProps {
-  onCreate: (data: { name: string; address?: string; description?: string }) => Promise<any>;
+  onCreate: (data: { name: string; address?: string; description?: string; is_transitional?: boolean }) => Promise<any>;
   isCreating?: boolean;
 }
 
@@ -22,6 +23,7 @@ export function CreateWarehouseDialog({ onCreate, isCreating }: CreateWarehouseD
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [description, setDescription] = useState("");
+  const [isTransitional, setIsTransitional] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,11 +33,13 @@ export function CreateWarehouseDialog({ onCreate, isCreating }: CreateWarehouseD
       name: name.trim(),
       address: address.trim() || undefined,
       description: description.trim() || undefined,
+      is_transitional: isTransitional,
     });
 
     setName("");
     setAddress("");
     setDescription("");
+    setIsTransitional(false);
     setOpen(false);
   };
 
@@ -79,6 +83,16 @@ export function CreateWarehouseDialog({ onCreate, isCreating }: CreateWarehouseD
               placeholder="Optional notes"
               rows={2}
             />
+          </div>
+          <div className="flex items-center gap-3">
+            <Switch
+              id="wh-transitional"
+              checked={isTransitional}
+              onCheckedChange={setIsTransitional}
+            />
+            <Label htmlFor="wh-transitional" className="text-sm">
+              Is Transitional Vehicle?
+            </Label>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>

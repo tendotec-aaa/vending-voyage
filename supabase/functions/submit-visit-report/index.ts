@@ -52,6 +52,7 @@ interface VisitPayload {
   observationSeverity: string;
   slots: SlotPayload[];
   sourceWarehouseId: string | null;
+  returnWarehouseId: string | null;
 }
 
 // ── Helper: get latest running balance for a location ──
@@ -170,7 +171,11 @@ Deno.serve(async (req) => {
       observationSeverity,
       slots,
       sourceWarehouseId,
+      returnWarehouseId,
     } = payload;
+
+    // Determine the warehouse for removals/swap-outs (fall back to source for backward compat)
+    const removalWarehouseId = returnWarehouseId || sourceWarehouseId;
 
     const warnings: string[] = [];
 
@@ -417,11 +422,11 @@ Deno.serve(async (req) => {
         }
 
         // -- Old product: return removed units to warehouse (ledger only, trigger syncs inventory) --
-        if (oldProductId && s.unitsRemoved > 0 && sourceWarehouseId) {
-          const whBal = await getRunningBalance(db, oldProductId, sourceWarehouseId, null);
+        if (oldProductId && s.unitsRemoved > 0 && removalWarehouseId) {
+          const whBal = await getRunningBalance(db, oldProductId, removalWarehouseId, null);
           await appendLedger(db, {
             item_detail_id: oldProductId,
-            warehouse_id: sourceWarehouseId,
+            warehouse_id: removalWarehouseId,
             movement_type: "swap_out",
             quantity: s.unitsRemoved,
             running_balance: whBal + s.unitsRemoved,
@@ -592,12 +597,12 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Return removed units to warehouse
-        if (s.unitsRemoved > 0) {
-          const whBal = await getRunningBalance(db, s.toyId, sourceWarehouseId, null);
+        // Return removed units to return vehicle/warehouse
+        if (s.unitsRemoved > 0 && removalWarehouseId) {
+          const whBal = await getRunningBalance(db, s.toyId, removalWarehouseId, null);
           await appendLedger(db, {
             item_detail_id: s.toyId,
-            warehouse_id: sourceWarehouseId,
+            warehouse_id: removalWarehouseId,
             movement_type: "removal",
             quantity: s.unitsRemoved,
             running_balance: whBal + s.unitsRemoved,

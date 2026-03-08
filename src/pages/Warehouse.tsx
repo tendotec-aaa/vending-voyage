@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Package, Warehouse as WarehouseIcon, Loader2, Plus } from "lucide-react";
+import { Search, Package, Loader2, Plus, Truck, Warehouse as WarehouseIcon } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,19 +14,22 @@ import {
 import { Card } from "@/components/ui/card";
 import { AddWarehouseItemDialog } from "@/components/warehouse/AddWarehouseItemDialog";
 import { CreateWarehouseDialog } from "@/components/warehouse/CreateWarehouseDialog";
+import { UnloadVehicleDialog } from "@/components/warehouse/UnloadVehicleDialog";
 import { useWarehouseInventory } from "@/hooks/useWarehouseInventory";
 import { useCategories } from "@/hooks/useCategories";
+import { useAuth } from "@/hooks/useAuth";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 
 export default function Warehouse() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [selectedWarehouse, setSelectedWarehouse] = useState("all");
   const [showZeroStock, setShowZeroStock] = useState(false);
 
-  const { inventory, warehouses, isLoading, isWarehousesLoading, createWarehouse, isCreatingWarehouse } =
+  const { inventory, warehouses, isLoading, isWarehousesLoading, createWarehouse, isCreatingWarehouse, unloadVehicle, isUnloading } =
     useWarehouseInventory(selectedWarehouse);
   const { categories } = useCategories();
 
@@ -49,15 +52,37 @@ export default function Warehouse() {
 
   const totalItems = filteredInventory.reduce((sum, item) => sum + (item.quantity_on_hand || 0), 0);
   const activeSKUs = filteredInventory.filter((item) => (item.quantity_on_hand || 0) > 0).length;
-  const userWarehouses = warehouses.filter((w) => !w.is_system);
+
+  const standardWarehouses = warehouses.filter((w) => !w.is_system && !w.is_transitional);
+  const vehicleWarehouses = warehouses.filter((w) => !w.is_system && w.is_transitional);
   const systemWarehouses = warehouses.filter((w) => w.is_system);
+
+  const selectedWh = warehouses.find((w) => w.id === selectedWarehouse);
+  const isSelectedVehicle = selectedWh?.is_transitional === true;
+
+  const handleUnload = async (destinationId: string) => {
+    if (!user?.id) return;
+    await unloadVehicle({ vehicleId: selectedWarehouse, destinationWarehouseId: destinationId, userId: user.id });
+  };
+
+  // Destination bodegas for unloading (non-transitional, non-system)
+  const destinationBodegas = standardWarehouses.filter((w) => w.id !== selectedWarehouse);
 
   return (
     <AppLayout
       title="Warehouses"
       subtitle="Manage inventory across your warehouses"
       actions={
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {isSelectedVehicle && (
+            <UnloadVehicleDialog
+              vehicleId={selectedWarehouse}
+              vehicleName={selectedWh?.name || ""}
+              warehouses={destinationBodegas}
+              onUnload={handleUnload}
+              isUnloading={isUnloading}
+            />
+          )}
           <Button variant="outline" onClick={() => navigate("/warehouse/assembly/new")}>
             <Plus className="mr-2 h-4 w-4" />
             New Assembly
@@ -80,19 +105,40 @@ export default function Warehouse() {
           All Warehouses
           <Badge variant="secondary" className="ml-2 text-xs">{inventory.length}</Badge>
         </button>
-        {userWarehouses.map((wh) => (
+
+        {/* Standard Bodegas */}
+        {standardWarehouses.map((wh) => (
           <button
             key={wh.id}
             onClick={() => setSelectedWarehouse(wh.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors flex items-center gap-1.5 ${
               selectedWarehouse === wh.id
                 ? "bg-primary text-primary-foreground border-primary"
                 : "bg-card text-foreground border-border hover:bg-muted"
             }`}
           >
+            <WarehouseIcon className="w-3.5 h-3.5" />
             {wh.name}
           </button>
         ))}
+
+        {/* Transitional Vehicles */}
+        {vehicleWarehouses.map((wh) => (
+          <button
+            key={wh.id}
+            onClick={() => setSelectedWarehouse(wh.id)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors flex items-center gap-1.5 ${
+              selectedWarehouse === wh.id
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card text-foreground border-border hover:bg-muted"
+            }`}
+          >
+            <Truck className="w-3.5 h-3.5" />
+            {wh.name}
+          </button>
+        ))}
+
+        {/* System Warehouses */}
         {systemWarehouses.map((wh) => (
           <button
             key={wh.id}

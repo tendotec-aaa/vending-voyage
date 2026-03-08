@@ -392,13 +392,13 @@ export default function NewVisitReport() {
     },
   });
 
-  // Fetch warehouses (non-system, for inventory ledger)
-  const { data: warehouses = [] } = useQuery({
+  // Fetch warehouses for visit: refill source (standard bodegas) and return vehicle (transitional)
+  const { data: allVisitWarehouses = [] } = useQuery({
     queryKey: ['warehouses-for-visit'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('warehouses')
-        .select('id, name, is_system')
+        .select('id, name, is_system, is_transitional')
         .eq('is_system', false)
         .order('name');
       if (error) throw error;
@@ -406,7 +406,21 @@ export default function NewVisitReport() {
     },
   });
 
-  const sourceWarehouseId = warehouses.length > 0 ? warehouses[0].id : null;
+  const refillSourceWarehouses = allVisitWarehouses.filter(w => !w.is_transitional);
+  const returnVehicleWarehouses = allVisitWarehouses.filter(w => w.is_transitional);
+
+  const [sourceWarehouseId, setSourceWarehouseId] = useState<string>("");
+  const [returnWarehouseId, setReturnWarehouseId] = useState<string>("");
+
+  // Auto-select first refill source when loaded
+  useEffect(() => {
+    if (refillSourceWarehouses.length > 0 && !sourceWarehouseId) {
+      setSourceWarehouseId(refillSourceWarehouses[0].id);
+    }
+  }, [refillSourceWarehouses, sourceWarehouseId]);
+
+  // Determine if return vehicle is required (any visit type except installation)
+  const requiresReturnVehicle = visitType && visitType !== "installation";
 
   // Fetch historical sales data for smart-restock guidance (Feature 5)
   const { data: salesHistory = [] } = useQuery({
@@ -737,7 +751,8 @@ export default function NewVisitReport() {
         hasObservationIssue,
         observationIssueLog,
         observationSeverity,
-        sourceWarehouseId,
+        sourceWarehouseId: sourceWarehouseId || null,
+        returnWarehouseId: returnWarehouseId || null,
         slots: slots.map(s => ({
           slotId: s.slotId,
           machineId: s.machineId,
@@ -873,6 +888,10 @@ export default function NewVisitReport() {
     }
     if (!visitType) {
       toast.error("Please select a visit type");
+      return;
+    }
+    if (requiresReturnVehicle && !returnWarehouseId) {
+      toast.error("Please select a return vehicle");
       return;
     }
     if (!confirmAccurate) {
@@ -1868,6 +1887,38 @@ export default function NewVisitReport() {
                 {totals.totalRefilled} units
               </div>
             </div>
+
+            {/* Refill Source Bodega */}
+            <div className="space-y-2">
+              <Label>Refill Source (Bodega)</Label>
+              <Select value={sourceWarehouseId} onValueChange={setSourceWarehouseId}>
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder="Select bodega..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {refillSourceWarehouses.map((wh) => (
+                    <SelectItem key={wh.id} value={wh.id}>{wh.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Return Vehicle */}
+            {requiresReturnVehicle && (
+              <div className="space-y-2">
+                <Label>Return Vehicle {requiresReturnVehicle && <span className="text-destructive">*</span>}</Label>
+                <Select value={returnWarehouseId} onValueChange={setReturnWarehouseId}>
+                  <SelectTrigger className="bg-background">
+                    <SelectValue placeholder="Select vehicle..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {returnVehicleWarehouses.map((wh) => (
+                      <SelectItem key={wh.id} value={wh.id}>{wh.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
         </Card>
 
