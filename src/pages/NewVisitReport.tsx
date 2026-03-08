@@ -583,6 +583,14 @@ export default function NewVisitReport() {
           swapSurplusShortage: 0,
         };
       });
+
+      // Sort by slot_number ASC, then machine position_on_setup ASC
+      generatedSlots.sort((a, b) => {
+        if (a.slotNumber !== b.slotNumber) return a.slotNumber - b.slotNumber;
+        const machineA = machines.find(m => m.id === a.machineId);
+        const machineB = machines.find(m => m.id === b.machineId);
+        return (machineA?.position_on_setup || 0) - (machineB?.position_on_setup || 0);
+      });
       
       // Overlay cached slot values if restoring from cache
       if (cached?.slots && cached.slots.length > 0) {
