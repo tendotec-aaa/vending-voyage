@@ -306,7 +306,7 @@ export default function ItemDetail() {
       if (error) throw error;
       return machines;
     },
-    enabled: !!id && item?.type === "machine_model",
+    enabled: !!id && !!user && item?.type === "machine_model",
   });
 
   useEffect(() => {
