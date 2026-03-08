@@ -332,14 +332,11 @@ Deno.serve(async (req) => {
     if (lineErr)
       throw new Error(`visit_line_items insert: ${lineErr.message}`);
 
-    // ── Step 4: Update machine_slots ──
+    // ── Step 4: Update machine_slots (current_stock is handled by DB trigger) ──
     for (const s of slots) {
-      const updateData: Record<string, unknown> = {
-        current_stock: s.currentStock,
-      };
+      const updateData: Record<string, unknown> = {};
       if (s.replaceAllToys && s.newToyId) {
         updateData.current_product_id = s.newToyId;
-        updateData.current_stock = s.newCurrentStock;
         updateData.capacity = s.newToyCapacity;
         updateData.coin_acceptor = s.newPricePerUnit;
       } else {
@@ -349,12 +346,14 @@ Deno.serve(async (req) => {
           updateData.coin_acceptor = s.pricePerUnit;
         }
       }
-      const { error } = await db
-        .from("machine_slots")
-        .update(updateData)
-        .eq("id", s.slotId);
-      if (error)
-        throw new Error(`machine_slots update (${s.slotId}): ${error.message}`);
+      if (Object.keys(updateData).length > 0) {
+        const { error } = await db
+          .from("machine_slots")
+          .update(updateData)
+          .eq("id", s.slotId);
+        if (error)
+          throw new Error(`machine_slots update (${s.slotId}): ${error.message}`);
+      }
     }
 
     // ── Step 5: Connected Inventory Ledger + Warehouse Updates ──
