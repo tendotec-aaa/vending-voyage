@@ -240,7 +240,8 @@ export function useDashboardStats(
         .from("inventory")
         .select("quantity_on_hand, item_detail:item_details(name, sku), warehouse:warehouses(name)")
         .not("warehouse_id", "is", null)
-        .lt("quantity_on_hand", 100);
+        .lt("quantity_on_hand", 4000)
+        .neq("quantity_on_hand", 0);
       if (error) throw error;
       return (data || []).map((row: any) => ({
         itemName: row.item_detail?.name ?? "Unknown",
