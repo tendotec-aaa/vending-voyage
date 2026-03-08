@@ -11,10 +11,11 @@ import {
   LogOut,
   Layers,
   Building2,
-  ShoppingCart,
+   ShoppingCart,
    Warehouse,
    Boxes,
-   Target
+   Target,
+   DollarSign
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -48,6 +49,7 @@ const assetsItems = [
 const supplyChainItems = [
   { title: "Suppliers", icon: Building2, url: "/suppliers" },
   { title: "Purchases", icon: ShoppingCart, url: "/purchases" },
+  { title: "Sales", icon: DollarSign, url: "/sales" },
 ];
 
 const locationsItems = [
