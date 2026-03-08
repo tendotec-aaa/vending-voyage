@@ -251,6 +251,71 @@ export function useRouteDetail(routeId: string | undefined) {
     },
   });
 
+  // Historical demand: avg quantity_added per slot from last 2 visits per spot
+  const slotSpotIds = [...new Set((slotsQuery.data || []).map((s) => s.spot_id).filter(Boolean))];
+  const demandMapQuery = useQuery({
+    queryKey: ["route-demand-map", slotSpotIds],
+    enabled: slotSpotIds.length > 0,
+    queryFn: async (): Promise<Map<string, number>> => {
+      // Fetch all visits for these spots, ordered by date desc
+      const { data: allVisits } = await supabase
+        .from("spot_visits")
+        .select("id, spot_id, visit_date")
+        .in("spot_id", slotSpotIds)
+        .order("visit_date", { ascending: false });
+      if (!allVisits?.length) return new Map();
+
+      // Keep only last 2 visits per spot
+      const visitCountBySpot = new Map<string, number>();
+      const recentVisits: typeof allVisits = [];
+      for (const v of allVisits) {
+        const count = visitCountBySpot.get(v.spot_id!) || 0;
+        if (count < 2) {
+          recentVisits.push(v);
+          visitCountBySpot.set(v.spot_id!, count + 1);
+        }
+      }
+      if (!recentVisits.length) return new Map();
+
+      const visitIds = recentVisits.map((v) => v.id);
+
+      // Fetch line items for those visits
+      const { data: lineItems } = await supabase
+        .from("visit_line_items")
+        .select("slot_id, quantity_added, spot_visit_id")
+        .in("spot_visit_id", visitIds)
+        .in("action_type", ["refill", "swap_in"]);
+      if (!lineItems?.length) return new Map();
+
+      // Aggregate: total quantity_added per slot, divided by number of visits for that spot
+      const slotTotals = new Map<string, number>();
+      const slotSpotMap = new Map<string, string>(); // slot_id -> spot_id
+      
+      // Build visit->spot lookup
+      const visitSpotMap = new Map<string, string>();
+      for (const v of recentVisits) {
+        visitSpotMap.set(v.id, v.spot_id!);
+      }
+
+      for (const li of lineItems) {
+        if (!li.slot_id || !li.quantity_added || li.quantity_added <= 0) continue;
+        const spotId = visitSpotMap.get(li.spot_visit_id!);
+        if (!spotId) continue;
+        slotTotals.set(li.slot_id, (slotTotals.get(li.slot_id) || 0) + li.quantity_added);
+        slotSpotMap.set(li.slot_id, spotId);
+      }
+
+      // Compute average per slot = total / number of visits for that spot
+      const demandMap = new Map<string, number>();
+      for (const [slotId, total] of slotTotals) {
+        const spotId = slotSpotMap.get(slotId)!;
+        const numVisits = visitCountBySpot.get(spotId) || 1;
+        demandMap.set(slotId, total / numVisits);
+      }
+      return demandMap;
+    },
+  });
+
   const addStop = useMutation({
     mutationFn: async ({ route_id, location_id, sort_order }: { route_id: string; location_id: string; sort_order: number }) => {
       const { error } = await supabase.from("route_stops").insert({
