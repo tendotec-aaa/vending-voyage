@@ -247,7 +247,6 @@ export default function ItemDetail() {
           warehouse_id, slot_id, performed_by
         `)
         .eq("item_detail_id", id!)
-        .not("warehouse_id", "is", null)
         .order("created_at", { ascending: false })
         .limit(200);
       if (error) throw error;
