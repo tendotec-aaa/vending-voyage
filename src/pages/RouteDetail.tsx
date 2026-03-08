@@ -11,10 +11,12 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RouteStopCard } from "@/components/routes/RouteStopCard";
 import { PickList } from "@/components/routes/PickList";
-import { ArrowLeft, Plus } from "lucide-react";
+import { ArrowLeft, Plus, Copy } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
+import { toast } from "sonner";
+import type { PlannedAction } from "@/hooks/useRoutes";
 
 const statusColors: Record<string, string> = {
   planned: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
@@ -61,6 +63,106 @@ export default function RouteDetail() {
     setAddLocationId("");
   };
 
+  const handleCopyRouteSummary = () => {
+    if (!route) return;
+
+    const driverName = route.driver
+      ? `${route.driver.first_names || ""} ${route.driver.last_names || ""}`.trim()
+      : "Unassigned";
+
+    const lines: string[] = [
+      `📋 ROUTE: ${route.name}`,
+      `📅 ${format(new Date(route.scheduled_for), "EEEE, MMM d, yyyy")}`,
+      `🚗 Driver: ${driverName}`,
+      "",
+      "--- STOPS ---",
+    ];
+
+    // Pick list aggregation
+    const pickMap = new Map<string, { productName: string; refillQty: number; swapQty: number }>();
+
+    for (const stop of stops) {
+      const locationName = stop.location?.name || "Unknown Location";
+      const multiplier = stop.demand_multiplier || 1;
+      const actions = (stop.planned_actions || []) as PlannedAction[];
+      const locationSlots = slots.filter((s) => s.location_id === stop.location_id);
+      const locationTickets = tickets.filter((t) => t.location_id === stop.location_id);
+
+      lines.push("");
+      lines.push(`📍 ${locationName}`);
+
+      // Group slots by spot_name
+      const spotGroups = new Map<string, typeof locationSlots>();
+      for (const slot of locationSlots) {
+        const spotLabel = slot.spot_name || `Machine at ${locationName}`;
+        const group = spotGroups.get(spotLabel) || [];
+        group.push(slot);
+        spotGroups.set(spotLabel, group);
+      }
+
+      for (const [spotLabel, spotSlots] of spotGroups) {
+        for (const slot of spotSlots) {
+          const swap = actions.find((a) => a.slotId === slot.id);
+
+          if (swap) {
+            lines.push(`  [${spotLabel}] ➔ SWAP: ${swap.oldProductName} TO ${swap.newProductName} (${swap.capacity} units)`);
+            const existing = pickMap.get(swap.newProductId) || { productName: swap.newProductName, refillQty: 0, swapQty: 0 };
+            existing.swapQty += swap.capacity;
+            pickMap.set(swap.newProductId, existing);
+          } else {
+            if (!slot.current_product_id || !slot.product_name) continue;
+            const needed = Math.ceil(((slot.capacity || 150) - (slot.current_stock || 0)) * multiplier);
+            if (needed <= 0) continue;
+            lines.push(`  [${spotLabel}] ➔ REFILL: ${slot.product_name} (${needed} units)`);
+            const existing = pickMap.get(slot.current_product_id) || { productName: slot.product_name, refillQty: 0, swapQty: 0 };
+            existing.refillQty += needed;
+            pickMap.set(slot.current_product_id, existing);
+          }
+        }
+      }
+
+      // Maintenance for this location
+      for (const ticket of locationTickets) {
+        const spotLabel = ticket.spot_id
+          ? (slots.find((s) => s.spot_id === ticket.spot_id)?.spot_name || `Machine at ${locationName}`)
+          : `Machine at ${locationName}`;
+        lines.push(`  [${spotLabel}] ➔ REPAIR: ${ticket.issue_type}${ticket.description ? ` — ${ticket.description}` : ""}`);
+      }
+    }
+
+    // Loading manifest
+    const pickItems = Array.from(pickMap.values()).sort((a, b) => (b.refillQty + b.swapQty) - (a.refillQty + a.swapQty));
+    const grandTotal = pickItems.reduce((sum, i) => sum + i.refillQty + i.swapQty, 0);
+
+    lines.push("");
+    lines.push("📦 LOADING MANIFEST:");
+    for (const item of pickItems) {
+      const total = item.refillQty + item.swapQty;
+      const parts: string[] = [];
+      if (item.refillQty > 0) parts.push(`Refill: ${item.refillQty}`);
+      if (item.swapQty > 0) parts.push(`Swap: ${item.swapQty}`);
+      lines.push(`• ${item.productName.toUpperCase()} — ${total} (${parts.join(", ")})`);
+    }
+    lines.push(`🔢 Total Units to Load: ${grandTotal}`);
+
+    // Maintenance summary
+    if (tickets.length > 0) {
+      lines.push("");
+      lines.push(`🔧 MAINTENANCE (${tickets.length}):`);
+      for (const t of tickets) {
+        const locName = stops.find((s) => s.location_id === t.location_id)?.location?.name || "Unknown";
+        lines.push(`• ${t.issue_type} — ${locName} (${t.priority})`);
+      }
+    }
+
+    const text = lines.join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success("Dispatch summary copied to clipboard!");
+    }).catch(() => {
+      toast.error("Failed to copy to clipboard");
+    });
+  };
+
   if (routeQuery.isLoading) {
     return <AppLayout><div className="p-6 text-muted-foreground">Loading...</div></AppLayout>;
   }
@@ -81,6 +183,9 @@ export default function RouteDetail() {
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl font-bold text-foreground">{route.name}</h1>
               <Badge className={statusColors[route.status || "planned"]}>{route.status || "planned"}</Badge>
+              <Button variant="outline" size="sm" onClick={handleCopyRouteSummary}>
+                <Copy className="w-4 h-4 mr-1" /> Copy Summary
+              </Button>
             </div>
             <p className="text-sm text-muted-foreground">
               {format(new Date(route.scheduled_for), "EEEE, MMM d, yyyy")}
