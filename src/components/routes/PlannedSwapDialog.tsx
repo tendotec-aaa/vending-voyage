@@ -124,10 +124,10 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
   const selectedProduct = productsQuery.data?.find((p) => p.id === newProductId);
   const selectedSpot = spotGroups.find((g) => g.spotId === selectedSpotId);
 
-  const canConfirm = !!selectedSlotId && !!newProductId && !!selectedSlot && !!selectedProduct;
+  const canConfirm = !!selectedSlotId && !!newProductId && !!selectedSlot && !!selectedProduct && !!loadQuantity && loadQuantity > 0;
 
   const handleConfirm = () => {
-    if (!selectedSlot || !selectedProduct) return;
+    if (!selectedSlot || !selectedProduct || !loadQuantity) return;
     onConfirm({
       type: "swap",
       slotId: selectedSlot.id,
@@ -137,7 +137,7 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
       oldProductName: selectedSlot.product_name || "Empty",
       newProductId: selectedProduct.id,
       newProductName: selectedProduct.name,
-      capacity: selectedSlot.capacity || 150,
+      capacity: loadQuantity,
     });
     onOpenChange(false);
   };
