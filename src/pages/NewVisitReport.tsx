@@ -392,13 +392,13 @@ export default function NewVisitReport() {
     },
   });
 
-  // Fetch warehouses (non-system, for inventory ledger)
-  const { data: warehouses = [] } = useQuery({
+  // Fetch warehouses for visit: refill source (standard bodegas) and return vehicle (transitional)
+  const { data: allVisitWarehouses = [] } = useQuery({
     queryKey: ['warehouses-for-visit'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('warehouses')
-        .select('id, name, is_system')
+        .select('id, name, is_system, is_transitional')
         .eq('is_system', false)
         .order('name');
       if (error) throw error;
@@ -406,7 +406,21 @@ export default function NewVisitReport() {
     },
   });
 
-  const sourceWarehouseId = warehouses.length > 0 ? warehouses[0].id : null;
+  const refillSourceWarehouses = allVisitWarehouses.filter(w => !w.is_transitional);
+  const returnVehicleWarehouses = allVisitWarehouses.filter(w => w.is_transitional);
+
+  const [sourceWarehouseId, setSourceWarehouseId] = useState<string>("");
+  const [returnWarehouseId, setReturnWarehouseId] = useState<string>("");
+
+  // Auto-select first refill source when loaded
+  useEffect(() => {
+    if (refillSourceWarehouses.length > 0 && !sourceWarehouseId) {
+      setSourceWarehouseId(refillSourceWarehouses[0].id);
+    }
+  }, [refillSourceWarehouses, sourceWarehouseId]);
+
+  // Determine if return vehicle is required (any visit type except installation)
+  const requiresReturnVehicle = visitType && visitType !== "installation";
 
   // Fetch historical sales data for smart-restock guidance (Feature 5)
   const { data: salesHistory = [] } = useQuery({
