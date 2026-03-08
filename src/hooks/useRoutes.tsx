@@ -60,6 +60,7 @@ export interface MaintenanceTicket {
   status: string;
   location_id: string;
   machine_id: string | null;
+  spot_id: string | null;
   created_at: string;
 }
 
