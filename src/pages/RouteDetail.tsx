@@ -275,7 +275,7 @@ export default function RouteDetail() {
           </TabsContent>
 
           <TabsContent value="picklist" className="mt-4">
-            <PickList stops={stops} slots={slots} tickets={tickets} />
+            <PickList stops={stops} slots={slots} tickets={tickets} demandMap={demandMap} />
           </TabsContent>
         </Tabs>
       </div>
