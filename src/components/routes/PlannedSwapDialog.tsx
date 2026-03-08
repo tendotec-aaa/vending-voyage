@@ -37,6 +37,7 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
       setSelectedCategoryId("");
       setNewProductId("");
       setLoadQuantity("");
+    }
   }, [open]);
 
   // Group slots by spot
