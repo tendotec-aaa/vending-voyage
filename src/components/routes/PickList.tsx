@@ -7,6 +7,7 @@ interface Props {
   stops: RouteStop[];
   slots: SlotData[];
   tickets: MaintenanceTicket[];
+  demandMap: Map<string, number>;
 }
 
 interface PickItem {
