@@ -158,6 +158,7 @@ export function RouteStopCard({ stop, slots, tickets, onUpdateStop, onRemoveStop
           open={swapOpen}
           onOpenChange={setSwapOpen}
           slots={locationSlots}
+          locationName={stop.location?.name || "Unknown"}
           onConfirm={handleAddSwap}
         />
       </CardContent>
