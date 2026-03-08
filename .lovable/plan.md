@@ -1,25 +1,60 @@
 
 
-## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
+## Plan: Category-Based SKU Generation with Uniqueness Guardrails
 
-### What was implemented:
+### Format
 
-1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
+`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
 
-2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
+Examples:
+- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
+- No category/subcategory → `XX-482910`
 
-3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
+### Changes
 
-4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
+#### 1. `src/lib/skuGenerator.ts` — Rewrite utility
 
-5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
+Replace current contents with:
+- `generateCode(name)` — first letter of each word, uppercased, max 2 chars
+- `generateSkuCode(categoryName?, subcategoryName?)` — combines `generateCode` outputs + random 6-digit number
+- `insertItemDetailWithRetrySku(supabase, insertData, categoryName?, subcategoryName?)` — wraps the INSERT in a retry loop (max 3 attempts). On unique constraint violation (`23505`), regenerates the SKU and retries. Returns the created row.
 
-6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
+This is the **single function** all item creation flows will call, guaranteeing uniqueness at the DB level with automatic retry.
 
-7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
+#### 2. `src/pages/NewPurchase.tsx` (lines 83, 103)
 
-### Architecture now:
-- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
-- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
-- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
-- **Audit trail**: Complete history of every stock movement with performer tracking
+- Import `generateSkuCode` from `skuGenerator.ts`
+- Replace `Date.now().toString(36).toUpperCase()` with `generateSkuCode()` for initial/preview SKUs (these are placeholders before DB insert)
+- The actual uniqueness is enforced in `usePurchases.tsx` at insert time
+
+#### 3. `src/hooks/usePurchases.tsx` (line 168-172)
+
+- Import `insertItemDetailWithRetrySku` from `skuGenerator.ts`
+- Replace the manual `supabase.from("item_details").insert(...)` block with `insertItemDetailWithRetrySku(supabase, insertData, categoryName, subcategoryName)`
+- Need to look up category/subcategory names from IDs using the categories already fetched or a quick query
+
+#### 4. `src/hooks/useWarehouseInventory.tsx` (line 193)
+
+- Import `insertItemDetailWithRetrySku`
+- Replace manual insert with retry-safe helper
+- Pass category/subcategory names (will need to accept them as params or look them up)
+
+#### 5. `src/hooks/useAssemblies.tsx` (line 38)
+
+- Import `insertItemDetailWithRetrySku`
+- Replace manual insert with retry-safe helper
+
+### Uniqueness Guarantee
+
+1. **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) — already exists, prevents duplicates at DB level
+2. **Retry loop** — on constraint violation error code `23505`, regenerate random suffix and retry up to 3 times
+3. **Single insert helper** — all 3 hooks use the same function, no duplicate logic
+
+### Files Modified
+
+- `src/lib/skuGenerator.ts` — rewrite
+- `src/pages/NewPurchase.tsx` — 2 line changes
+- `src/hooks/usePurchases.tsx` — replace item_details insert block
+- `src/hooks/useWarehouseInventory.tsx` — replace item_details insert block
+- `src/hooks/useAssemblies.tsx` — replace item_details insert block
+
