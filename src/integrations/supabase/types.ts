@@ -1709,6 +1709,7 @@ export type Database = {
       }
     }
     Functions: {
+      create_sales_order: { Args: { payload: Json }; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["user_role"]
