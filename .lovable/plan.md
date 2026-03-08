@@ -1,69 +1,82 @@
+## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
+### What was implemented:
 
-## Plan: Add warehouse sales to Total Sold + unified Logistics History timeline
+1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
 
-### Step 1 — New query for warehouse sales (data fetching)
+2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
 
-Add a `useQuery` for `sale_items` joined with `sales` (for sale_number, sale_date, buyer_name, warehouse name):
+3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
 
-```ts
-const { data: warehouseSales = [] } = useQuery({
-  queryKey: ["item-warehouse-sales", id],
-  queryFn: async () => {
-    const { data, error } = await supabase
-      .from("sale_items")
-      .select(`id, quantity, unit_price, total_price, created_at,
-        sale:sales(id, sale_number, sale_date, buyer_name,
-          warehouse:warehouses(name))`)
-      .eq("item_detail_id", id!);
-    if (error) throw error;
-    return data;
-  },
-  enabled: !!id && !!user,
-});
-```
+4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
 
-Place this after the existing `logisticsHistory` query (~line 209).
+5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
 
-### Step 2 — Include warehouse sales in Total Sold calculation
+6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
 
-Update `totalUnitsSold` (line 632-634) to sum both field sales and warehouse sales:
+7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
 
-```ts
-const fieldUnitsSold = (salesData || []).reduce((sum, s) => sum + (s.units_sold || 0), 0);
-const warehouseUnitsSold = (warehouseSales || []).reduce((sum: number, s: any) => sum + (s.quantity || 0), 0);
-const totalUnitsSold = fieldUnitsSold + warehouseUnitsSold;
-```
+### Architecture now:
+- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
+- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
+- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
+- **Audit trail**: Complete history of every stock movement with performer tracking
 
-### Step 3 — Unified chronological timeline in Logistics History tab
+---
 
-Instead of rendering `logisticsHistory` and warehouse sales as separate lists, build a single `unifiedHistory` array:
+## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
 
-```ts
-const unifiedHistory = [
-  ...logisticsHistory.map((row: any) => ({
-    type: "visit" as const,
-    date: row.spot_visit?.visit_date || row.created_at,
-    data: row,
-  })),
-  ...(warehouseSales || []).map((row: any) => ({
-    type: "sale" as const,
-    date: row.sale?.sale_date || row.created_at,
-    data: row,
-  })),
-].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-```
+### Format
+`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
+- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
+- No category/subcategory → `XX-482910`
 
-Compute this inside the Logistics History tab content (or as a `useMemo`). Then replace the current `logisticsHistory.map(...)` block (lines 1532-1618) with a single `unifiedHistory.map(...)` that uses a conditional:
+### What was implemented:
 
-- **`type === "visit"`**: Renders the existing visit card (action badge, location, 8-column grid with Last/Current/Audited/Sold/Added/Removed/False/Jam). Clicking navigates to `/visits/:id`.
-- **`type === "sale"`**: Renders a new sale card with a "warehouse_sale" badge (using existing `actionColors` style from `movementColors`), buyer name, warehouse name, quantity, unit price, total price. Clicking navigates to `/sales/:id`.
+1. **`src/lib/skuGenerator.ts`** — Rewritten with:
+   - `generateCode(name)` — extracts first letter of each word, max 2 chars
+   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
+   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
 
-The empty state check becomes `unifiedHistory.length === 0 && discrepancies.length === 0`.
+2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
-The discrepancy reconciliation section at the top remains unchanged.
+3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
 
-### Files changed
+4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
-- `src/pages/ItemDetail.tsx` — Only file modified. Three changes: new query, updated total calculation, unified timeline rendering.
+5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
 
+### Uniqueness guarantees:
+- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
+- **Retry loop** regenerates SKU on collision, up to 3 attempts
+- **Single helper function** used by all item creation flows
+
+---
+
+## ✅ COMPLETED: Sales Order System with Atomic RPC
+
+### What was implemented:
+
+1. **BEFORE INSERT trigger `compute_ledger_running_balance`** — Auto-computes `running_balance` on `inventory_ledger` inserts. All callers (existing and new) no longer need to compute it — the trigger overwrites whatever value is passed. Existing code continues working with zero breakage.
+
+2. **`sales` table** — Header with `sale_number`, `sale_date`, `buyer_name`, `buyer_contact`, `warehouse_id`, `subtotal`, `tax_rate`, `tax_amount`, `total_amount`, `currency`, `paid`, `status`, `notes`, `created_by`. RLS enabled.
+
+3. **`sale_items` table** — Line items with `sale_id`, `item_detail_id`, `quantity`, `unit_price`, `total_price`. Cascading delete on sale. RLS enabled.
+
+4. **`create_sales_order` RPC** — SECURITY DEFINER PostgreSQL function. Accepts single JSON payload. Atomically inserts sale header, all line items, and `inventory_ledger` entries (movement_type: `warehouse_sale`, negative quantity). Running balance = 0 placeholder (trigger computes real value). Full transaction safety.
+
+5. **`useSales.tsx` hook** — Queries sales with nested items, warehouses, item catalog. `createSale` mutation calls RPC. `useStockCheck` for pre-submit validation.
+
+6. **`Sales.tsx` list page** — Searchable table with sale number, buyer, date, items count, total, paid badge.
+
+7. **`NewSale.tsx` form** — Multi-line item entry with warehouse selection, tax rate, buyer info. Soft stock warning via AlertDialog when quantity exceeds `quantity_on_hand` — user can confirm and proceed (allows negative inventory).
+
+8. **`SaleDetail.tsx`** — Read-only detail with header cards, line items table.
+
+9. **Sidebar + routing** — DollarSign icon under Supply Chain. Routes: `/sales`, `/sales/new`, `/sales/:id`.
+
+### Architecture:
+- **Single atomic write path**: All sales go through `create_sales_order` RPC (no multi-step client inserts)
+- **No running_balance in frontend**: RPC passes `0`, BEFORE INSERT trigger computes correct value
+- **Soft stock warnings**: UI warns but allows proceeding — inventory can go negative
+- **Ledger integrity**: Every sale creates `warehouse_sale` ledger entries, existing AFTER INSERT trigger syncs `inventory.quantity_on_hand`
