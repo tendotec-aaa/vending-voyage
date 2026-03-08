@@ -1,82 +1,82 @@
-## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
-### What was implemented:
 
-1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
+## Dashboard Command Center - Implementation Plan
 
-2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
+No database migrations needed (RPCs already created manually).
 
-3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
+### Files to Create
 
-4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
+**1. `src/components/dashboard/DashboardAlerts.tsx`**
+- Conditionally rendered alert banners at the top of the dashboard
+- Two alert types using the `Alert` component with `Collapsible`:
+  - **Warehouse Low Stock**: Lists items where `quantity_on_hand < 100` (item name, SKU, warehouse, qty)
+  - **Critical Machine Slots**: Lists deployed slots with `current_stock <= 5` (machine serial, location, slot number, stock)
+- Each alert is collapsible showing affected items
+- Uses `AlertTriangle` icon, destructive variant for critical slots, default for low stock
+- Skeleton loading state
 
-5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
+**2. `src/components/dashboard/Leaderboard.tsx`**
+- Reusable leaderboard card component
+- Props: `title`, `items: { name, value, pctChange }[]`, `formatValue: (n) => string`, `isLoading`, `period`, `onPeriodChange`
+- Card with header + `Switch` toggle for Weekly/Monthly
+- Each row: rank number (1-3), name, formatted value, green/red percentage badge
+- Skeleton loading when no data
+- Empty state when no items
 
-6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
+### Files to Modify
 
-7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
+**3. `src/hooks/useDashboardStats.tsx`**
+- Accept new param: `leaderboardPeriod: "weekly" | "monthly"`
+- Add 4 new `useQuery` calls:
+  - **`lowStockItems`**: Query `inventory` joined with `item_details(name, sku)` and `warehouses(name)` where `quantity_on_hand < 100` and `warehouse_id IS NOT NULL`
+  - **`criticalSlots`**: Query `machine_slots` where `current_stock <= 5`, joined through `machines(serial_number, status, setup_id)` → `setups(spot_id)` → `spots(location:locations(name))`, filter machines with `status = 'deployed'`
+  - **`topSpotsLeaderboard`**: RPC call `get_top_spots_revenue` with WTD or MTD bounds based on `leaderboardPeriod`
+  - **`topItemsLeaderboard`**: RPC call `get_top_items_volume` with same bounds
+- Derive **stockoutRisk** count from `criticalSlots` data (length of array)
+- Derive **ARPM**: `(monthlyRevenue.current ?? 0) / (activeMachines.deployed || 1)` -- guarded against divide-by-zero
+- Export all new data + loading flags
 
-### Architecture now:
-- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
-- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
-- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
-- **Audit trail**: Complete history of every stock movement with performer tracking
+**4. `src/pages/Index.tsx`**
+- Add `leaderboardPeriod` state alongside existing `issuesPeriod`
+- Pass both periods to `useDashboardStats`
+- Add `DashboardAlerts` at top (before KPI cards), conditionally rendered
+- Expand KPI grid from `lg:grid-cols-4` to `lg:grid-cols-6` (with `md:grid-cols-3`):
+  - Existing 4 cards unchanged
+  - New Card 5 - **ARPM**: `Calculator` icon, value = `$X.XX`, change = `vs last month` MTD comparison
+  - New Card 6 - **Stockout Risk**: `AlertTriangle` icon, value = count, change = `slots below 5 units`
+- Add new leaderboard row between chart/issues and recent visits:
+  - Two `Leaderboard` cards side-by-side (`lg:grid-cols-2`), sharing the `leaderboardPeriod` toggle
+  - Left: "Top Spots ($$)" with currency formatting
+  - Right: "Top Items (Volume)" with unit formatting
 
----
+**5. `src/components/dashboard/MachineIssues.tsx`**
+- Update `TicketRow` for visual triage:
+  - Open tickets: add `border-destructive/30` border class, red accent styling
+  - Completed tickets: add green `CheckCircle` icon and `bg-emerald-500/10 text-emerald-600` "Resolved" badge instead of no badge
+- Already has correct pinning/sorting order (open first, completed below divider)
 
-## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
+### Layout After Changes
 
-### Format
-`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
-- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
-- No category/subcategory → `XX-482910`
+```text
+┌─────────────────────────────────────────────────┐
+│  [DashboardAlerts - conditional warning banners] │
+├────────┬────────┬────────┬────────┬──────┬──────┤
+│Monthly │Weekly  │Active  │Active  │ ARPM │Stock-│
+│Revenue │Revenue │Machines│ Spots  │      │ out  │
+├────────┴────────┴────────┴────────┴──────┴──────┤
+│  Revenue Chart (2/3)     │  Machine Issues (1/3) │
+├──────────────────────────┴───────────────────────┤
+│  Top Spots $$ (1/2)      │  Top Items Vol (1/2)  │
+├──────────────────────────┴───────────────────────┤
+│  Recent Visits (2/3)     │  Quick Actions (1/3)  │
+│                          │  Upcoming Routes      │
+└──────────────────────────┴───────────────────────┘
+```
 
-### What was implemented:
+### Key Details
+- All date boundaries reuse existing `getMonthBounds()` / `getWeekBounds()` helpers with UTC-5 safety
+- ARPM divide-by-zero guard: `deployed || 1`
+- Critical slots query uses a chain: `machine_slots` → filter `current_stock <= 5` → client-side filter for deployed machines via the joined machine status
+- No changes to QuickActions, UpcomingRoutes, RevenueChart, or RecentVisits
+- No database migrations
 
-1. **`src/lib/skuGenerator.ts`** — Rewritten with:
-   - `generateCode(name)` — extracts first letter of each word, max 2 chars
-   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
-   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
-
-2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
-
-3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
-
-4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
-
-5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
-
-### Uniqueness guarantees:
-- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
-- **Retry loop** regenerates SKU on collision, up to 3 attempts
-- **Single helper function** used by all item creation flows
-
----
-
-## ✅ COMPLETED: Sales Order System with Atomic RPC
-
-### What was implemented:
-
-1. **BEFORE INSERT trigger `compute_ledger_running_balance`** — Auto-computes `running_balance` on `inventory_ledger` inserts. All callers (existing and new) no longer need to compute it — the trigger overwrites whatever value is passed. Existing code continues working with zero breakage.
-
-2. **`sales` table** — Header with `sale_number`, `sale_date`, `buyer_name`, `buyer_contact`, `warehouse_id`, `subtotal`, `tax_rate`, `tax_amount`, `total_amount`, `currency`, `paid`, `status`, `notes`, `created_by`. RLS enabled.
-
-3. **`sale_items` table** — Line items with `sale_id`, `item_detail_id`, `quantity`, `unit_price`, `total_price`. Cascading delete on sale. RLS enabled.
-
-4. **`create_sales_order` RPC** — SECURITY DEFINER PostgreSQL function. Accepts single JSON payload. Atomically inserts sale header, all line items, and `inventory_ledger` entries (movement_type: `warehouse_sale`, negative quantity). Running balance = 0 placeholder (trigger computes real value). Full transaction safety.
-
-5. **`useSales.tsx` hook** — Queries sales with nested items, warehouses, item catalog. `createSale` mutation calls RPC. `useStockCheck` for pre-submit validation.
-
-6. **`Sales.tsx` list page** — Searchable table with sale number, buyer, date, items count, total, paid badge.
-
-7. **`NewSale.tsx` form** — Multi-line item entry with warehouse selection, tax rate, buyer info. Soft stock warning via AlertDialog when quantity exceeds `quantity_on_hand` — user can confirm and proceed (allows negative inventory).
-
-8. **`SaleDetail.tsx`** — Read-only detail with header cards, line items table.
-
-9. **Sidebar + routing** — DollarSign icon under Supply Chain. Routes: `/sales`, `/sales/new`, `/sales/:id`.
-
-### Architecture:
-- **Single atomic write path**: All sales go through `create_sales_order` RPC (no multi-step client inserts)
-- **No running_balance in frontend**: RPC passes `0`, BEFORE INSERT trigger computes correct value
-- **Soft stock warnings**: UI warns but allows proceeding — inventory can go negative
-- **Ledger integrity**: Every sale creates `warehouse_sale` ledger entries, existing AFTER INSERT trigger syncs `inventory.quantity_on_hand`
