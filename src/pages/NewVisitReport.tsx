@@ -365,6 +365,39 @@ export default function NewVisitReport() {
     enabled: !!selectedSpot,
   });
 
+  // Fetch categories for toy picker filter
+  const { data: toyCategories = [] } = useQuery({
+    queryKey: ['categories-for-visit'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('id, name')
+        .order('name');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Fetch warehouses for visit: refill source (standard bodegas) and return vehicle (transitional)
+  const { data: allVisitWarehouses = [] } = useQuery({
+    queryKey: ['warehouses-for-visit'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('warehouses')
+        .select('id, name, is_system, is_transitional')
+        .eq('is_system', false)
+        .order('name');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const refillSourceWarehouses = allVisitWarehouses.filter(w => !w.is_transitional);
+  const returnVehicleWarehouses = allVisitWarehouses.filter(w => w.is_transitional);
+
+  const [sourceWarehouseId, setSourceWarehouseId] = useState<string>("");
+  const [returnWarehouseId, setReturnWarehouseId] = useState<string>("");
+
   // Fetch available routable products with stock > 0 from source warehouse
   const { data: availableProducts = [] } = useQuery({
     queryKey: ['available-products', sourceWarehouseId],
@@ -400,39 +433,6 @@ export default function NewVisitReport() {
     },
     enabled: !!sourceWarehouseId,
   });
-
-  // Fetch categories for toy picker filter
-  const { data: toyCategories = [] } = useQuery({
-    queryKey: ['categories-for-visit'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('id, name')
-        .order('name');
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  // Fetch warehouses for visit: refill source (standard bodegas) and return vehicle (transitional)
-  const { data: allVisitWarehouses = [] } = useQuery({
-    queryKey: ['warehouses-for-visit'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('warehouses')
-        .select('id, name, is_system, is_transitional')
-        .eq('is_system', false)
-        .order('name');
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const refillSourceWarehouses = allVisitWarehouses.filter(w => !w.is_transitional);
-  const returnVehicleWarehouses = allVisitWarehouses.filter(w => w.is_transitional);
-
-  const [sourceWarehouseId, setSourceWarehouseId] = useState<string>("");
-  const [returnWarehouseId, setReturnWarehouseId] = useState<string>("");
 
   // Auto-select first refill source when loaded
   useEffect(() => {
