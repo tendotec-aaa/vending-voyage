@@ -213,7 +213,7 @@ export default function InventoryPage() {
           </div>
           <div className="flex items-center gap-2">
             <Switch id="show-zero" checked={showZeroStock} onCheckedChange={setShowZeroStock} />
-            <Label htmlFor="show-zero" className="text-sm text-muted-foreground whitespace-nowrap">Show zero stock</Label>
+            <Label htmlFor="show-zero" className="text-sm text-muted-foreground whitespace-nowrap">Show zero/negative stock</Label>
           </div>
         </div>
       </Card>
