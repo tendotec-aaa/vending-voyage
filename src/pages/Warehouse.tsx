@@ -237,7 +237,7 @@ export default function Warehouse() {
                   {selectedWarehouse === "all" && (
                     <TableCell className="text-muted-foreground">{item.warehouse?.name || "—"}</TableCell>
                   )}
-                  <TableCell className="text-right font-medium text-foreground">{(item.quantity_on_hand || 0).toLocaleString()}</TableCell>
+                  <TableCell className={`text-right font-medium ${(item.quantity_on_hand || 0) < 0 ? 'text-destructive' : 'text-foreground'}`}>{(item.quantity_on_hand || 0).toLocaleString()}</TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     {item.last_updated ? new Date(item.last_updated).toLocaleDateString() : "—"}
                   </TableCell>
