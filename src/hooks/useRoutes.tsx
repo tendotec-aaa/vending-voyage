@@ -10,6 +10,8 @@ export interface Route {
   driver_id: string | null;
   status: string | null;
   created_at: string | null;
+  completed_at: string | null;
+  auto_completed: boolean;
   driver?: { first_names: string | null; last_names: string | null } | null;
 }
 

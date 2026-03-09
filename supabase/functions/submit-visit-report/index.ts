@@ -194,7 +194,8 @@ Deno.serve(async (req) => {
         status: hasObservationIssue ? "flagged" : "completed",
         operator_id: userId,
         visit_type: visitType,
-      })
+        route_id: routeId || null,
+      } as any)
       .select("id")
       .single();
 

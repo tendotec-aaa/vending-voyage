@@ -811,6 +811,7 @@ export default function NewVisitReport() {
         observationSeverity,
         sourceWarehouseId: sourceWarehouseId || null,
         returnWarehouseId: returnWarehouseId || null,
+        routeId: paramRouteId || null,
         slots: slots.map(s => ({
           slotId: s.slotId,
           machineId: s.machineId,
