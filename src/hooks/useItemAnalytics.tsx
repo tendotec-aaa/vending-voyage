@@ -4,6 +4,7 @@ import { useAuth } from './useAuth';
 
 export interface ItemPerformanceRow {
   itemId: string;
+  itemTypeId: string;
   name: string;
   sku: string;
   unitsSold: number;
@@ -56,11 +57,10 @@ export function useItemAnalytics(year: number, month: number) {
         machinesRes,
         spotsRes,
       ] = await Promise.all([
-        // 1. Sellable items
+        // 1. Items with their type flags (filter client-side for sellable OR component)
         supabase
           .from('item_details')
-          .select('id, name, sku, item_type_id, item_types!inner(is_sellable)')
-          .eq('item_types.is_sellable', true),
+          .select('id, name, sku, item_type_id, item_types(is_sellable, is_component)'),
 
         // 2. Visits for selected month
         supabase
@@ -104,7 +104,11 @@ export function useItemAnalytics(year: number, month: number) {
           .lte('visit_date', endStr),
       ]);
 
-      const sellableItems = (itemsRes.data || []) as any[];
+      const allItems = (itemsRes.data || []) as any[];
+      const sellableItems = allItems.filter(i => {
+        const t = i.item_types;
+        return t?.is_sellable || t?.is_component;
+      });
       const sellableIds = new Set(sellableItems.map(i => i.id));
 
       // Visit IDs for current month
@@ -212,6 +216,7 @@ export function useItemAnalytics(year: number, month: number) {
 
         rows.push({
           itemId: item.id,
+          itemTypeId: item.item_type_id || '',
           name: item.name,
           sku: item.sku,
           unitsSold,
@@ -223,19 +228,11 @@ export function useItemAnalytics(year: number, month: number) {
           grossProfit,
           currentStock,
           stockCover,
-          isTopNotch: false, // computed below
+          isTopNotch: false, // computed on the page after filtering
         });
       }
 
-      // Compute Top Notch: ROI > 300% AND velocity in top 20th percentile
-      const velocities = rows.filter(r => r.velocity > 0).map(r => r.velocity).sort((a, b) => a - b);
-      const p80Index = Math.floor(velocities.length * 0.8);
-      const velocityP80 = velocities[p80Index] || Infinity;
-      for (const r of rows) {
-        r.isTopNotch = r.roi > 300 && r.velocity >= velocityP80 && r.velocity > 0;
-      }
-
-      // Sort by velocity desc
+      // Sort by velocity desc (Top Notch computed on page after filtering)
       rows.sort((a, b) => b.velocity - a.velocity);
 
       // Build trend data

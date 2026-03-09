@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -7,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Star, ArrowUpDown, Package } from "lucide-react";
 import { useItemAnalytics, type ItemPerformanceRow } from "@/hooks/useItemAnalytics";
+import { useItemTypes } from "@/hooks/useItemTypes";
 import { ItemDrillDown } from "@/components/insights/ItemDrillDown";
 import { fmt2, fmtInt } from "@/lib/formatters";
 
@@ -19,27 +21,63 @@ type SortKey = "velocity" | "unitsSold" | "roi" | "grossProfit" | "stockCover";
 
 export default function ItemAnalytics() {
   const now = new Date();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [sortKey, setSortKey] = useState<SortKey>("velocity");
   const [sortAsc, setSortAsc] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ItemPerformanceRow | null>(null);
 
+  const selectedTypeId = searchParams.get("type") || "all";
+
   const { data, isLoading } = useItemAnalytics(year, month);
+  const { itemTypes } = useItemTypes();
   const rows = data?.rows || [];
 
+  // Filter item types to only sellable or component
+  const filterableTypes = useMemo(
+    () => itemTypes.filter(t => t.is_sellable || t.is_component),
+    [itemTypes]
+  );
+
+  // Filter rows by selected type, then compute Top Notch on filtered set
+  const filtered = useMemo(() => {
+    let result = selectedTypeId === "all"
+      ? [...rows]
+      : rows.filter(r => r.itemTypeId === selectedTypeId);
+
+    // Compute Top Notch relative to filtered list
+    const velocities = result.filter(r => r.velocity > 0).map(r => r.velocity).sort((a, b) => a - b);
+    const p80Index = Math.floor(velocities.length * 0.8);
+    const velocityP80 = velocities[p80Index] || Infinity;
+    for (const r of result) {
+      r.isTopNotch = r.roi > 300 && r.velocity >= velocityP80 && r.velocity > 0;
+    }
+
+    return result;
+  }, [rows, selectedTypeId]);
+
   const sorted = useMemo(() => {
-    const copy = [...rows];
+    const copy = [...filtered];
     copy.sort((a, b) => {
       const diff = (a[sortKey] as number) - (b[sortKey] as number);
       return sortAsc ? diff : -diff;
     });
     return copy;
-  }, [rows, sortKey, sortAsc]);
+  }, [filtered, sortKey, sortAsc]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortAsc(!sortAsc);
     else { setSortKey(key); setSortAsc(false); }
+  };
+
+  const handleTypeChange = (value: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (value === "all") next.delete("type");
+      else next.set("type", value);
+      return next;
+    });
   };
 
   const SortHeader = ({ label, k }: { label: string; k: SortKey }) => (
@@ -69,7 +107,16 @@ export default function ItemAnalytics() {
             <h1 className="text-2xl font-bold text-foreground">Item Performance</h1>
             <p className="text-muted-foreground text-sm">Sellable product leaderboard by sales velocity</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <Select value={selectedTypeId} onValueChange={handleTypeChange}>
+              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Item Type" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sellable</SelectItem>
+                {filterableTypes.map(t => (
+                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={String(month)} onValueChange={v => setMonth(Number(v))}>
               <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -95,7 +142,7 @@ export default function ItemAnalytics() {
             <CardTitle className="flex items-center gap-2">
               <Package className="w-5 h-5" />
               Performance Leaderboard
-              <Badge variant="outline" className="ml-auto">{rows.length} items</Badge>
+              <Badge variant="outline" className="ml-auto">{filtered.length} items</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
