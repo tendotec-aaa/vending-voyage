@@ -15,8 +15,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, Plus, Trash2, Users, Lock, Package } from 'lucide-react';
+import { Shield, Plus, Trash2, Users, Lock, Package, MapPin } from 'lucide-react';
 import { PERMISSION_CATEGORIES, PERMISSION_LABELS, ALL_PERMISSION_KEYS, type PermissionKey } from '@/hooks/usePermissions';
 import { ItemTypesTab } from '@/components/admin/ItemTypesTab';
 
