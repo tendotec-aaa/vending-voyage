@@ -30,10 +30,7 @@ export function AppLayout({ children, title, subtitle, actions }: AppLayoutProps
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="w-5 h-5" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full" />
-              </Button>
+              <NotificationBell />
             </div>
           </header>
 
