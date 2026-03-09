@@ -213,19 +213,35 @@ export function useWarehouseInventory(warehouseFilter?: string) {
       subcategoryId,
       categoryName,
       subcategoryName,
+      itemTypeId,
     }: {
       name: string;
       categoryId?: string;
       subcategoryId?: string;
       categoryName?: string;
       subcategoryName?: string;
+      itemTypeId?: string;
     }) => {
+      // Derive legacy type from item_type flags for backward compat
+      let derivedType: string = "merchandise";
+      if (itemTypeId) {
+        const { data: typeRow } = await (supabase as any)
+          .from("item_types")
+          .select("is_asset, is_supply, is_routable")
+          .eq("id", itemTypeId)
+          .single();
+        if (typeRow) {
+          const { deriveEnumType } = await import("@/lib/itemTypeUtils");
+          derivedType = deriveEnumType(typeRow);
+        }
+      }
       const data = await insertItemDetailWithRetrySku(
         {
           name: name.trim(),
-          type: "merchandise" as const,
+          type: derivedType as any,
           category_id: categoryId || null,
           subcategory_id: subcategoryId || null,
+          item_type_id: itemTypeId || null,
         },
         categoryName,
         subcategoryName

@@ -166,9 +166,22 @@ export function usePurchases() {
 
           // If no existing item_detail linked, create a new one with category/subcategory
           if (!itemDetailId && item.item_name) {
+            // Derive legacy type from item_type flags for backward compat
+            let derivedType: string = "merchandise";
+            if ((item as any).item_type_id) {
+              const { data: typeRow } = await (supabase as any)
+                .from("item_types")
+                .select("is_asset, is_supply, is_routable")
+                .eq("id", (item as any).item_type_id)
+                .single();
+              if (typeRow) {
+                const { deriveEnumType } = await import("@/lib/itemTypeUtils");
+                derivedType = deriveEnumType(typeRow);
+              }
+            }
             const insertData: Record<string, any> = {
               name: item.item_name,
-              type: "merchandise" as const,
+              type: derivedType,
             };
             if ((item as any).category_id) insertData.category_id = (item as any).category_id;
             if ((item as any).subcategory_id) insertData.subcategory_id = (item as any).subcategory_id;

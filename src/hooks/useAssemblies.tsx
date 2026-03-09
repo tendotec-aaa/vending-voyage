@@ -36,9 +36,22 @@ export function useAssemblies() {
       // 1. Create or link output item
       let outputItemDetailId = data.item_detail_id;
       if (!outputItemDetailId && data.item_name) {
+        // Derive legacy type from item_type flags for backward compat
+        let derivedType: string = "merchandise";
+        if (data.item_type_id) {
+          const { data: typeRow } = await (supabase as any)
+            .from("item_types")
+            .select("is_asset, is_supply, is_routable")
+            .eq("id", data.item_type_id)
+            .single();
+          if (typeRow) {
+            const { deriveEnumType } = await import("@/lib/itemTypeUtils");
+            derivedType = deriveEnumType(typeRow);
+          }
+        }
         const insertData: Record<string, any> = {
           name: data.item_name,
-          type: "merchandise" as const,
+          type: derivedType,
         };
         if (data.category_id) insertData.category_id = data.category_id;
         if (data.subcategory_id) insertData.subcategory_id = data.subcategory_id;
