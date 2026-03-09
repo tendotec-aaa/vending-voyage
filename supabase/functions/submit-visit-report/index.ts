@@ -53,6 +53,7 @@ interface VisitPayload {
   slots: SlotPayload[];
   sourceWarehouseId: string | null;
   returnWarehouseId: string | null;
+  routeId: string | null;
 }
 
 // ── Helper: get latest running balance for a location ──
@@ -172,6 +173,7 @@ Deno.serve(async (req) => {
       slots,
       sourceWarehouseId,
       returnWarehouseId,
+      routeId,
     } = payload;
 
     // Determine the warehouse for removals/swap-outs (fall back to source for backward compat)
@@ -192,7 +194,8 @@ Deno.serve(async (req) => {
         status: hasObservationIssue ? "flagged" : "completed",
         operator_id: userId,
         visit_type: visitType,
-      })
+        route_id: routeId || null,
+      } as any)
       .select("id")
       .single();
 

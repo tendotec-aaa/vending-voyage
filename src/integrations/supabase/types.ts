@@ -1268,6 +1268,8 @@ export type Database = {
       }
       routes: {
         Row: {
+          auto_completed: boolean | null
+          completed_at: string | null
           created_at: string | null
           driver_id: string | null
           id: string
@@ -1276,6 +1278,8 @@ export type Database = {
           status: string | null
         }
         Insert: {
+          auto_completed?: boolean | null
+          completed_at?: string | null
           created_at?: string | null
           driver_id?: string | null
           id?: string
@@ -1284,6 +1288,8 @@ export type Database = {
           status?: string | null
         }
         Update: {
+          auto_completed?: boolean | null
+          completed_at?: string | null
           created_at?: string | null
           driver_id?: string | null
           id?: string
@@ -1455,6 +1461,7 @@ export type Database = {
           notes: string | null
           operator_id: string | null
           rent_since_last_visit: number | null
+          route_id: string | null
           spot_id: string | null
           status: Database["public"]["Enums"]["visit_status"] | null
           total_cash_collected: number | null
@@ -1470,6 +1477,7 @@ export type Database = {
           notes?: string | null
           operator_id?: string | null
           rent_since_last_visit?: number | null
+          route_id?: string | null
           spot_id?: string | null
           status?: Database["public"]["Enums"]["visit_status"] | null
           total_cash_collected?: number | null
@@ -1485,6 +1493,7 @@ export type Database = {
           notes?: string | null
           operator_id?: string | null
           rent_since_last_visit?: number | null
+          route_id?: string | null
           spot_id?: string | null
           status?: Database["public"]["Enums"]["visit_status"] | null
           total_cash_collected?: number | null
@@ -1498,6 +1507,13 @@ export type Database = {
             columns: ["operator_id"]
             isOneToOne: false
             referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "spot_visits_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "routes"
             referencedColumns: ["id"]
           },
           {

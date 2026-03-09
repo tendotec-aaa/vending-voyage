@@ -1,102 +1,51 @@
+## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
+### What was implemented:
 
-## Route Audit & Refill Reconciliation — with Under-fill Warning Flag
+1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
 
-### Overview
+2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
 
-Add a "Reconciliation" tab to the existing `/routes/:id` page. This requires a DB migration to link visits to routes, updates to the visit submission flow to tag the route, and a new reconciliation UI with accuracy scoring and under-fill warnings.
+3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
 
----
+4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
 
-### Step 1: Database Migration
+5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
 
-```sql
--- Link visits to routes
-ALTER TABLE spot_visits ADD COLUMN route_id uuid REFERENCES routes(id);
+6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
 
--- Track route completion metadata
-ALTER TABLE routes ADD COLUMN completed_at timestamptz;
-ALTER TABLE routes ADD COLUMN auto_completed boolean DEFAULT false;
-```
+7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
 
-Update `src/integrations/supabase/types.ts` to reflect these new columns.
-
----
-
-### Step 2: Tag Route on Visit Submission
-
-**`src/pages/OperatorDashboard.tsx`**: Pass `route_id` as a URL param when navigating to `/visits/new`.
-
-**`src/pages/NewVisitReport.tsx`**: Read `route_id` from URL search params, pass it to the edge function payload.
-
-**`supabase/functions/submit-visit-report/index.ts`**: Accept `route_id` in `VisitPayload`, include it in the `spot_visits` insert.
+### Architecture now:
+- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
+- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
+- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
+- **Audit trail**: Complete history of every stock movement with performer tracking
 
 ---
 
-### Step 3: Reconciliation Tab in RouteDetail
+## ✅ COMPLETED: Route Audit & Refill Reconciliation with Under-fill Warnings
 
-**File**: `src/pages/RouteDetail.tsx` — add a third tab "Reconciliation" (visible to admin/accountant).
+### What was implemented:
 
-**New query** (`useQuery`): Fetch `spot_visits` where `route_id = :id`, then fetch their `visit_line_items` with product/slot joins.
+1. **Database Migration** — Added `route_id` (uuid FK→routes) to `spot_visits`, and `completed_at` (timestamptz) + `auto_completed` (boolean) to `routes`.
 
-**Fallback for pre-migration routes**: Match visits by spot_id (spots within route locations) + `visit_date` within ±1 day of `scheduled_for`.
+2. **Visit Submission Tagging** — `OperatorDashboard.tsx` now passes `route_id` as a URL param when navigating to `/visits/new`. `NewVisitReport.tsx` reads `route_id` from search params and includes it in the edge function payload. `submit-visit-report` edge function persists `route_id` on the `spot_visits` insert.
 
-#### Reconciliation Table (per location/spot)
+3. **Route Interface Update** — `useRoutes.tsx` Route interface now includes `completed_at` and `auto_completed` fields.
 
-| Column | Source |
-|--------|--------|
-| Item Name & Slot | `visit_line_items.product` + `slot.slot_number` |
-| System Suggested | `computeSlotRefill()` using velocity data at route creation time |
-| Actual Refill | `visit_line_items.quantity_added` |
-| Variance | `actual - suggested` |
+4. **Reconciliation Tab** — New `ReconciliationTab` component (`src/components/routes/ReconciliationTab.tsx`) added as a third tab in `RouteDetail.tsx`, visible only to admin/accountant roles.
 
-#### Variance Highlighting
-- **Red text**: If `abs(variance) / suggested > 0.20` (20% threshold)
-- **Warning row highlight** (amber/orange background): If `actual < suggested` by more than 30% AND the `spot_visits.notes` is null/empty. This flags unexplained under-fills forcing a conversation about the discrepancy.
+### Reconciliation Tab Features:
+- **Accuracy Score**: `(items where |variance|/suggested < 10%) / total_items × 100`
+- **Status Badges**: Route status, completion time, "System Verified" badge for auto-completed routes
+- **Audit Table per Location**: Item/Slot, System Suggested (velocity model), Actual Refill (visit_line_items), Variance with percentage
+- **Red variance text**: When `|variance| / suggested > 20%`
+- **Amber warning rows**: When `actual < suggested × 0.70` AND no operator notes — flags unexplained under-fills with ⚠️ tooltip
+- **Operator Notes**: Displayed below each location's table
+- **Fallback matching**: For pre-migration routes without `route_id`, matches visits by spot proximity + date ±1 day
 
-#### Operator Notes
-Display `spot_visits.notes` inline below each spot's rows.
-
----
-
-### Step 4: Accuracy Score & Status Badges
-
-At the top of the Reconciliation tab:
-
-- **Suggested Accuracy**: `(items where abs(variance)/suggested < 0.10) / total_items * 100`%
-- **Route Status** badge (planned/in_progress/completed)
-- **Completion Time**: `routes.completed_at` formatted
-- **"System Verified"** badge: shown when `routes.auto_completed = true`
-
----
-
-### Step 5: Update Route Interface
-
-**`src/hooks/useRoutes.tsx`**: Add `completed_at` and `auto_completed` to the `Route` interface. Update the route detail query to select these fields.
-
----
-
-### Files to Modify
-
-| File | Change |
-|------|--------|
-| DB Migration | Add `route_id` to `spot_visits`, `completed_at` + `auto_completed` to `routes` |
-| `src/integrations/supabase/types.ts` | Add new columns to types |
-| `src/pages/OperatorDashboard.tsx` | Pass `route_id` in nav URL |
-| `src/pages/NewVisitReport.tsx` | Read `route_id`, pass to edge function |
-| `supabase/functions/submit-visit-report/index.ts` | Persist `route_id` on `spot_visits` insert |
-| `src/hooks/useRoutes.tsx` | Update `Route` interface with new fields |
-| `src/pages/RouteDetail.tsx` | Add Reconciliation tab with table, accuracy score, status badges, and under-fill warning rows |
-
----
-
-### Under-fill Warning Rule (Addendum)
-
-```
-IF (actual < suggested * 0.70) AND (notes IS NULL OR notes = ''):
-  → Highlight entire row with amber/warning background
-  → Show ⚠️ icon with tooltip: "Significant under-fill with no explanation"
-```
-
-This creates accountability — operators must explain why they deviated significantly from the system suggestion, or the row gets flagged for admin review.
-
+### Architecture:
+- **Forward-looking**: New visits from operator dashboard are tagged with `route_id`
+- **Backward-compatible**: Older routes use date/spot fallback matching
+- **Role-gated**: Reconciliation tab only visible to admin and accountant roles

@@ -177,6 +177,9 @@ const OperatorDashboard = () => {
                     if (stop.spots.length > 0) {
                       params.set('spot_id', stop.spots[0].id);
                     }
+                    if (route?.id) {
+                      params.set('route_id', route.id);
+                    }
                     navigate(`/visits/new?${params.toString()}`);
                   }
                 }}
