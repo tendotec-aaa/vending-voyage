@@ -14,7 +14,8 @@ export type PermissionKey =
   | 'view_analytics'
   | 'manage_purchases'
   | 'manage_sales'
-  | 'manage_maintenance';
+  | 'manage_maintenance'
+  | 'manage_expenses';
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'view_costs',
