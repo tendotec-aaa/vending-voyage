@@ -452,6 +452,9 @@ export default function AdminSecurity() {
             <TabsTrigger value="users" className="gap-2">
               <Users className="w-4 h-4" /> User Assignments
             </TabsTrigger>
+            <TabsTrigger value="item-types" className="gap-2">
+              <Package className="w-4 h-4" /> Item Types
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="roles">
@@ -460,6 +463,10 @@ export default function AdminSecurity() {
 
           <TabsContent value="users">
             <UserAssignmentsTab />
+          </TabsContent>
+
+          <TabsContent value="item-types">
+            <ItemTypesTab />
           </TabsContent>
         </Tabs>
       </div>
