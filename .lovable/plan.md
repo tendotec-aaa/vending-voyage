@@ -1,121 +1,140 @@
-## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
-### What was implemented:
 
-1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
+## Phased Zero-Breakage Item Logic Migration
 
-2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
+### Overview
 
-3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
-
-4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
-
-5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
-
-6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
-
-7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
-
-### Architecture now:
-- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
-- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
-- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
-- **Audit trail**: Complete history of every stock movement with performer tracking
+Migrate from the hardcoded `item_details.type` enum (`merchandise`, `machine_model`, `spare_part`, `supply`) to the existing `item_types` table with new boolean flag columns. All current behavior preserved via backfill; new flags unlock dynamic filtering.
 
 ---
 
-## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
+### Phase 1: Database Migration
 
-### Format
-`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
-- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
-- No category/subcategory → `XX-482910`
+**Single migration that:**
 
-### What was implemented:
+1. Adds 4 boolean columns to `item_types`: `is_routable`, `is_sellable`, `is_asset`, `is_supply` (all default `false`)
+2. Upserts standard item types with correct flags:
+   - "Merchandise" -> `is_routable = true, is_sellable = true`
+   - "Machine" -> `is_asset = true`
+   - "Spare Part" -> `is_supply = true`
+   - "Supply" -> `is_supply = true`
+3. Backfills `item_details.item_type_id` for any items missing it, based on their `type` enum:
+   - `merchandise` -> Merchandise type id
+   - `machine_model` -> Machine type id
+   - `spare_part` -> Spare Part type id
+   - `supply` -> Supply type id
 
-1. **`src/lib/skuGenerator.ts`** — Rewritten with:
-   - `generateCode(name)` — extracts first letter of each word, max 2 chars
-   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
-   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
+```sql
+ALTER TABLE public.item_types
+  ADD COLUMN IF NOT EXISTS is_routable boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS is_sellable boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS is_asset boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS is_supply boolean NOT NULL DEFAULT false;
 
-2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
+-- Upsert standard types
+INSERT INTO public.item_types (name, is_routable, is_sellable, is_asset, is_supply)
+VALUES
+  ('Merchandise', true, true, false, false),
+  ('Machine', false, false, true, false),
+  ('Spare Part', false, false, false, true),
+  ('Supply', false, false, false, true)
+ON CONFLICT (name) DO UPDATE SET
+  is_routable = EXCLUDED.is_routable,
+  is_sellable = EXCLUDED.is_sellable,
+  is_asset = EXCLUDED.is_asset,
+  is_supply = EXCLUDED.is_supply;
 
-3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
+-- Backfill item_details.item_type_id where null
+UPDATE public.item_details SET item_type_id = (SELECT id FROM public.item_types WHERE name = 'Merchandise') WHERE type = 'merchandise' AND item_type_id IS NULL;
+UPDATE public.item_details SET item_type_id = (SELECT id FROM public.item_types WHERE name = 'Machine') WHERE type = 'machine_model' AND item_type_id IS NULL;
+UPDATE public.item_details SET item_type_id = (SELECT id FROM public.item_types WHERE name = 'Spare Part') WHERE type = 'spare_part' AND item_type_id IS NULL;
+UPDATE public.item_details SET item_type_id = (SELECT id FROM public.item_types WHERE name = 'Supply') WHERE type = 'supply' AND item_type_id IS NULL;
+```
 
-4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
-
-5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
-
-### Uniqueness guarantees:
-- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
-- **Retry loop** regenerates SKU on collision, up to 3 attempts
-- **Single helper function** used by all item creation flows
-
----
-
-## ✅ COMPLETED: Sales Order System with Atomic RPC
-
-### What was implemented:
-
-1. **BEFORE INSERT trigger `compute_ledger_running_balance`** — Auto-computes `running_balance` on `inventory_ledger` inserts. All callers (existing and new) no longer need to compute it — the trigger overwrites whatever value is passed. Existing code continues working with zero breakage.
-
-2. **`sales` table** — Header with `sale_number`, `sale_date`, `buyer_name`, `buyer_contact`, `warehouse_id`, `subtotal`, `tax_rate`, `tax_amount`, `total_amount`, `currency`, `paid`, `status`, `notes`, `created_by`. RLS enabled.
-
-3. **`sale_items` table** — Line items with `sale_id`, `item_detail_id`, `quantity`, `unit_price`, `total_price`. Cascading delete on sale. RLS enabled.
-
-4. **`create_sales_order` RPC** — SECURITY DEFINER PostgreSQL function. Accepts single JSON payload. Atomically inserts sale header, all line items, and `inventory_ledger` entries (movement_type: `warehouse_sale`, negative quantity). Running balance = 0 placeholder (trigger computes real value). Full transaction safety.
-
-5. **`useSales.tsx` hook** — Queries sales with nested items, warehouses, item catalog. `createSale` mutation calls RPC. `useStockCheck` for pre-submit validation.
-
-6. **`Sales.tsx` list page** — Searchable table with sale number, buyer, date, items count, total, paid badge.
-
-7. **`NewSale.tsx` form** — Multi-line item entry with warehouse selection, tax rate, buyer info. Soft stock warning via AlertDialog when quantity exceeds `quantity_on_hand` — user can confirm and proceed (allows negative inventory).
-
-8. **`SaleDetail.tsx`** — Read-only detail with header cards, line items table.
-
-9. **Sidebar + routing** — DollarSign icon under Supply Chain. Routes: `/sales`, `/sales/new`, `/sales/:id`.
-
-### Architecture:
-- **Single atomic write path**: All sales go through `create_sales_order` RPC (no multi-step client inserts)
-- **No running_balance in frontend**: RPC passes `0`, BEFORE INSERT trigger computes correct value
-- **Soft stock warnings**: UI warns but allows proceeding — inventory can go negative
-- **Ledger integrity**: Every sale creates `warehouse_sale` ledger entries, existing AFTER INSERT trigger syncs `inventory.quantity_on_hand`
+Note: `item_types.name` has a unique constraint already (from the existing table). If it doesn't, one will be added.
 
 ---
 
-## ✅ COMPLETED: Dynamic RBAC & Security Hub
+### Phase 2: Remove Hardcoded Creation Logic
 
-### What was implemented:
+**Files modified:**
 
-1. **`app_roles` table** — Dynamic, admin-created roles with name + description. RLS: authenticated SELECT, admin-only INSERT/UPDATE/DELETE.
+| File | Change |
+|------|--------|
+| `src/hooks/usePurchases.tsx` (line 172) | Remove `type: "merchandise"` from the `insertData`. Instead, look up the item_type's corresponding enum value via a helper, or default to `"merchandise"` if the item_type has `is_sellable = true`. Keep the `type` column populated for backward compat until full deprecation. |
+| `src/hooks/useAssemblies.tsx` (line 41) | Same pattern: derive `type` from the selected `item_type_id`'s flags instead of hardcoding `"merchandise"` |
+| `src/hooks/useWarehouseInventory.tsx` (line ~175) | Same: `createItemDetailMutation` should accept `item_type_id` and derive `type` |
+| `src/lib/skuGenerator.ts` | Update `insertItemDetailWithRetrySku` to accept `item_type_id` in the insert data (already does via spread, no change needed) |
 
-2. **`role_permissions` table** — Maps roles to permission keys with `is_enabled` boolean. Cascading delete on role. Same RLS pattern.
+**Deriving `type` from flags** (backward compat helper):
+```typescript
+function deriveEnumType(itemType: { is_asset: boolean; is_supply: boolean; is_routable: boolean }): string {
+  if (itemType.is_asset) return "machine_model";
+  if (itemType.is_supply) return "spare_part";
+  return "merchandise"; // default for routable/sellable
+}
+```
 
-3. **`user_assignments` table** — Maps users to roles with `assignment_scope` enum (`global`, `location`, `personal`) and optional `scope_id`. Unique per user.
+This keeps the old `type` enum column populated so existing RLS, views, and edge functions don't break.
 
-4. **`has_permission()` SQL function** — SECURITY DEFINER. Joins `user_assignments` → `role_permissions` to check if a user has a specific permission key enabled.
+---
 
-5. **`get_user_scope()` SQL function** — Returns user's scope type and scope_id.
+### Phase 3: Update Frontend Filters
 
-6. **Seed data** — 3 default roles (Administrator, Route Operator, Warehouse Manager) with 11 permission keys each. Existing users backfilled from `user_roles` table.
+| File | Current Filter | New Filter |
+|------|---------------|------------|
+| `src/pages/Inventory.tsx` (line 38) | `.in("type", ["merchandise", "machine_model"])` | Join to `item_types` and filter where `is_sellable = true OR is_asset = true OR is_supply = true` (shows supplies now) |
+| `src/pages/NewVisitReport.tsx` (line 375) | `.eq('type', 'merchandise')` | Filter by joining `item_types` via `item_type_id` where `is_routable = true` |
+| `src/components/routes/PlannedSwapDialog.tsx` (line 83) | `.eq("type", "merchandise")` | Same: filter by `item_types.is_routable = true` via join |
+| `src/pages/ItemDetail.tsx` (line 989) | `item.type === "merchandise"` | Check if the item's linked `item_type` has `is_sellable = true` |
+| `src/pages/ItemDetail.tsx` (line 34-38) | `typeColors` keyed by enum | Keep for backward compat, also support flag-based badge display |
 
-7. **`usePermissions()` hook** — Fetches user's assignment, role name, enabled permission keys, and scope. Caches via React Query. Exposes `has(key)` function. Admins always pass all checks.
+**Supabase query pattern for flag-based filtering:**
 
-8. **`PermissionGuard` component** — Route guard that shows `AccessDenied` (403 page with Shield icon) if user lacks required permission.
+Since Supabase JS doesn't support filtering on joined table columns directly, we'll use a two-step approach:
+1. First fetch `item_type` ids where the flag is true
+2. Then filter `item_details` by `.in("item_type_id", routableTypeIds)`
 
-9. **`AdminSecurity` page (`/admin/security`)** — Two-tab interface:
-   - **Tab 1: Roles & Permissions Matrix** — Left sidebar to select/create roles, main panel with categorized permission toggles (Finance, Inventory, Operations, Supply Chain, Admin). Instant mutation on each Switch toggle.
-   - **Tab 2: User Assignments** — DataTable of all users with Role dropdown, Scope dropdown, and Location selector (when scope = location). Instant upsert on change.
+Or use an RPC/view. The simplest approach: fetch all `item_types` once (small table), compute the ID sets client-side, then filter.
 
-10. **Dynamic Sidebar** — Supply Chain, Insights, Business, and Admin sections conditionally rendered based on permission keys. Dashboard, Operations, Assets, Locations, and Personal always visible.
+---
 
-11. **Route Guards in App.tsx** — `/sales/*` → `manage_sales`, `/purchases/*` → `manage_purchases`, `/analytics` → `view_analytics`, `/users/*` + `/company` → `manage_users`, `/admin/security` → `RequireRole(['admin'])`.
+### Phase 4: Update `useItemTypes` Hook
 
-### Architecture:
-- **Backward compatible**: Old `user_roles` table and `has_role()` function preserved for existing RLS policies
-- **Data-driven**: Permissions stored in DB, not hardcoded. Admin can create new roles and toggle capabilities on the fly
-- **Instant mutations**: Each Switch/Select change fires immediate DB update via React Query mutation
-- **Scope stored but frontend-only initially**: Scope column assignable in UI, RLS wiring deferred
+Add the new boolean fields to the `ItemType` interface and query:
 
-### Permission Keys:
-`view_costs`, `view_profits`, `view_stock`, `edit_bodega`, `view_all_routes`, `manage_own_route`, `manage_users`, `view_analytics`, `manage_purchases`, `manage_sales`, `manage_maintenance`
+```typescript
+export interface ItemType {
+  id: string;
+  name: string;
+  is_routable: boolean;
+  is_sellable: boolean;
+  is_asset: boolean;
+  is_supply: boolean;
+  created_at: string;
+}
+```
+
+---
+
+### Modified Files Summary
+
+| File | Change |
+|------|--------|
+| `supabase/migrations/...` | New migration: add columns, seed, backfill |
+| `src/hooks/useItemTypes.tsx` | Add flag fields to interface and query |
+| `src/hooks/usePurchases.tsx` | Derive `type` from `item_type_id` flags instead of hardcoding |
+| `src/hooks/useAssemblies.tsx` | Same derivation |
+| `src/hooks/useWarehouseInventory.tsx` | Same for `createItemDetailMutation` |
+| `src/pages/Inventory.tsx` | Filter by item_type flags instead of enum |
+| `src/pages/NewVisitReport.tsx` | Filter by `is_routable` instead of `type = merchandise` |
+| `src/components/routes/PlannedSwapDialog.tsx` | Filter by `is_routable` instead of `type = merchandise` |
+| `src/pages/ItemDetail.tsx` | Use `is_sellable` flag for sell-through chart visibility |
+| `src/integrations/supabase/types.ts` | Auto-updated by Supabase after migration |
+
+### Safety Guarantees
+
+- The `type` enum column on `item_details` is **not removed** -- it stays populated via the derivation helper for backward compat with views, edge functions, and any SQL that references it
+- All existing items get their `item_type_id` backfilled to match their current enum, so no behavior changes
+- The old `typeColors` map in ItemDetail.tsx is kept; flag-based logic is additive
+
