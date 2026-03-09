@@ -1,13 +1,16 @@
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useOperatorDashboard } from '@/hooks/useOperatorDashboard';
+import { useUserLocations } from '@/hooks/useUserLocations';
+import { supabase } from '@/integrations/supabase/client';
 import { Progress } from '@/components/ui/progress';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { MapPin, CheckCircle2, Clock, Route, AlertTriangle, Eye } from 'lucide-react';
+import { MapPin, CheckCircle2, Clock, Route, AlertTriangle, Eye, Package } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 
 const OperatorDashboard = () => {
@@ -22,6 +25,86 @@ const OperatorDashboard = () => {
 
   const { route, stops, progressPct, totalStops, visitedStops, isLoading } =
     useOperatorDashboard(targetUserId ?? undefined);
+
+  const { locationIds, isLoading: locLoading } = useUserLocations(targetUserId ?? undefined);
+
+  // Pending issues: stock discrepancies for assigned locations
+  const { data: pendingIssues } = useQuery({
+    queryKey: ['operator-pending-issues', targetUserId, locationIds],
+    queryFn: async () => {
+      if (!locationIds.length && !isAdmin) return [];
+
+      // Get spots for assigned locations (or all if admin ghost)
+      let spotsQuery = supabase.from('spots').select('id, name, location_id');
+      if (locationIds.length > 0) {
+        spotsQuery = spotsQuery.in('location_id', locationIds);
+      }
+      const { data: spots } = await spotsQuery;
+      if (!spots?.length) return [];
+
+      // Get pending discrepancies - stock_discrepancy doesn't have spot_id directly,
+      // so we need to join through inventory_adjustments
+      const { data: discrepancies, error } = await supabase
+        .from('stock_discrepancy')
+        .select('id, item_detail_id, discrepancy_type, difference, status, occurrence_date, item_details:item_detail_id(name)')
+        .eq('status', 'pending')
+        .order('occurrence_date', { ascending: false })
+        .limit(20);
+
+      if (error) {
+        console.error('Error fetching discrepancies:', error);
+        return [];
+      }
+
+      return (discrepancies ?? []).map((d: any) => ({
+        id: d.id,
+        itemName: d.item_details?.name ?? 'Unknown',
+        type: d.discrepancy_type,
+        difference: d.difference,
+        date: d.occurrence_date,
+      }));
+    },
+    enabled: !!targetUserId && (!locLoading || isAdmin),
+  });
+
+  // Pending maintenance tickets for assigned locations
+  const { data: pendingTickets } = useQuery({
+    queryKey: ['operator-pending-tickets', targetUserId, locationIds],
+    queryFn: async () => {
+      if (!locationIds.length && !isAdmin) return [];
+
+      let query = supabase
+        .from('maintenance_tickets')
+        .select('id, issue_type, description, priority, location_id, locations:location_id(name)')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (locationIds.length > 0) {
+        query = query.in('location_id', locationIds);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Error fetching tickets:', error);
+        return [];
+      }
+
+      return (data ?? []).map((t: any) => ({
+        id: t.id,
+        issueType: t.issue_type,
+        description: t.description,
+        priority: t.priority,
+        locationName: t.locations?.name ?? 'Unknown',
+      }));
+    },
+    enabled: !!targetUserId && (!locLoading || isAdmin),
+  });
+
+  const allIssues = [
+    ...(pendingIssues ?? []).map(i => ({ ...i, kind: 'discrepancy' as const })),
+    ...(pendingTickets ?? []).map(t => ({ ...t, kind: 'ticket' as const })),
+  ];
 
   if (isLoading) {
     return (
@@ -144,6 +227,57 @@ const OperatorDashboard = () => {
           )}
         </div>
       )}
+
+      {/* Pending Issues Section */}
+      <div className="mt-6">
+        <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
+          <AlertTriangle className="h-5 w-5 text-destructive" />
+          Pending Issues
+          {allIssues.length > 0 && (
+            <Badge variant="destructive">{allIssues.length}</Badge>
+          )}
+        </h2>
+
+        {allIssues.length === 0 ? (
+          <Card className="p-6 text-center bg-card border-border">
+            <CheckCircle2 className="h-8 w-8 text-primary mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No pending issues. All clear!</p>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {allIssues.map((issue) => (
+              <Card
+                key={issue.kind === 'discrepancy' ? `d-${issue.id}` : `t-${issue.id}`}
+                className="p-3 bg-card border-border cursor-pointer hover:border-primary/50 transition-colors"
+                onClick={() => {
+                  if (issue.kind === 'ticket') {
+                    navigate('/maintenance');
+                  }
+                }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Package className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {issue.kind === 'discrepancy'
+                          ? `Stock: ${(issue as any).itemName} (${(issue as any).difference > 0 ? '+' : ''}${(issue as any).difference})`
+                          : `${(issue as any).issueType}: ${(issue as any).locationName}`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {issue.kind === 'discrepancy' ? (issue as any).type : (issue as any).description?.slice(0, 60)}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant={issue.kind === 'ticket' && (issue as any).priority === 'high' ? 'destructive' : 'secondary'} className="flex-shrink-0">
+                    {issue.kind === 'discrepancy' ? 'Discrepancy' : (issue as any).priority}
+                  </Badge>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </AppLayout>
   );
 };

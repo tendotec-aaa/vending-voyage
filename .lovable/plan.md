@@ -1,94 +1,46 @@
+## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
+### What was implemented:
 
-## Operator Scope & Field Tools Expansion
+1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
 
-### Overview
+2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
 
-Four workstreams: (1) `user_location_assignments` table for geographic scoping, (2) Admin UI to manage assignments, (3) Operator Dashboard expansion with "Pending Issues" and simplified inventory, (4) sidebar navigation update for operators.
+3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
 
-### 1. Database Migration
+4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
 
-Create `user_location_assignments` join table:
+5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
 
-```sql
-CREATE TABLE public.user_location_assignments (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  location_id uuid NOT NULL REFERENCES public.locations(id) ON DELETE CASCADE,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(user_id, location_id)
-);
+6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
 
-ALTER TABLE public.user_location_assignments ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Authenticated can select" ON public.user_location_assignments FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Admins can insert" ON public.user_location_assignments FOR INSERT TO authenticated WITH CHECK (has_role(auth.uid(), 'admin'::user_role));
-CREATE POLICY "Admins can delete" ON public.user_location_assignments FOR DELETE TO authenticated USING (has_role(auth.uid(), 'admin'::user_role));
-```
+7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
 
-### 2. New Hook: `useUserLocations(userId)`
+### Architecture now:
+- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
+- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
+- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
+- **Audit trail**: Complete history of every stock movement with performer tracking
 
-- Fetches `user_location_assignments` for a given user
-- Returns `locationIds: string[]` and helper `isAssigned(locationId)`
-- Used by operator dashboard and operator inventory to scope data
+---
 
-### 3. Admin Operators Page Updates (`AdminOperators.tsx`)
+## ✅ COMPLETED: Fixed Overhead Generation & Historical Rent Ledger
 
-- Add a "Manage Locations" button per operator row (next to "View Dashboard")
-- Opens a dialog with a checkbox list of all locations
-- Checked = assigned. Toggle inserts/deletes rows in `user_location_assignments`
-- Shows current assignment count as a badge in the table
+### What was implemented:
 
-### 4. Operator Dashboard Expansion (`OperatorDashboard.tsx`)
+1. **Database Migration** — Added `rent` and `depreciation` values to `expense_category` enum. Created `overhead_postings` tracking table with unique constraints on `(year_month, location_id, posting_type)` and `(year_month, setup_id, posting_type)` to prevent duplicate generation.
 
-Add a **"Pending Issues"** section below the route stops:
-- Query `stock_discrepancy` (status = 'pending') joined with spots/locations
-- Filter by operator's assigned location IDs (from `useUserLocations`)
-- Show: spot name, item name, discrepancy type, difference
-- Clicking navigates to the relevant spot
+2. **`useProfitability.tsx` — Overhead Generation** — Added `generateOverhead` mutation that snapshots current `rent_amount` from all locations and machine depreciation from all active setups as permanent `operating_expenses` rows. Added `isOverheadPosted` and `overheadCount` status tracking. Added `rent` and `depreciation` to `ExpenseCategory` type, labels, and colors.
 
-### 5. New Page: Operator Inventory (`OperatorInventory.tsx`)
+3. **`Profitability.tsx` — Generate Overhead Button** — Admin-only "Generate Monthly Overhead" button with AlertDialog confirmation. Shows "Overhead Posted (N entries)" badge when already generated. Button disabled when overhead already exists.
 
-A simplified version of the Inventory page at `/operator/inventory`:
-- Columns: Item Name, Category, Warehouse Qty only
-- **No** Cost, WAC, Total Value columns
-- Red highlight for items where `warehouseQty` is below a threshold (we can use `warehouseQty <= 0` as the "low stock" indicator since there's no min_stock column currently -- or add `min_stock` to `item_details` if desired)
-- Same search/filter as main inventory but stripped of financial data
-- Reuses `useConsolidatedInventory` logic but renders fewer columns
+4. **`useSpotHealth.tsx` — Posted vs Projected Logic** — Fetches `overhead_postings` joined with `operating_expenses` for the selected month. If posted rent exists for a location, splits it equally among active spots. If posted depreciation exists for a setup, uses the snapshotted amount. Falls back to live calculation with `isProjectedRent`/`isProjectedDepreciation` flags.
 
-### 6. Sidebar Navigation Updates (`AppSidebar.tsx`)
+5. **`SpotHealth.tsx` — Projected Indicator** — Shows a "Projected" badge with tooltip when any rent/depreciation values are estimated. Individual cells show a `~` marker next to projected values.
 
-For non-admin users (operators), restructure to show:
-- **My Dashboard** (already exists)
-- **Operations**: Visit Reports, Routes, Maintenance
-- **Field Tools** (new group): Inventory (links to `/operator/inventory`), Issues (links to `/operator/issues` or anchor on dashboard)
-- **Hide**: Supply Chain, Insights, Business, Admin sections (already permission-gated)
-- **Hide**: Assets section items like Warehouse, Machines, Setups (not relevant to operators)
-
-### 7. Routing (`App.tsx`)
-
-Add:
-- `/operator/inventory` → `OperatorInventory` (protected, no role restriction since it's a simplified view)
-
-### Files Summary
-
-| File | Action |
-|------|--------|
-| Migration SQL | Create `user_location_assignments` table |
-| `src/hooks/useUserLocations.tsx` | New hook for fetching user's assigned locations |
-| `src/pages/AdminOperators.tsx` | Add "Manage Locations" dialog |
-| `src/pages/OperatorDashboard.tsx` | Add "Pending Issues" section |
-| `src/pages/OperatorInventory.tsx` | New simplified inventory page |
-| `src/components/layout/AppSidebar.tsx` | Add operator-specific nav items, hide admin sections |
-| `src/App.tsx` | Add `/operator/inventory` route |
-| `src/integrations/supabase/types.ts` | Auto-updated after migration |
-
-### Scoping Logic
-
-```text
-Admin user → all data, no filtering
-Operator → INNER JOIN user_location_assignments
-           to filter routes, spots, issues by assigned locations
-```
-
-The `useOperatorDashboard` hook already filters by `driver_id` (route assignment), so route data is naturally scoped. The new "Pending Issues" and future data will use `useUserLocations` for geographic filtering.
-
+### Architecture:
+- **Snapshot model**: "Generate Monthly Overhead" creates permanent expense rows — changing `rent_amount` later won't affect past months
+- **Location-level rent**: Rent comes from `locations.rent_amount`, split equally among active spots at that location
+- **Bottom-up depreciation**: Summed from `item_details.monthly_depreciation` for each machine in a setup
+- **Dual-source display**: Spot Health prefers posted actuals, falls back to projected from master data
+- **Duplicate prevention**: `overhead_postings` unique constraints prevent re-generation

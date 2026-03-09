@@ -49,6 +49,7 @@ import ItemAnalytics from "./pages/ItemAnalytics";
 import SpotHealth from "./pages/SpotHealth";
 import OperatorDashboard from "./pages/OperatorDashboard";
 import AdminOperators from "./pages/AdminOperators";
+import OperatorInventory from "./pages/OperatorInventory";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -185,8 +186,9 @@ const App = () => (
               </ProtectedRoute>
             } />
 
-            {/* Operator Dashboard */}
+            {/* Operator Dashboard & Field Tools */}
             <Route path="/dashboard" element={<ProtectedRoute><OperatorDashboard /></ProtectedRoute>} />
+            <Route path="/operator/inventory" element={<ProtectedRoute><OperatorInventory /></ProtectedRoute>} />
 
             {/* Admin-only routes */}
             <Route path="/admin/operators" element={
