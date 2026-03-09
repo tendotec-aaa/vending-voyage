@@ -46,6 +46,7 @@ import AdminSecurity from "./pages/AdminSecurity";
 import Notifications from "./pages/Notifications";
 import Profitability from "./pages/Profitability";
 import ItemAnalytics from "./pages/ItemAnalytics";
+import SpotHealth from "./pages/SpotHealth";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
