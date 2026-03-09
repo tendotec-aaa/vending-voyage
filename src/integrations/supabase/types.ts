@@ -1458,6 +1458,8 @@ export type Database = {
           id: string
           location_id: string | null
           name: string
+          rent_fixed_amount: number
+          rent_percentage: number
           status: Database["public"]["Enums"]["spot_status"] | null
         }
         Insert: {
@@ -1466,6 +1468,8 @@ export type Database = {
           id?: string
           location_id?: string | null
           name: string
+          rent_fixed_amount?: number
+          rent_percentage?: number
           status?: Database["public"]["Enums"]["spot_status"] | null
         }
         Update: {
@@ -1474,6 +1478,8 @@ export type Database = {
           id?: string
           location_id?: string | null
           name?: string
+          rent_fixed_amount?: number
+          rent_percentage?: number
           status?: Database["public"]["Enums"]["spot_status"] | null
         }
         Relationships: [
