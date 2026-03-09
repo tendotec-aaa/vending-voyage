@@ -104,7 +104,11 @@ export function useItemAnalytics(year: number, month: number) {
           .lte('visit_date', endStr),
       ]);
 
-      const sellableItems = (itemsRes.data || []) as any[];
+      const allItems = (itemsRes.data || []) as any[];
+      const sellableItems = allItems.filter(i => {
+        const t = i.item_types;
+        return t?.is_sellable || t?.is_component;
+      });
       const sellableIds = new Set(sellableItems.map(i => i.id));
 
       // Visit IDs for current month
