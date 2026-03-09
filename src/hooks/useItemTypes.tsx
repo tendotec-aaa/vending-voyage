@@ -5,6 +5,10 @@ import { useToast } from "@/hooks/use-toast";
 export interface ItemType {
   id: string;
   name: string;
+  is_routable: boolean;
+  is_sellable: boolean;
+  is_asset: boolean;
+  is_supply: boolean;
   created_at: string;
 }
 
@@ -17,7 +21,7 @@ export function useItemTypes() {
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("item_types")
-        .select("*")
+        .select("id, name, is_routable, is_sellable, is_asset, is_supply, created_at")
         .order("name");
       if (error) throw error;
       return (data || []) as ItemType[];
@@ -79,6 +83,11 @@ export function useItemTypes() {
     queryClient.invalidateQueries({ queryKey: ["item_details_with_categories"] });
   };
 
+  // Helper: get IDs for a specific flag
+  const getTypeIdsByFlag = (flag: keyof Pick<ItemType, "is_routable" | "is_sellable" | "is_asset" | "is_supply">): string[] => {
+    return (itemTypesQuery.data || []).filter((t) => t[flag]).map((t) => t.id);
+  };
+
   return {
     itemTypes: itemTypesQuery.data || [],
     isLoading: itemTypesQuery.isLoading,
@@ -86,5 +95,6 @@ export function useItemTypes() {
     deleteItemType: deleteItemType.mutateAsync,
     checkLinkedItems,
     updateItemTypeForItems,
+    getTypeIdsByFlag,
   };
 }

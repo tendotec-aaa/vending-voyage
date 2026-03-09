@@ -482,16 +482,28 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          is_asset: boolean
+          is_routable: boolean
+          is_sellable: boolean
+          is_supply: boolean
           name: string
         }
         Insert: {
           created_at?: string
           id?: string
+          is_asset?: boolean
+          is_routable?: boolean
+          is_sellable?: boolean
+          is_supply?: boolean
           name: string
         }
         Update: {
           created_at?: string
           id?: string
+          is_asset?: boolean
+          is_routable?: boolean
+          is_sellable?: boolean
+          is_supply?: boolean
           name?: string
         }
         Relationships: []

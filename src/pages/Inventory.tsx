@@ -31,11 +31,26 @@ function useConsolidatedInventory() {
   return useQuery({
     queryKey: ["consolidated-inventory"],
     queryFn: async (): Promise<InventoryItem[]> => {
-      // Fetch all item types (merchandise + machine_model)
-      const { data: items, error: itemsError } = await supabase
+      // Fetch item_type IDs where is_sellable, is_asset, or is_supply
+      const { data: validTypes } = await (supabase as any)
+        .from("item_types")
+        .select("id, is_sellable, is_asset, is_supply")
+        .or("is_sellable.eq.true,is_asset.eq.true,is_supply.eq.true");
+      const validTypeIds = (validTypes || []).map((t: any) => t.id);
+
+      // Fetch all items linked to valid types (or fall back to legacy filter)
+      let query = supabase
         .from("item_details")
-        .select(`id, sku, name, cost_price, type, category_id, categories (name)`)
-        .in("type", ["merchandise", "machine_model"]);
+        .select(`id, sku, name, cost_price, type, category_id, item_type_id, categories (name)`);
+
+      if (validTypeIds.length > 0) {
+        query = query.in("item_type_id", validTypeIds);
+      } else {
+        // Fallback for items without item_type_id assigned
+        query = query.in("type", ["merchandise", "machine_model"]);
+      }
+
+      const { data: items, error: itemsError } = await query;
       if (itemsError) throw itemsError;
 
       const { data: inventory, error: invError } = await supabase

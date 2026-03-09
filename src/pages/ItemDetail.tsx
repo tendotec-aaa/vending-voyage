@@ -985,8 +985,12 @@ export default function ItemDetail() {
           </CardContent>
         </Card>
 
-        {/* ===== Sell-Through Velocity (Merchandise Only) ===== */}
-        {item.type === "merchandise" && (() => {
+        {/* ===== Sell-Through Velocity (Sellable Items) ===== */}
+        {(() => {
+          // Show sell-through chart for sellable items (flag-based) or legacy merchandise
+          const itemType = itemTypes.find((t: any) => t.id === item.item_type_id);
+          const isSellable = itemType?.is_sellable || item.type === "merchandise";
+          if (!isSellable) return null;
           // Get all visit dates from logistics history
           const visitDates = logisticsHistory
             .map((li: any) => li.spot_visit?.visit_date)
