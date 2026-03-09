@@ -32,7 +32,7 @@ export function useItemTypes() {
   });
 
   const createItemType = useMutation({
-    mutationFn: async (params: { name: string; is_routable?: boolean; is_sellable?: boolean; is_asset?: boolean; is_supply?: boolean }) => {
+    mutationFn: async (params: { name: string; is_routable?: boolean; is_sellable?: boolean; is_asset?: boolean; is_supply?: boolean; is_component?: boolean }) => {
       const { data, error } = await (supabase as any)
         .from("item_types")
         .insert({
@@ -41,6 +41,7 @@ export function useItemTypes() {
           is_sellable: params.is_sellable ?? false,
           is_asset: params.is_asset ?? false,
           is_supply: params.is_supply ?? false,
+          is_component: params.is_component ?? false,
         })
         .select()
         .single();
