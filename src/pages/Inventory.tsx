@@ -75,6 +75,22 @@ function useConsolidatedInventory() {
         .select("model_id, status");
       if (machinesError) throw machinesError;
 
+      // Build WAC map: total_cost / total_qty across all batches
+      const costAcc = new Map<string, { totalCost: number; totalQty: number }>();
+      for (const b of allPurchaseItems || []) {
+        const cost = b.final_unit_cost || b.landed_unit_cost || 0;
+        const qty = b.quantity_ordered || 0;
+        if (!b.item_detail_id) continue;
+        const acc = costAcc.get(b.item_detail_id) || { totalCost: 0, totalQty: 0 };
+        acc.totalCost += qty * cost;
+        acc.totalQty += qty;
+        costAcc.set(b.item_detail_id, acc);
+      }
+      const wacMap = new Map<string, number>();
+      for (const [id, acc] of costAcc) {
+        wacMap.set(id, acc.totalQty > 0 ? acc.totalCost / acc.totalQty : 0);
+      }
+
       return (items || []).map((item: any) => {
         if (item.type === "machine_model") {
           // For machine models, count by machine status
