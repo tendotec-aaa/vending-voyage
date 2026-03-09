@@ -419,6 +419,7 @@ export type Database = {
           description: string | null
           id: string
           item_type_id: string | null
+          monthly_depreciation: number
           name: string
           photo_url: string | null
           sku: string
@@ -433,6 +434,7 @@ export type Database = {
           description?: string | null
           id?: string
           item_type_id?: string | null
+          monthly_depreciation?: number
           name: string
           photo_url?: string | null
           sku: string
@@ -447,6 +449,7 @@ export type Database = {
           description?: string | null
           id?: string
           item_type_id?: string | null
+          monthly_depreciation?: number
           name?: string
           photo_url?: string | null
           sku?: string
