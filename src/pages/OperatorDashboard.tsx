@@ -171,8 +171,13 @@ const OperatorDashboard = () => {
                   !stop.visited ? 'cursor-pointer hover:border-primary/50' : 'opacity-75'
                 }`}
                 onClick={() => {
-                  if (!stop.visited && stop.spots.length > 0) {
-                    navigate(`/visits/new?spot_id=${stop.spots[0].id}`);
+                  if (!stop.visited && stop.location?.id) {
+                    const params = new URLSearchParams();
+                    params.set('location_id', stop.location.id);
+                    if (stop.spots.length > 0) {
+                      params.set('spot_id', stop.spots[0].id);
+                    }
+                    navigate(`/visits/new?${params.toString()}`);
                   }
                 }}
               >

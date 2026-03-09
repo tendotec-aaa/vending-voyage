@@ -57,7 +57,7 @@ import {
 } from "lucide-react";
 import { VisitDraftsDropdown, saveDraft, type VisitDraft } from "@/components/visits/VisitDraftsDropdown";
 import { ToyPicker } from "@/components/visits/ToyPicker";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { format, differenceInDays, startOfDay } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -201,14 +201,18 @@ function clearFormCache() {
 
 export default function NewVisitReport() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+
+  const paramLocationId = searchParams.get('location_id');
+  const paramSpotId = searchParams.get('spot_id');
 
   const cached = useMemo(() => loadFormCache(), []);
   
   // Location Details state
-  const [selectedLocation, setSelectedLocation] = useState("");
-  const [selectedSpot, setSelectedSpot] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState(paramLocationId || "");
+  const [selectedSpot, setSelectedSpot] = useState(paramSpotId || "");
   
   // Visit Details state
   const [visitType, setVisitType] = useState(cached?.visitType || "");
@@ -243,7 +247,22 @@ export default function NewVisitReport() {
   const [showPerformanceGrade, setShowPerformanceGrade] = useState(false);
   const [performanceGrade, setPerformanceGrade] = useState<PerformanceGrade | null>(null);
 
-  // Fetch locations
+  // Auto-resolve location from spot_id URL param when location_id not provided
+  useEffect(() => {
+    if (paramSpotId && !paramLocationId) {
+      supabase
+        .from('spots')
+        .select('location_id')
+        .eq('id', paramSpotId)
+        .single()
+        .then(({ data }) => {
+          if (data?.location_id) {
+            setSelectedLocation(data.location_id);
+          }
+        });
+    }
+  }, [paramSpotId, paramLocationId]);
+
   const { data: locations = [] } = useQuery({
     queryKey: ['locations'],
     queryFn: async () => {
