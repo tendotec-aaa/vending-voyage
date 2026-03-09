@@ -201,14 +201,18 @@ function clearFormCache() {
 
 export default function NewVisitReport() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+
+  const paramLocationId = searchParams.get('location_id');
+  const paramSpotId = searchParams.get('spot_id');
 
   const cached = useMemo(() => loadFormCache(), []);
   
   // Location Details state
-  const [selectedLocation, setSelectedLocation] = useState("");
-  const [selectedSpot, setSelectedSpot] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState(paramLocationId || "");
+  const [selectedSpot, setSelectedSpot] = useState(paramSpotId || "");
   
   // Visit Details state
   const [visitType, setVisitType] = useState(cached?.visitType || "");
