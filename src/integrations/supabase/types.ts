@@ -419,6 +419,7 @@ export type Database = {
           description: string | null
           id: string
           item_type_id: string | null
+          monthly_depreciation: number
           name: string
           photo_url: string | null
           sku: string
@@ -433,6 +434,7 @@ export type Database = {
           description?: string | null
           id?: string
           item_type_id?: string | null
+          monthly_depreciation?: number
           name: string
           photo_url?: string | null
           sku: string
@@ -447,6 +449,7 @@ export type Database = {
           description?: string | null
           id?: string
           item_type_id?: string | null
+          monthly_depreciation?: number
           name?: string
           photo_url?: string | null
           sku?: string
@@ -1458,6 +1461,8 @@ export type Database = {
           id: string
           location_id: string | null
           name: string
+          rent_fixed_amount: number
+          rent_percentage: number
           status: Database["public"]["Enums"]["spot_status"] | null
         }
         Insert: {
@@ -1466,6 +1471,8 @@ export type Database = {
           id?: string
           location_id?: string | null
           name: string
+          rent_fixed_amount?: number
+          rent_percentage?: number
           status?: Database["public"]["Enums"]["spot_status"] | null
         }
         Update: {
@@ -1474,6 +1481,8 @@ export type Database = {
           id?: string
           location_id?: string | null
           name?: string
+          rent_fixed_amount?: number
+          rent_percentage?: number
           status?: Database["public"]["Enums"]["spot_status"] | null
         }
         Relationships: [

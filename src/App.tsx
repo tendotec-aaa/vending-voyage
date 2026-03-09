@@ -46,6 +46,7 @@ import AdminSecurity from "./pages/AdminSecurity";
 import Notifications from "./pages/Notifications";
 import Profitability from "./pages/Profitability";
 import ItemAnalytics from "./pages/ItemAnalytics";
+import SpotHealth from "./pages/SpotHealth";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -171,6 +172,13 @@ const App = () => (
               <ProtectedRoute>
                 <PermissionGuard requiredPerm="view_analytics">
                   <ItemAnalytics />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+            <Route path="/insights/spots" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="view_analytics">
+                  <SpotHealth />
                 </PermissionGuard>
               </ProtectedRoute>
             } />
