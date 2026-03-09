@@ -34,6 +34,7 @@ interface Product {
   name: string;
   sku: string;
   category_id: string | null;
+  available?: number;
 }
 
 interface ToyPickerProps {
@@ -44,6 +45,7 @@ interface ToyPickerProps {
   placeholder?: string;
   label?: string;
   showCategoryFilter?: boolean;
+  showStock?: boolean;
 }
 
 export function ToyPicker({
