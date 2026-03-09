@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -5,12 +6,15 @@ import { useAuth } from '@/hooks/useAuth';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useOperatorDashboard } from '@/hooks/useOperatorDashboard';
 import { useUserLocations } from '@/hooks/useUserLocations';
+import { useOperatorPerformance } from '@/hooks/useOperatorPerformance';
 import { supabase } from '@/integrations/supabase/client';
 import { Progress } from '@/components/ui/progress';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { MapPin, CheckCircle2, Clock, Route, AlertTriangle, Eye, Package } from 'lucide-react';
+import { KPICard } from '@/components/dashboard/KPICard';
+import { StaleSpotDialog } from '@/components/dashboard/StaleSpotDialog';
+import { MapPin, CheckCircle2, Clock, Route, AlertTriangle, Eye, Package, BarChart3, Wrench, DollarSign, MapPinOff } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -20,6 +24,7 @@ const OperatorDashboard = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const [staleDialogOpen, setStaleDialogOpen] = useState(false);
 
   const asUser = searchParams.get('as_user');
   const isGhostMode = !!asUser && isAdmin;
@@ -29,6 +34,8 @@ const OperatorDashboard = () => {
     useOperatorDashboard(targetUserId ?? undefined);
 
   const { locationIds, isLoading: locLoading } = useUserLocations(targetUserId ?? undefined);
+
+  const { thisWeek, lastWeek, staleSpots } = useOperatorPerformance(targetUserId ?? undefined, locationIds);
 
   const { data: pendingIssues } = useQuery({
     queryKey: ['operator-pending-issues', targetUserId, locationIds],
@@ -84,6 +91,13 @@ const OperatorDashboard = () => {
     ...(pendingTickets ?? []).map(t => ({ ...t, kind: 'ticket' as const })),
   ];
 
+  const formatChange = (current: number, previous: number) => {
+    const diff = current - previous;
+    if (diff === 0) return { text: t('operatorPerformance.vsLastWeek'), type: 'neutral' as const };
+    const sign = diff > 0 ? '+' : '';
+    return { text: `${sign}${diff} ${t('operatorPerformance.vsLastWeek')}`, type: diff > 0 ? 'positive' as const : 'negative' as const };
+  };
+
   if (isLoading) {
     return (
       <AppLayout title={t('operatorDashboard.title')} subtitle={t('operatorDashboard.loadingRoute')}>
@@ -93,6 +107,10 @@ const OperatorDashboard = () => {
       </AppLayout>
     );
   }
+
+  const visitsChange = formatChange(thisWeek.visits, lastWeek.visits);
+  const issuesChange = formatChange(thisWeek.issues, lastWeek.issues);
+  const cashChange = formatChange(thisWeek.cashCollected, lastWeek.cashCollected);
 
   return (
     <AppLayout
@@ -110,6 +128,69 @@ const OperatorDashboard = () => {
           </AlertDescription>
         </Alert>
       )}
+
+      {/* Performance KPIs */}
+      <div className="mb-6">
+        <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
+          <BarChart3 className="h-5 w-5 text-primary" />
+          {t('operatorPerformance.title')}
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <KPICard
+            title={t('operatorPerformance.visits')}
+            value={String(thisWeek.visits)}
+            change={visitsChange.text}
+            changeType={visitsChange.type}
+            icon={CheckCircle2}
+            iconColor="text-primary"
+          />
+          <KPICard
+            title={t('operatorPerformance.issuesFlagged')}
+            value={String(thisWeek.issues)}
+            change={issuesChange.text}
+            changeType={issuesChange.type === 'positive' ? 'negative' : issuesChange.type === 'negative' ? 'positive' : 'neutral'}
+            icon={AlertTriangle}
+            iconColor="text-destructive"
+          />
+          <KPICard
+            title={t('operatorPerformance.ticketsResolved')}
+            value={String(thisWeek.ticketsResolved)}
+            change={t('operatorPerformance.thisWeek')}
+            changeType="neutral"
+            icon={Wrench}
+            iconColor="text-primary"
+          />
+          <KPICard
+            title={t('operatorPerformance.cashCollected')}
+            value={`$${thisWeek.cashCollected.toFixed(2)}`}
+            change={cashChange.text}
+            changeType={cashChange.type}
+            icon={DollarSign}
+            iconColor="text-primary"
+          />
+        </div>
+      </div>
+
+      {/* Stale Spots Card */}
+      {staleSpots.length > 0 && (
+        <Card
+          className="p-4 mb-6 bg-card border-border cursor-pointer hover:border-destructive/50 transition-colors"
+          onClick={() => setStaleDialogOpen(true)}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <MapPinOff className="h-5 w-5 text-destructive" />
+              <div>
+                <p className="font-medium text-foreground">{t('operatorPerformance.staleSpots')}</p>
+                <p className="text-xs text-muted-foreground">{t('operatorPerformance.staleSpotsDesc')}</p>
+              </div>
+            </div>
+            <Badge variant="destructive">{staleSpots.length}</Badge>
+          </div>
+        </Card>
+      )}
+
+      <StaleSpotDialog open={staleDialogOpen} onOpenChange={setStaleDialogOpen} spots={staleSpots} />
 
       {!route && (
         <Card className="p-8 text-center bg-card border-border">
