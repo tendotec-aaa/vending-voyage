@@ -63,11 +63,10 @@ function useConsolidatedInventory() {
         .select("current_product_id, current_stock");
       if (slotsError) throw slotsError;
 
-      // Fetch active purchase batches for FIFO cost calculation
-      const { data: purchaseBatches, error: batchError } = await supabase
+      // Fetch ALL purchase batches for WAC calculation
+      const { data: allPurchaseItems, error: batchError } = await supabase
         .from("purchase_items")
-        .select("item_detail_id, quantity_remaining, landed_unit_cost, final_unit_cost, active_item")
-        .eq("active_item", true);
+        .select("item_detail_id, quantity_ordered, landed_unit_cost, final_unit_cost");
       if (batchError) throw batchError;
 
       // Fetch machines for machine_model deployed/warehouse counts
@@ -75,6 +74,22 @@ function useConsolidatedInventory() {
         .from("machines")
         .select("model_id, status");
       if (machinesError) throw machinesError;
+
+      // Build WAC map: total_cost / total_qty across all batches
+      const costAcc = new Map<string, { totalCost: number; totalQty: number }>();
+      for (const b of allPurchaseItems || []) {
+        const cost = b.final_unit_cost || b.landed_unit_cost || 0;
+        const qty = b.quantity_ordered || 0;
+        if (!b.item_detail_id) continue;
+        const acc = costAcc.get(b.item_detail_id) || { totalCost: 0, totalQty: 0 };
+        acc.totalCost += qty * cost;
+        acc.totalQty += qty;
+        costAcc.set(b.item_detail_id, acc);
+      }
+      const wacMap = new Map<string, number>();
+      for (const [id, acc] of costAcc) {
+        wacMap.set(id, acc.totalQty > 0 ? acc.totalCost / acc.totalQty : 0);
+      }
 
       return (items || []).map((item: any) => {
         if (item.type === "machine_model") {
@@ -84,11 +99,8 @@ function useConsolidatedInventory() {
           const deployedQty = itemMachines.filter((m: any) => m.status === "deployed").length;
           const totalQty = itemMachines.filter((m: any) => m.status !== "retired").length;
 
-          const itemBatches = (purchaseBatches || []).filter((b: any) => b.item_detail_id === item.id);
-          const totalInventoryCost = itemBatches.reduce((sum: number, b: any) => {
-            const costPerUnit = b.final_unit_cost || b.landed_unit_cost || 0;
-            return sum + ((b.quantity_remaining || 0) * costPerUnit);
-          }, 0);
+          const wac = wacMap.get(item.id) || 0;
+          const totalInventoryCost = totalQty * wac;
 
           return {
             id: item.id,
@@ -114,11 +126,8 @@ function useConsolidatedInventory() {
 
         const totalQty = warehouseQty + inMachinesQty;
 
-        const itemBatches = (purchaseBatches || []).filter((b: any) => b.item_detail_id === item.id);
-        const totalInventoryCost = itemBatches.reduce((sum: number, b: any) => {
-          const costPerUnit = b.final_unit_cost || b.landed_unit_cost || 0;
-          return sum + ((b.quantity_remaining || 0) * costPerUnit);
-        }, 0);
+        const wac = wacMap.get(item.id) || 0;
+        const totalInventoryCost = totalQty * wac;
 
         return {
           id: item.id,
@@ -261,7 +270,7 @@ export default function InventoryPage() {
                   <TableCell className={`text-right font-medium ${item.total < 0 ? 'text-destructive' : 'text-foreground'}`}>
                     {item.total.toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-right text-foreground">
+                  <TableCell className={`text-right ${item.totalInventoryCost < 0 ? 'text-destructive font-medium' : 'text-foreground'}`}>
                     ${item.totalInventoryCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                 </TableRow>
