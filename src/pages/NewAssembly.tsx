@@ -259,7 +259,7 @@ export default function NewAssembly() {
                   value={itemTypeId}
                   onChange={setItemTypeId}
                   onCreateNew={async (name) => {
-                    const created = await createItemType(name);
+                    const created = await createItemType({ name });
                     return created ? { id: created.id, name: created.name } : undefined;
                   }}
                   placeholder="Select item type"
