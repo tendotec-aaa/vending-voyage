@@ -63,11 +63,10 @@ function useConsolidatedInventory() {
         .select("current_product_id, current_stock");
       if (slotsError) throw slotsError;
 
-      // Fetch active purchase batches for FIFO cost calculation
-      const { data: purchaseBatches, error: batchError } = await supabase
+      // Fetch ALL purchase batches for WAC calculation
+      const { data: allPurchaseItems, error: batchError } = await supabase
         .from("purchase_items")
-        .select("item_detail_id, quantity_remaining, landed_unit_cost, final_unit_cost, active_item")
-        .eq("active_item", true);
+        .select("item_detail_id, quantity_ordered, landed_unit_cost, final_unit_cost");
       if (batchError) throw batchError;
 
       // Fetch machines for machine_model deployed/warehouse counts
