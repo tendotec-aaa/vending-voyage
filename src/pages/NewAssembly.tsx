@@ -77,8 +77,7 @@ export default function NewAssembly() {
       let query = supabase
         .from("inventory")
         .select("item_detail_id, quantity_on_hand, item_detail:item_details(id, name, sku, cost_price, category_id, item_type_id)")
-        .not("warehouse_id", "is", null)
-        .gt("quantity_on_hand", 0);
+        .not("warehouse_id", "is", null);
       if (warehouseId) {
         query = query.eq("warehouse_id", warehouseId);
       }

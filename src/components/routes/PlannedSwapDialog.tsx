@@ -113,14 +113,12 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
         qtyMap.set(row.item_detail_id!, (qtyMap.get(row.item_detail_id!) || 0) + (row.quantity_on_hand || 0));
       }
 
-      // Only return items with stock > 0
-      return items
-        .filter((item) => (qtyMap.get(item.id) || 0) > 0)
-        .map((item) => ({
-          id: item.id,
-          name: item.name,
-          available: qtyMap.get(item.id) || 0,
-        }));
+      // Return ALL routable items (allow negative inventory)
+      return items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        available: qtyMap.get(item.id) || 0,
+      }));
     },
   });
 

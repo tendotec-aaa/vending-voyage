@@ -398,11 +398,10 @@ export default function NewVisitReport() {
   const [sourceWarehouseId, setSourceWarehouseId] = useState<string>("");
   const [returnWarehouseId, setReturnWarehouseId] = useState<string>("");
 
-  // Fetch available routable products with stock > 0 from source warehouse
+  // Fetch ALL routable products (no stock filter) + stock for display
   const { data: availableProducts = [] } = useQuery({
     queryKey: ['available-products', sourceWarehouseId],
     queryFn: async () => {
-      if (!sourceWarehouseId) return [];
       // First get routable item_type IDs
       const { data: routableTypes } = await (supabase as any)
         .from("item_types")
@@ -410,28 +409,46 @@ export default function NewVisitReport() {
         .eq("is_routable", true);
       const routableIds = (routableTypes || []).map((t: any) => t.id);
 
-      // Query inventory with stock > 0 in selected warehouse, joined with item_details
-      const { data, error } = await supabase
-        .from('inventory')
-        .select('item_detail_id, quantity_on_hand, item_detail:item_details(id, name, sku, type, category_id, item_type_id)')
-        .eq('warehouse_id', sourceWarehouseId)
-        .gt('quantity_on_hand', 0);
+      // Query ALL routable items from item_details (no stock filter)
+      let itemQuery = supabase
+        .from('item_details')
+        .select('id, name, sku, type, category_id, item_type_id')
+        .order('name');
 
+      if (routableIds.length > 0) {
+        itemQuery = itemQuery.in('item_type_id', routableIds);
+      } else {
+        itemQuery = itemQuery.eq('type', 'merchandise');
+      }
+
+      const { data: items, error } = await itemQuery;
       if (error) throw error;
+      if (!items?.length) return [];
 
-      // Filter by routable type and transform
-      return (data || [])
-        .filter((inv: any) => routableIds.length === 0 || routableIds.includes(inv.item_detail?.item_type_id))
-        .map((inv: any) => ({
-          id: inv.item_detail.id,
-          name: inv.item_detail.name,
-          sku: inv.item_detail.sku,
-          type: inv.item_detail.type,
-          category_id: inv.item_detail.category_id,
-          available: inv.quantity_on_hand,
-        })) as (ItemDetailBasic & { category_id: string | null; available: number })[];
+      // Optionally fetch stock from source warehouse for display
+      let stockMap = new Map<string, number>();
+      if (sourceWarehouseId) {
+        const { data: inv } = await supabase
+          .from('inventory')
+          .select('item_detail_id, quantity_on_hand')
+          .eq('warehouse_id', sourceWarehouseId)
+          .in('item_detail_id', items.map(i => i.id));
+
+        for (const row of inv || []) {
+          stockMap.set(row.item_detail_id!, (stockMap.get(row.item_detail_id!) || 0) + (row.quantity_on_hand || 0));
+        }
+      }
+
+      return items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        sku: item.sku,
+        type: item.type,
+        category_id: item.category_id,
+        available: stockMap.get(item.id) ?? 0,
+      })) as (ItemDetailBasic & { category_id: string | null; available: number })[];
     },
-    enabled: !!sourceWarehouseId,
+    enabled: true,
   });
 
   // Auto-select first refill source when loaded

@@ -213,7 +213,7 @@ export default function InventoryPage() {
           </div>
           <div className="flex items-center gap-2">
             <Switch id="show-zero" checked={showZeroStock} onCheckedChange={setShowZeroStock} />
-            <Label htmlFor="show-zero" className="text-sm text-muted-foreground whitespace-nowrap">Show zero stock</Label>
+            <Label htmlFor="show-zero" className="text-sm text-muted-foreground whitespace-nowrap">Show zero/negative stock</Label>
           </div>
         </div>
       </Card>
@@ -256,9 +256,9 @@ export default function InventoryPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{item.category}</TableCell>
-                  <TableCell className="text-right text-foreground">{item.warehouseQty.toLocaleString()}</TableCell>
-                  <TableCell className="text-right text-foreground">{item.inMachinesQty.toLocaleString()}</TableCell>
-                  <TableCell className="text-right font-medium text-foreground">
+                  <TableCell className={`text-right ${item.warehouseQty < 0 ? 'text-destructive font-medium' : 'text-foreground'}`}>{item.warehouseQty.toLocaleString()}</TableCell>
+                  <TableCell className={`text-right ${item.inMachinesQty < 0 ? 'text-destructive font-medium' : 'text-foreground'}`}>{item.inMachinesQty.toLocaleString()}</TableCell>
+                  <TableCell className={`text-right font-medium ${item.total < 0 ? 'text-destructive' : 'text-foreground'}`}>
                     {item.total.toLocaleString()}
                   </TableCell>
                   <TableCell className="text-right text-foreground">
