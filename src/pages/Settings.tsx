@@ -12,6 +12,7 @@ import { useUserProfile } from "@/hooks/useUserProfile";
 import { useTheme } from "next-themes";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { 
   User, 
   Shield, 
@@ -25,7 +26,8 @@ import {
   AlertCircle,
   Sun,
   Moon,
-  Monitor
+  Monitor,
+  Languages
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -33,41 +35,32 @@ export default function SettingsPage() {
   const { user, signOut } = useAuth();
   const { profile, isLoading: profileLoading } = useUserProfile();
   const { theme, setTheme } = useTheme();
+  const { t, i18n } = useTranslation();
   
-  // Password change state
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   
-  // Notification preferences (local state - could be extended to persist in DB)
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [maintenanceAlerts, setMaintenanceAlerts] = useState(true);
   const [visitReminders, setVisitReminders] = useState(true);
 
   const handlePasswordChange = async () => {
     if (newPassword !== confirmPassword) {
-      toast.error("New passwords don't match");
+      toast.error(t('settings.passwordMismatch'));
       return;
     }
-    
     if (newPassword.length < 6) {
-      toast.error("Password must be at least 6 characters");
+      toast.error(t('settings.passwordTooShort'));
       return;
     }
-
     setIsChangingPassword(true);
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword
-      });
-
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
-
-      toast.success("Password updated successfully");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
+      toast.success(t('settings.passwordUpdated'));
+      setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
     } catch (error: any) {
       toast.error(error.message || "Failed to update password");
     } finally {
@@ -77,24 +70,21 @@ export default function SettingsPage() {
 
   const handleSignOut = async () => {
     await signOut();
-    toast.success("Signed out successfully");
+    toast.success(t('settings.signedOut'));
   };
 
   const handleSignOutAllDevices = async () => {
     try {
       const { error } = await supabase.auth.signOut({ scope: 'global' });
       if (error) throw error;
-      toast.success("Signed out from all devices");
+      toast.success(t('settings.signedOutAll'));
     } catch (error: any) {
       toast.error(error.message || "Failed to sign out from all devices");
     }
   };
 
   return (
-    <AppLayout
-      title="Settings"
-      subtitle="Manage your account and preferences"
-    >
+    <AppLayout title={t('settings.title')} subtitle={t('settings.subtitle')}>
       <div className="space-y-6 max-w-4xl">
         {/* Account Overview */}
         <Card>
@@ -102,61 +92,58 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3">
               <User className="w-5 h-5 text-primary" />
               <div>
-                <CardTitle>Account</CardTitle>
-                <CardDescription>Your account information and status</CardDescription>
+                <CardTitle>{t('settings.account')}</CardTitle>
+                <CardDescription>{t('settings.accountDesc')}</CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-muted-foreground">Email Address</Label>
+                <Label className="text-muted-foreground">{t('settings.emailAddress')}</Label>
                 <div className="flex items-center gap-2">
                   <Mail className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-foreground">{user?.email || "Not available"}</span>
+                  <span className="text-foreground">{user?.email || "N/A"}</span>
                   {user?.email_confirmed_at && (
                     <Badge variant="secondary" className="ml-2">
                       <CheckCircle className="w-3 h-3 mr-1" />
-                      Verified
+                      {t('common.verified')}
                     </Badge>
                   )}
                 </div>
               </div>
-              
               <div className="space-y-2">
-                <Label className="text-muted-foreground">Account Status</Label>
+                <Label className="text-muted-foreground">{t('settings.accountStatus')}</Label>
                 <div className="flex items-center gap-2">
                   {profile?.active ? (
                     <Badge className="bg-green-500/20 text-green-600 border-green-500/30">
                       <CheckCircle className="w-3 h-3 mr-1" />
-                      Active
+                      {t('common.active')}
                     </Badge>
                   ) : (
                     <Badge variant="secondary" className="bg-amber-500/20 text-amber-600 border-amber-500/30">
                       <AlertCircle className="w-3 h-3 mr-1" />
-                      Pending Activation
+                      {t('settings.pendingActivation')}
                     </Badge>
                   )}
                 </div>
               </div>
-              
               <div className="space-y-2">
-                <Label className="text-muted-foreground">Role</Label>
+                <Label className="text-muted-foreground">{t('settings.role')}</Label>
                 <Badge variant="outline">
-                  {profile?.role === 'admin' ? 'Administrator' : 
-                   profile?.role === 'route_operator' ? 'Route Operator' : 
-                   profile?.role === 'warehouse_manager' ? 'Warehouse Manager' : 
-                   'Loading...'}
+                  {profile?.role === 'admin' ? t('settings.administrator') : 
+                   profile?.role === 'route_operator' ? t('settings.routeOperator') : 
+                   profile?.role === 'warehouse_manager' ? t('settings.warehouseManager') : 
+                   t('common.loading')}
                 </Badge>
               </div>
-              
               <div className="space-y-2">
-                <Label className="text-muted-foreground">Profile</Label>
+                <Label className="text-muted-foreground">{t('sidebar.profile')}</Label>
                 <div>
                   <Button variant="outline" size="sm" asChild>
                     <Link to="/profile">
                       <User className="w-4 h-4 mr-2" />
-                      Edit Profile
+                      {t('settings.editProfile')}
                     </Link>
                   </Button>
                 </div>
@@ -171,38 +158,46 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3">
               <Palette className="w-5 h-5 text-primary" />
               <div>
-                <CardTitle>Appearance</CardTitle>
-                <CardDescription>Customize how the app looks</CardDescription>
+                <CardTitle>{t('settings.appearance')}</CardTitle>
+                <CardDescription>{t('settings.appearanceDesc')}</CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-6">
             <div className="space-y-4">
-              <Label>Theme</Label>
+              <Label>{t('settings.theme')}</Label>
+              <div className="flex gap-2">
+                <Button variant={theme === 'light' ? 'default' : 'outline'} size="sm" onClick={() => setTheme('light')}>
+                  <Sun className="w-4 h-4 mr-2" /> {t('settings.light')}
+                </Button>
+                <Button variant={theme === 'dark' ? 'default' : 'outline'} size="sm" onClick={() => setTheme('dark')}>
+                  <Moon className="w-4 h-4 mr-2" /> {t('settings.dark')}
+                </Button>
+                <Button variant={theme === 'system' ? 'default' : 'outline'} size="sm" onClick={() => setTheme('system')}>
+                  <Monitor className="w-4 h-4 mr-2" /> {t('settings.system')}
+                </Button>
+              </div>
+            </div>
+            <Separator />
+            <div className="space-y-4">
+              <div>
+                <Label>{t('settings.language')}</Label>
+                <p className="text-sm text-muted-foreground mt-0.5">{t('settings.languageDesc')}</p>
+              </div>
               <div className="flex gap-2">
                 <Button
-                  variant={theme === 'light' ? 'default' : 'outline'}
+                  variant={i18n.language === 'es' ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => setTheme('light')}
+                  onClick={() => i18n.changeLanguage('es')}
                 >
-                  <Sun className="w-4 h-4 mr-2" />
-                  Light
+                  <Languages className="w-4 h-4 mr-2" /> Español
                 </Button>
                 <Button
-                  variant={theme === 'dark' ? 'default' : 'outline'}
+                  variant={i18n.language === 'en' ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => setTheme('dark')}
+                  onClick={() => i18n.changeLanguage('en')}
                 >
-                  <Moon className="w-4 h-4 mr-2" />
-                  Dark
-                </Button>
-                <Button
-                  variant={theme === 'system' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setTheme('system')}
-                >
-                  <Monitor className="w-4 h-4 mr-2" />
-                  System
+                  <Languages className="w-4 h-4 mr-2" /> English
                 </Button>
               </div>
             </div>
@@ -215,49 +210,34 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3">
               <Bell className="w-5 h-5 text-primary" />
               <div>
-                <CardTitle>Notifications</CardTitle>
-                <CardDescription>Configure how you receive notifications</CardDescription>
+                <CardTitle>{t('settings.notifications')}</CardTitle>
+                <CardDescription>{t('settings.notificationsDesc')}</CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label>Email Notifications</Label>
-                <p className="text-sm text-muted-foreground">
-                  Receive important updates via email
-                </p>
+                <Label>{t('settings.emailNotifications')}</Label>
+                <p className="text-sm text-muted-foreground">{t('settings.emailNotificationsDesc')}</p>
               </div>
-              <Switch
-                checked={emailNotifications}
-                onCheckedChange={setEmailNotifications}
-              />
+              <Switch checked={emailNotifications} onCheckedChange={setEmailNotifications} />
             </div>
             <Separator />
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label>Maintenance Alerts</Label>
-                <p className="text-sm text-muted-foreground">
-                  Get notified about urgent maintenance tickets
-                </p>
+                <Label>{t('settings.maintenanceAlerts')}</Label>
+                <p className="text-sm text-muted-foreground">{t('settings.maintenanceAlertsDesc')}</p>
               </div>
-              <Switch
-                checked={maintenanceAlerts}
-                onCheckedChange={setMaintenanceAlerts}
-              />
+              <Switch checked={maintenanceAlerts} onCheckedChange={setMaintenanceAlerts} />
             </div>
             <Separator />
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label>Visit Reminders</Label>
-                <p className="text-sm text-muted-foreground">
-                  Reminders for upcoming scheduled visits
-                </p>
+                <Label>{t('settings.visitReminders')}</Label>
+                <p className="text-sm text-muted-foreground">{t('settings.visitRemindersDesc')}</p>
               </div>
-              <Switch
-                checked={visitReminders}
-                onCheckedChange={setVisitReminders}
-              />
+              <Switch checked={visitReminders} onCheckedChange={setVisitReminders} />
             </div>
           </CardContent>
         </Card>
@@ -268,70 +248,46 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3">
               <Shield className="w-5 h-5 text-primary" />
               <div>
-                <CardTitle>Security</CardTitle>
-                <CardDescription>Manage your password and sessions</CardDescription>
+                <CardTitle>{t('settings.security')}</CardTitle>
+                <CardDescription>{t('settings.securityDesc')}</CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Change Password */}
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <Key className="w-4 h-4 text-muted-foreground" />
-                <Label className="text-base font-medium">Change Password</Label>
+                <Label className="text-base font-medium">{t('settings.changePassword')}</Label>
               </div>
-              
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="new-password">New Password</Label>
-                  <Input
-                    id="new-password"
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Enter new password"
-                  />
+                  <Label htmlFor="new-password">{t('settings.newPassword')}</Label>
+                  <Input id="new-password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder={t('settings.enterNewPassword')} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="confirm-password">Confirm Password</Label>
-                  <Input
-                    id="confirm-password"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Confirm new password"
-                  />
+                  <Label htmlFor="confirm-password">{t('settings.confirmPassword')}</Label>
+                  <Input id="confirm-password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder={t('settings.confirmNewPassword')} />
                 </div>
                 <div className="flex items-end">
-                  <Button 
-                    onClick={handlePasswordChange}
-                    disabled={isChangingPassword || !newPassword || !confirmPassword}
-                  >
+                  <Button onClick={handlePasswordChange} disabled={isChangingPassword || !newPassword || !confirmPassword}>
                     {isChangingPassword && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    Update Password
+                    {t('settings.updatePassword')}
                   </Button>
                 </div>
               </div>
             </div>
-
             <Separator />
-
-            {/* Session Management */}
             <div className="space-y-4">
-              <Label className="text-base font-medium">Session Management</Label>
+              <Label className="text-base font-medium">{t('settings.sessionManagement')}</Label>
               <div className="flex flex-wrap gap-3">
                 <Button variant="outline" onClick={handleSignOut}>
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sign Out
+                  <LogOut className="w-4 h-4 mr-2" /> {t('settings.signOutDevice')}
                 </Button>
                 <Button variant="destructive" onClick={handleSignOutAllDevices}>
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sign Out All Devices
+                  <LogOut className="w-4 h-4 mr-2" /> {t('settings.signOutAll')}
                 </Button>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Sign out from this device or all devices where you're currently logged in.
-              </p>
+              <p className="text-sm text-muted-foreground">{t('settings.signOutDesc')}</p>
             </div>
           </CardContent>
         </Card>
@@ -340,9 +296,9 @@ export default function SettingsPage() {
         <Card className="bg-muted/50">
           <CardContent className="py-4">
             <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
-              <span>User ID: {user?.id?.slice(0, 8)}...</span>
-              <span>Last Sign In: {user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleDateString() : 'N/A'}</span>
-              <span>Account Created: {user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}</span>
+              <span>{t('settings.userId')}: {user?.id?.slice(0, 8)}...</span>
+              <span>{t('settings.lastSignIn')}: {user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleDateString() : 'N/A'}</span>
+              <span>{t('settings.accountCreated')}: {user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}</span>
             </div>
           </CardContent>
         </Card>
