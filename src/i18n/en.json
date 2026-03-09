@@ -210,5 +210,16 @@
     "october": "October",
     "november": "November",
     "december": "December"
+  },
+  "warehouse": {
+    "title": "Warehouse Management",
+    "subtitle": "Operational stock control across your warehouses",
+    "assemble": "Assemble Items",
+    "newAssembly": "New Assembly",
+    "assemblyDesc": "Assemble components into a new product",
+    "assemblyComplete": "Assembly completed",
+    "outputProduct": "Output Product",
+    "newItem": "New Item",
+    "linkExisting": "Link Existing"
   }
 }

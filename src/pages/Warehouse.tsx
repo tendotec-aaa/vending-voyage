@@ -75,10 +75,12 @@ export default function Warehouse() {
 
   const destinationBodegas = standardWarehouses.filter((w) => w.id !== selectedWarehouse);
 
+  const { t } = useTranslation();
+
   return (
     <AppLayout
-      title="Warehouse Management"
-      subtitle="Operational stock control across your warehouses"
+      title={t('warehouse.title')}
+      subtitle={t('warehouse.subtitle')}
       actions={
         <div className="flex gap-2 flex-wrap">
           {isSelectedVehicle && canAdjust && (
@@ -90,18 +92,17 @@ export default function Warehouse() {
               isUnloading={isUnloading}
             />
           )}
+          {!isViewOnly && (
+            <Button variant="outline" onClick={() => navigate("/warehouse/assembly/new")}>
+              <Wrench className="mr-2 h-4 w-4" />
+              {t('warehouse.assemble')}
+            </Button>
+          )}
           {canManageFull && (
             <>
-              <Button variant="outline" onClick={() => navigate("/warehouse/assembly/new")}>
-                <Plus className="mr-2 h-4 w-4" />
-                New Assembly
-              </Button>
               <AddWarehouseItemDialog />
               <CreateWarehouseDialog onCreate={createWarehouse} isCreating={isCreatingWarehouse} />
             </>
-          )}
-          {isOperator && (
-            <AddWarehouseItemDialog />
           )}
         </div>
       }

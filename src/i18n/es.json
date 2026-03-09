@@ -210,5 +210,16 @@
     "october": "Octubre",
     "november": "Noviembre",
     "december": "Diciembre"
+  },
+  "warehouse": {
+    "title": "Gestión de Bodega",
+    "subtitle": "Control operativo de stock en tus bodegas",
+    "assemble": "Ensamblar Mercadería",
+    "newAssembly": "Orden de Ensamble",
+    "assemblyDesc": "Ensambla componentes en un producto terminado",
+    "assemblyComplete": "Ensamblaje completado",
+    "outputProduct": "Producto Final",
+    "newItem": "Nuevo Artículo",
+    "linkExisting": "Vincular Existente"
   }
 }
