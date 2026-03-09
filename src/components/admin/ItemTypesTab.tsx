@@ -35,9 +35,9 @@ export function ItemTypesTab() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem, setEditItem] = useState<ItemType | null>(null);
   const [newName, setNewName] = useState('');
-  const [newFlags, setNewFlags] = useState({ is_routable: false, is_sellable: false, is_asset: false, is_supply: false });
+  const [newFlags, setNewFlags] = useState({ is_routable: false, is_sellable: false, is_asset: false, is_supply: false, is_component: false });
   const [editName, setEditName] = useState('');
-  const [editFlags, setEditFlags] = useState({ is_routable: false, is_sellable: false, is_asset: false, is_supply: false });
+  const [editFlags, setEditFlags] = useState({ is_routable: false, is_sellable: false, is_asset: false, is_supply: false, is_component: false });
   const [saving, setSaving] = useState(false);
 
   const handleCreate = async () => {
