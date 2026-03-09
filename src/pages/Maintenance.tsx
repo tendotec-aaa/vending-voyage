@@ -8,8 +8,10 @@ import { TicketCard } from "@/components/maintenance/TicketCard";
 import { NewWorkOrderDialog } from "@/components/maintenance/NewWorkOrderDialog";
 import { useMaintenanceTickets, type CreateTicketData, type TicketStatus } from "@/hooks/useMaintenanceTickets";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTranslation } from "react-i18next";
 
 export default function MaintenancePage() {
+  const { t } = useTranslation();
   const [dialogOpen, setDialogOpen] = useState(false);
   const {
     tickets,
@@ -31,59 +33,55 @@ export default function MaintenancePage() {
   };
 
   const handleDelete = (ticketId: string) => {
-    if (window.confirm("Are you sure you want to delete this work order?")) {
+    if (window.confirm(t('maintenance.deleteConfirm'))) {
       deleteTicket.mutate(ticketId);
     }
   };
 
-  // Count active tickets (pending + in_progress)
   const activeCount = stats.pending + stats.inProgress;
 
   return (
     <AppLayout
-      title="Maintenance"
-      subtitle="Service tickets and machine lifecycle management"
+      title={t('maintenance.title')}
+      subtitle={t('maintenance.subtitle')}
       actions={
         <Button onClick={() => setDialogOpen(true)}>
           <Plus className="w-4 h-4 mr-2" />
-          New Work Order
+          {t('maintenance.newWorkOrder')}
         </Button>
       }
     >
       <div className="space-y-6">
-        {/* Header badges for pending/in-progress */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <Wrench className="w-5 h-5 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Active Work Orders:</span>
+            <span className="text-sm text-muted-foreground">{t('maintenance.activeWorkOrders')}</span>
           </div>
           {stats.pending > 0 && (
             <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20">
               <Clock className="w-3 h-3 mr-1" />
-              {stats.pending} Pending
+              {t('maintenance.pending', { count: stats.pending })}
             </Badge>
           )}
           {stats.inProgress > 0 && (
             <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/20">
               <Loader2 className="w-3 h-3 mr-1" />
-              {stats.inProgress} In Progress
+              {t('maintenance.inProgress', { count: stats.inProgress })}
             </Badge>
           )}
           {activeCount === 0 && (
-            <span className="text-sm text-muted-foreground">No active work orders</span>
+            <span className="text-sm text-muted-foreground">{t('maintenance.noActiveOrders')}</span>
           )}
         </div>
 
-        {/* Stats Cards */}
         <MaintenanceStats
           pending={stats.pending}
           inProgress={stats.inProgress}
           completed={stats.completed}
         />
 
-        {/* Ticket List */}
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-foreground">Work Orders</h2>
+          <h2 className="text-lg font-semibold text-foreground">{t('maintenance.workOrders')}</h2>
           
           {isLoading ? (
             <div className="space-y-3">
@@ -94,8 +92,8 @@ export default function MaintenancePage() {
           ) : tickets.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Wrench className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No work orders yet.</p>
-              <p className="text-sm">Create a new work order to get started.</p>
+              <p>{t('maintenance.noWorkOrders')}</p>
+              <p className="text-sm">{t('maintenance.createToStart')}</p>
             </div>
           ) : (
             <div className="space-y-3">

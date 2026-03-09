@@ -8,13 +8,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, LogIn } from 'lucide-react';
 import { z } from 'zod';
-
-const loginSchema = z.object({
-  email: z.string().trim().email({ message: "Invalid email address" }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters" }),
-});
+import { useTranslation } from 'react-i18next';
 
 export default function Login() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -22,11 +19,15 @@ export default function Login() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const loginSchema = z.object({
+    email: z.string().trim().email({ message: t('auth.invalidEmail') }),
+    password: z.string().min(6, { message: t('auth.passwordMin') }),
+  });
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
 
-    // Validate inputs
     const result = loginSchema.safeParse({ email, password });
     if (!result.success) {
       const fieldErrors: { email?: string; password?: string } = {};
@@ -49,14 +50,14 @@ export default function Login() {
 
     if (error) {
       toast({
-        title: "Login failed",
+        title: t('auth.loginFailed'),
         description: error.message,
         variant: "destructive",
       });
     } else {
       toast({
-        title: "Welcome back!",
-        description: "You have successfully logged in.",
+        title: t('auth.loginSuccess'),
+        description: t('auth.loginSuccessDesc'),
       });
       navigate('/');
     }
@@ -66,15 +67,15 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">Welcome Back</CardTitle>
+          <CardTitle className="text-2xl font-bold text-center">{t('auth.welcomeBack')}</CardTitle>
           <CardDescription className="text-center">
-            Enter your credentials to access your account
+            {t('auth.enterCredentials')}
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleLogin}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('auth.email')}</Label>
               <Input
                 id="email"
                 type="email"
@@ -89,7 +90,7 @@ export default function Login() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t('auth.password')}</Label>
               <Input
                 id="password"
                 type="password"
@@ -111,12 +112,12 @@ export default function Login() {
               ) : (
                 <LogIn className="mr-2 h-4 w-4" />
               )}
-              Sign In
+              {t('auth.signIn')}
             </Button>
             <p className="text-sm text-muted-foreground text-center">
-              Don't have an account?{' '}
+              {t('auth.noAccount')}{' '}
               <Link to="/signup" className="text-primary hover:underline font-medium">
-                Sign up
+                {t('auth.signUp')}
               </Link>
             </p>
           </CardFooter>
