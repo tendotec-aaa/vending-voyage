@@ -4,6 +4,7 @@ import { useAuth } from './useAuth';
 
 export interface ItemPerformanceRow {
   itemId: string;
+  itemTypeId: string;
   name: string;
   sku: string;
   unitsSold: number;
