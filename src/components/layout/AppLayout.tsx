@@ -3,6 +3,7 @@ import { AppSidebar } from "./AppSidebar";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { useTranslation } from "react-i18next";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -12,6 +13,8 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children, title, subtitle, actions }: AppLayoutProps) {
+  const { t } = useTranslation();
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background">
@@ -24,7 +27,7 @@ export function AppLayout({ children, title, subtitle, actions }: AppLayoutProps
               <div className="relative hidden sm:block">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input 
-                  placeholder="Search machines, locations..." 
+                  placeholder={t('common.search')} 
                   className="pl-10 w-64 bg-background border-input"
                 />
               </div>
