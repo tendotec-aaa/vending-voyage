@@ -13,6 +13,7 @@ import { RouteStopCard } from "@/components/routes/RouteStopCard";
 import { PickList } from "@/components/routes/PickList";
 import { ReconciliationTab } from "@/components/routes/ReconciliationTab";
 import { ArrowLeft, Plus, Copy } from "lucide-react";
+import { useUserRole } from "@/hooks/useUserRole";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
