@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { startOfMonth, endOfMonth, subMonths, getDaysInMonth, format } from "date-fns";
+import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
 
 export interface SpotHealthRow {
   spotId: string;
@@ -13,6 +13,8 @@ export interface SpotHealthRow {
   netProfit: number;
   netMargin: number;
   badge: "prime" | "renegotiate" | "relocate" | null;
+  isProjectedRent: boolean;
+  isProjectedDepreciation: boolean;
 }
 
 export interface SetupMachine {
@@ -34,12 +36,12 @@ export function useSpotHealth(year: number, month: number) {
       const selectedStart = startOfMonth(new Date(year, month - 1));
       const selectedEnd = endOfMonth(new Date(year, month - 1));
       const trendStart = startOfMonth(subMonths(selectedStart, 2));
+      const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
 
-      // Parallel fetches
-      const [spotsRes, visitsRes, setupsRes, trendVisitsRes, locationsRes] = await Promise.all([
+      const [spotsRes, visitsRes, setupsRes, trendVisitsRes, locationsRes, overheadRes] = await Promise.all([
         supabase
           .from("spots")
-          .select("id, name, status, location_id, rent_fixed_amount, rent_percentage, locations(id, name)")
+          .select("id, name, status, location_id, rent_fixed_amount, rent_percentage, locations(id, name, rent_amount, commission_percentage)")
           .eq("status", "active"),
         supabase
           .from("spot_visits")
@@ -59,6 +61,11 @@ export function useSpotHealth(year: number, month: number) {
           .from("locations")
           .select("id, name")
           .order("name"),
+        // Fetch posted overhead for this month
+        supabase
+          .from("overhead_postings" as any)
+          .select("location_id, setup_id, posting_type, expense_id, operating_expenses:expense_id(amount)")
+          .eq("year_month", yearMonth),
       ]);
 
       if (spotsRes.error) throw spotsRes.error;
@@ -72,18 +79,41 @@ export function useSpotHealth(year: number, month: number) {
       const setups = setupsRes.data || [];
       const trendVisits = trendVisitsRes.data || [];
       const locations = locationsRes.data || [];
+      const overheadPostings = (overheadRes.data || []) as any[];
 
-      // Revenue per spot for selected month
+      // Build posted rent map: location_id -> amount
+      const postedRentMap = new Map<string, number>();
+      const postedDepMap = new Map<string, number>(); // setup_id -> amount
+      for (const p of overheadPostings) {
+        const amount = Number((p.operating_expenses as any)?.amount) || 0;
+        if (p.posting_type === 'rent' && p.location_id) {
+          postedRentMap.set(p.location_id, amount);
+        } else if (p.posting_type === 'depreciation' && p.setup_id) {
+          postedDepMap.set(p.setup_id, amount);
+        }
+      }
+
+      // Revenue per spot
       const revenueMap = new Map<string, number>();
       visits.forEach((v: any) => {
         revenueMap.set(v.spot_id, (revenueMap.get(v.spot_id) || 0) + (v.total_cash_collected || 0));
       });
 
-      // Depreciation per spot from setups
+      // Count active spots per location
+      const spotsPerLocation = new Map<string, number>();
+      spots.forEach((s: any) => {
+        if (s.location_id) {
+          spotsPerLocation.set(s.location_id, (spotsPerLocation.get(s.location_id) || 0) + 1);
+        }
+      });
+
+      // Depreciation per spot from setups (live calculation)
       const depreciationMap = new Map<string, number>();
       const setupDetailsMap = new Map<string, SetupMachine[]>();
+      const setupBySpot = new Map<string, string>(); // spot_id -> setup_id
       setups.forEach((setup: any) => {
         if (!setup.spot_id) return;
+        setupBySpot.set(setup.spot_id, setup.id);
         const machines: SetupMachine[] = [];
         let totalDep = depreciationMap.get(setup.spot_id) || 0;
         (setup.machines || []).forEach((m: any) => {
@@ -104,7 +134,7 @@ export function useSpotHealth(year: number, month: number) {
         ]);
       });
 
-      // Trend data: revenue per spot per month (3 months)
+      // Trend data
       const trendMap = new Map<string, Map<string, number>>();
       trendVisits.forEach((v: any) => {
         const monthKey = format(new Date(v.visit_date), "yyyy-MM");
@@ -117,10 +147,32 @@ export function useSpotHealth(year: number, month: number) {
       const rows: SpotHealthRow[] = spots.map((spot: any) => {
         const location = spot.locations as any;
         const grossRevenue = revenueMap.get(spot.id) || 0;
-        const rentFixed = spot.rent_fixed_amount || 0;
-        const rentPct = spot.rent_percentage || 0;
-        const rentCost = rentFixed + (grossRevenue * rentPct / 100);
-        const depreciation = depreciationMap.get(spot.id) || 0;
+        const activeSpotCount = spot.location_id ? (spotsPerLocation.get(spot.location_id) || 1) : 1;
+
+        // Rent: prefer posted, fallback to location-level calculation
+        let rentCost: number;
+        let isProjectedRent = false;
+        if (spot.location_id && postedRentMap.has(spot.location_id)) {
+          // Posted: split equally among active spots
+          rentCost = postedRentMap.get(spot.location_id)! / activeSpotCount;
+        } else {
+          // Projected: use location rent_amount split by active spots
+          const locationRent = Number(location?.rent_amount) || 0;
+          rentCost = locationRent / activeSpotCount;
+          isProjectedRent = true;
+        }
+
+        // Depreciation: prefer posted, fallback to live calculation
+        let depreciation: number;
+        let isProjectedDepreciation = false;
+        const setupId = setupBySpot.get(spot.id);
+        if (setupId && postedDepMap.has(setupId)) {
+          depreciation = postedDepMap.get(setupId)!;
+        } else {
+          depreciation = depreciationMap.get(spot.id) || 0;
+          isProjectedDepreciation = true;
+        }
+
         const netProfit = grossRevenue - rentCost - depreciation;
         const netMargin = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
 
@@ -134,7 +186,9 @@ export function useSpotHealth(year: number, month: number) {
           depreciation,
           netProfit,
           netMargin,
-          badge: null, // computed below
+          badge: null,
+          isProjectedRent,
+          isProjectedDepreciation,
         };
       });
 
@@ -154,7 +208,6 @@ export function useSpotHealth(year: number, month: number) {
         }
       });
 
-      // Sort by net profit desc
       rows.sort((a, b) => b.netProfit - a.netProfit);
 
       const getSetupDetails = (spotId: string): SetupMachine[] =>
@@ -168,18 +221,20 @@ export function useSpotHealth(year: number, month: number) {
           const label = format(m, "MMM yyyy");
           const spotRevMap = trendMap.get(spotId);
           const rev = spotRevMap?.get(key) || 0;
-          // For trend, compute net profit using same rent/depreciation
           const spot = spots.find((s: any) => s.id === spotId);
-          const rentFixed = spot?.rent_fixed_amount || 0;
-          const rentPct = spot?.rent_percentage || 0;
-          const rent = rentFixed + (rev * rentPct / 100);
+          const location = (spot as any)?.locations;
+          const locationRent = Number(location?.rent_amount) || 0;
+          const activeCount = spot?.location_id ? (spotsPerLocation.get(spot.location_id) || 1) : 1;
+          const rent = locationRent / activeCount;
           const dep = depreciationMap.get(spotId) || 0;
           months.push({ month: label, netProfit: rev - rent - dep });
         }
         return months;
       };
 
-      return { rows, getSetupDetails, getTrend, locations };
+      const isProjected = rows.some(r => r.isProjectedRent || r.isProjectedDepreciation);
+
+      return { rows, getSetupDetails, getTrend, locations, isProjected };
     },
   });
 }

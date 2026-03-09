@@ -6,7 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowUpDown, Target } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ArrowUpDown, Target, Info } from "lucide-react";
 import { useSpotHealth, type SpotHealthRow } from "@/hooks/useSpotHealth";
 import { SpotDrillDown } from "@/components/insights/SpotDrillDown";
 import { fmt2 } from "@/lib/formatters";
@@ -38,6 +39,7 @@ export default function SpotHealth() {
   const { data, isLoading } = useSpotHealth(year, month);
   const rows = data?.rows || [];
   const locations = data?.locations || [];
+  const isProjected = data?.isProjected || false;
 
   const filtered = useMemo(() => {
     if (selectedLocationId === "all") return rows;
@@ -87,7 +89,22 @@ export default function SpotHealth() {
             <h1 className="text-2xl font-bold text-foreground">Spot Health</h1>
             <p className="text-muted-foreground text-sm">Micro-P&L per spot — revenue, rent, depreciation, net profit</p>
           </div>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap items-center">
+            {isProjected && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Badge variant="outline" className="gap-1 text-yellow-600 dark:text-yellow-400 border-yellow-300 dark:border-yellow-700">
+                      <Info className="h-3 w-3" />
+                      Projected
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-[200px] text-xs">Some rent/depreciation values are projected from current master data. Generate overhead on the Profitability page to lock in actuals.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             <Select value={selectedLocationId} onValueChange={handleLocationChange}>
               <SelectTrigger className="w-[180px]"><SelectValue placeholder="Location" /></SelectTrigger>
               <SelectContent>
@@ -161,8 +178,14 @@ export default function SpotHealth() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-mono">${fmt2(row.grossRevenue)}</TableCell>
-                        <TableCell className="text-right font-mono">${fmt2(row.rentCost)}</TableCell>
-                        <TableCell className="text-right font-mono">${fmt2(row.depreciation)}</TableCell>
+                        <TableCell className="text-right font-mono">
+                          ${fmt2(row.rentCost)}
+                          {row.isProjectedRent && <span className="text-[10px] text-yellow-500 ml-1">~</span>}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          ${fmt2(row.depreciation)}
+                          {row.isProjectedDepreciation && <span className="text-[10px] text-yellow-500 ml-1">~</span>}
+                        </TableCell>
                         <TableCell className={`text-right font-mono font-semibold ${row.netProfit < 0 ? "text-destructive" : ""}`}>
                           ${fmt2(row.netProfit)}
                         </TableCell>

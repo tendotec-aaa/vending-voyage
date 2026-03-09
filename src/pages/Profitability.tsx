@@ -5,13 +5,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, Plus, DollarSign, TrendingUp, TrendingDown, ShoppingCart, Briefcase, AlertTriangle } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Loader2, Plus, DollarSign, TrendingUp, TrendingDown, ShoppingCart, Briefcase, AlertTriangle, Zap, CheckCircle } from 'lucide-react';
 import { useProfitability, EXPENSE_CATEGORY_LABELS, type ExpenseCategory } from '@/hooks/useProfitability';
 import { ExpenseBreakdownChart } from '@/components/profitability/ExpenseBreakdownChart';
 import { AddExpenseDialog } from '@/components/profitability/AddExpenseDialog';
 import { usePermissions } from '@/hooks/usePermissions';
 import { fmt2 } from '@/lib/formatters';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -24,13 +29,21 @@ export default function Profitability() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [showAddExpense, setShowAddExpense] = useState(false);
 
-  const { data, isLoading, addExpense } = useProfitability(year, month);
+  const { data, isLoading, addExpense, generateOverhead, isOverheadPosted, overheadCount } = useProfitability(year, month);
   const { has, isAdmin } = usePermissions();
   const canManageExpenses = isAdmin || has('manage_expenses' as any);
 
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
-
   const defaultExpenseDate = `${year}-${String(month).padStart(2, '0')}-01`;
+
+  const handleGenerateOverhead = async () => {
+    try {
+      await generateOverhead.mutateAsync();
+      toast.success('Monthly overhead generated successfully');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to generate overhead');
+    }
+  };
 
   return (
     <AppLayout>
@@ -119,7 +132,7 @@ export default function Profitability() {
                     Operating Expenses
                   </div>
                   <p className="text-2xl font-bold text-foreground">${fmt2(data.totalOpex)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">External bills only</p>
+                  <p className="text-xs text-muted-foreground mt-1">All posted expenses</p>
                 </CardContent>
               </Card>
 
@@ -141,15 +154,21 @@ export default function Profitability() {
               </Card>
             </div>
 
-            {/* Cash Discrepancy Info Badge */}
-            {data.cashDiscrepancy > 0 && (
-              <div className="flex items-center gap-2">
+            {/* Cash Discrepancy + Overhead Status */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {data.cashDiscrepancy > 0 && (
                 <Badge variant="outline" className="gap-1 text-muted-foreground">
                   <AlertTriangle className="h-3 w-3" />
                   Cash Discrepancy (info): {data.cashDiscrepancy} units missing — not subtracted from P&L
                 </Badge>
-              </div>
-            )}
+              )}
+              {isOverheadPosted && (
+                <Badge variant="secondary" className="gap-1">
+                  <CheckCircle className="h-3 w-3" />
+                  Overhead Posted ({overheadCount} entries)
+                </Badge>
+              )}
+            </div>
 
             {/* Two-column layout */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -167,12 +186,42 @@ export default function Profitability() {
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="text-base">Operating Expenses Ledger</CardTitle>
-                  {canManageExpenses && (
-                    <Button size="sm" onClick={() => setShowAddExpense(true)}>
-                      <Plus className="h-4 w-4 mr-1" />
-                      Add Expense
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {isAdmin && !isOverheadPosted && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="sm" variant="outline" disabled={generateOverhead.isPending}>
+                            {generateOverhead.isPending ? (
+                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                            ) : (
+                              <Zap className="h-4 w-4 mr-1" />
+                            )}
+                            Generate Overhead
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Generate Monthly Overhead</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will snapshot current rent amounts for all locations and machine depreciation for all active setups as permanent expense entries for {MONTHS[month - 1]} {year}. These entries cannot be automatically changed later — they reflect today's costs as a historical record.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={handleGenerateOverhead}>
+                              Generate
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                    {canManageExpenses && (
+                      <Button size="sm" onClick={() => setShowAddExpense(true)}>
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Expense
+                      </Button>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {data.expensesList.length === 0 ? (
