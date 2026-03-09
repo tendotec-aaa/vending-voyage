@@ -580,7 +580,7 @@ export default function NewVisitReport() {
     if (machineSlots.length > 0 && selectedSpot && visitType) {
       const generatedSlots: SlotEntry[] = machineSlots.map((slot) => {
         const machine = machines.find(m => m.id === slot.machine_id);
-        const product = products.length > 0 ? products.find(p => p.id === slot.current_product_id) : undefined;
+        const product = availableProducts.length > 0 ? availableProducts.find(p => p.id === slot.current_product_id) : undefined;
         
         return {
           id: slot.id,

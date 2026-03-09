@@ -123,7 +123,12 @@ export function ToyPicker({
                           value === product.id ? "opacity-100" : "opacity-0"
                         )}
                       />
-                      {product.name}
+                      <span className="flex-1">{product.name}</span>
+                      {showStock && product.available !== undefined && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          ({product.available} avail)
+                        </span>
+                      )}
                     </CommandItem>
                   ))}
                 </CommandGroup>
