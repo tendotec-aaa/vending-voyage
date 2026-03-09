@@ -661,7 +661,7 @@ export default function NewVisitReport() {
     } else if (!selectedSpot || !visitType) {
       setSlots([]);
     }
-  }, [machineSlots, machines, products, selectedSpot, visitType]);
+  }, [machineSlots, machines, availableProducts, selectedSpot, visitType]);
 
   // Auto-save form state to localStorage
   useEffect(() => {
