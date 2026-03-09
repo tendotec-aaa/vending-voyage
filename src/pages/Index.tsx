@@ -5,7 +5,7 @@ import { RecentVisits } from "@/components/dashboard/RecentVisits";
 import { RevenueChart } from "@/components/dashboard/RevenueChart";
 import { MachineIssues } from "@/components/dashboard/MachineIssues";
 import { QuickActions } from "@/components/dashboard/QuickActions";
-import { UpcomingRoutes } from "@/components/dashboard/UpcomingRoutes";
+import { LatestRoutes } from "@/components/dashboard/LatestRoutes";
 import { DashboardAlerts } from "@/components/dashboard/DashboardAlerts";
 import { Leaderboard } from "@/components/dashboard/Leaderboard";
 import { useDashboardStats } from "@/hooks/useDashboardStats";
