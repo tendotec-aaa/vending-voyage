@@ -12,6 +12,8 @@ export interface ItemType {
   created_at: string;
 }
 
+export type ItemTypeFlag = "is_routable" | "is_sellable" | "is_asset" | "is_supply";
+
 export function useItemTypes() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -29,10 +31,16 @@ export function useItemTypes() {
   });
 
   const createItemType = useMutation({
-    mutationFn: async (name: string) => {
+    mutationFn: async (params: { name: string; is_routable?: boolean; is_sellable?: boolean; is_asset?: boolean; is_supply?: boolean }) => {
       const { data, error } = await (supabase as any)
         .from("item_types")
-        .insert({ name })
+        .insert({
+          name: params.name,
+          is_routable: params.is_routable ?? false,
+          is_sellable: params.is_sellable ?? false,
+          is_asset: params.is_asset ?? false,
+          is_supply: params.is_supply ?? false,
+        })
         .select()
         .single();
       if (error) throw error;
@@ -40,9 +48,44 @@ export function useItemTypes() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["item_types"] });
+      toast({ title: "Item type created" });
     },
     onError: (error: any) => {
       toast({ title: "Error", description: `Failed to create item type: ${error.message}`, variant: "destructive" });
+    },
+  });
+
+  const updateItemType = useMutation({
+    mutationFn: async (params: { id: string; name?: string; is_routable?: boolean; is_sellable?: boolean; is_asset?: boolean; is_supply?: boolean }) => {
+      const { id, ...updates } = params;
+      const { error } = await (supabase as any)
+        .from("item_types")
+        .update(updates)
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["item_types"] });
+      toast({ title: "Item type updated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: `Failed to update: ${error.message}`, variant: "destructive" });
+    },
+  });
+
+  const updateItemTypeFlag = useMutation({
+    mutationFn: async ({ id, flag, value }: { id: string; flag: ItemTypeFlag; value: boolean }) => {
+      const { error } = await (supabase as any)
+        .from("item_types")
+        .update({ [flag]: value })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["item_types"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: `Failed to update flag: ${error.message}`, variant: "destructive" });
     },
   });
 
@@ -83,7 +126,6 @@ export function useItemTypes() {
     queryClient.invalidateQueries({ queryKey: ["item_details_with_categories"] });
   };
 
-  // Helper: get IDs for a specific flag
   const getTypeIdsByFlag = (flag: keyof Pick<ItemType, "is_routable" | "is_sellable" | "is_asset" | "is_supply">): string[] => {
     return (itemTypesQuery.data || []).filter((t) => t[flag]).map((t) => t.id);
   };
@@ -92,6 +134,9 @@ export function useItemTypes() {
     itemTypes: itemTypesQuery.data || [],
     isLoading: itemTypesQuery.isLoading,
     createItemType: createItemType.mutateAsync,
+    updateItemType: updateItemType.mutateAsync,
+    updateItemTypeFlag: updateItemTypeFlag.mutate,
+    isUpdatingFlag: updateItemTypeFlag.isPending,
     deleteItemType: deleteItemType.mutateAsync,
     checkLinkedItems,
     updateItemTypeForItems,
