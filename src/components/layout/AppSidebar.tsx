@@ -17,7 +17,8 @@ import {
   Target,
   DollarSign,
   Route,
-  Shield
+  Shield,
+  TrendingUp
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
