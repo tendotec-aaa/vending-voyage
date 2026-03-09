@@ -207,6 +207,7 @@ export default function NewVisitReport() {
 
   const paramLocationId = searchParams.get('location_id');
   const paramSpotId = searchParams.get('spot_id');
+  const paramRouteId = searchParams.get('route_id');
 
   const cached = useMemo(() => loadFormCache(), []);
   
