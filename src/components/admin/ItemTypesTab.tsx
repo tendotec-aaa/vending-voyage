@@ -56,7 +56,7 @@ export function ItemTypesTab() {
   const openEdit = (item: ItemType) => {
     setEditItem(item);
     setEditName(item.name);
-    setEditFlags({ is_routable: item.is_routable, is_sellable: item.is_sellable, is_asset: item.is_asset, is_supply: item.is_supply });
+    setEditFlags({ is_routable: item.is_routable, is_sellable: item.is_sellable, is_asset: item.is_asset, is_supply: item.is_supply, is_component: item.is_component });
   };
 
   const handleEdit = async () => {

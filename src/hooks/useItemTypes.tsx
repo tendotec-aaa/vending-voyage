@@ -128,7 +128,7 @@ export function useItemTypes() {
     queryClient.invalidateQueries({ queryKey: ["item_details_with_categories"] });
   };
 
-  const getTypeIdsByFlag = (flag: keyof Pick<ItemType, "is_routable" | "is_sellable" | "is_asset" | "is_supply">): string[] => {
+  const getTypeIdsByFlag = (flag: keyof Pick<ItemType, "is_routable" | "is_sellable" | "is_asset" | "is_supply" | "is_component">): string[] => {
     return (itemTypesQuery.data || []).filter((t) => t[flag]).map((t) => t.id);
   };
 
