@@ -46,7 +46,7 @@ export function ItemTypesTab() {
     try {
       await createItemType({ name: newName.trim(), ...newFlags });
       setNewName('');
-      setNewFlags({ is_routable: false, is_sellable: false, is_asset: false, is_supply: false });
+      setNewFlags({ is_routable: false, is_sellable: false, is_asset: false, is_supply: false, is_component: false });
       setCreateOpen(false);
     } finally {
       setSaving(false);
