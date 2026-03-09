@@ -29,6 +29,7 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'manage_purchases',
   'manage_sales',
   'manage_maintenance',
+  'manage_expenses',
 ];
 
 export const PERMISSION_CATEGORIES: Record<string, { label: string; keys: PermissionKey[] }> = {
