@@ -57,7 +57,7 @@ import {
 } from "lucide-react";
 import { VisitDraftsDropdown, saveDraft, type VisitDraft } from "@/components/visits/VisitDraftsDropdown";
 import { ToyPicker } from "@/components/visits/ToyPicker";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { format, differenceInDays, startOfDay } from "date-fns";
 import { cn } from "@/lib/utils";
