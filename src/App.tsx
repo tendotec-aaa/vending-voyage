@@ -159,6 +159,14 @@ const App = () => (
               </ProtectedRoute>
             } />
 
+            <Route path="/insights/profitability" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="view_profits">
+                  <Profitability />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+
             {/* Admin-only routes */}
             <Route path="/admin/security" element={
               <ProtectedRoute>

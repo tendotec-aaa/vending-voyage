@@ -99,7 +99,7 @@ export function AppSidebar() {
 
   // Permission-based visibility
   const showSupplyChain = has('view_costs') || has('manage_purchases') || has('manage_sales');
-  const showAnalytics = has('view_analytics');
+  const showAnalytics = has('view_analytics') || has('view_profits');
   const showBusiness = has('manage_users');
   const showAdmin = isAdmin;
 

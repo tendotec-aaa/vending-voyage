@@ -52,6 +52,7 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   manage_purchases: 'Manage Purchases',
   manage_sales: 'Manage Sales',
   manage_maintenance: 'Manage Maintenance',
+  manage_expenses: 'Manage Expenses',
 };
 
 interface UserPermissions {
