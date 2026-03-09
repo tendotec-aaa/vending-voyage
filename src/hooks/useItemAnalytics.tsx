@@ -232,15 +232,7 @@ export function useItemAnalytics(year: number, month: number) {
         });
       }
 
-      // Compute Top Notch: ROI > 300% AND velocity in top 20th percentile
-      const velocities = rows.filter(r => r.velocity > 0).map(r => r.velocity).sort((a, b) => a - b);
-      const p80Index = Math.floor(velocities.length * 0.8);
-      const velocityP80 = velocities[p80Index] || Infinity;
-      for (const r of rows) {
-        r.isTopNotch = r.roi > 300 && r.velocity >= velocityP80 && r.velocity > 0;
-      }
-
-      // Sort by velocity desc
+      // Sort by velocity desc (Top Notch computed on page after filtering)
       rows.sort((a, b) => b.velocity - a.velocity);
 
       // Build trend data
