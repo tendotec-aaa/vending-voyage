@@ -24,7 +24,7 @@ export function useItemTypes() {
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("item_types")
-        .select("id, name, is_routable, is_sellable, is_asset, is_supply, created_at")
+        .select("id, name, is_routable, is_sellable, is_asset, is_supply, is_component, created_at")
         .order("name");
       if (error) throw error;
       return (data || []) as ItemType[];
