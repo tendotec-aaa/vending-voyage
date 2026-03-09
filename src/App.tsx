@@ -43,6 +43,7 @@ import CompanyProfile from "./pages/CompanyProfile";
 import LocationDetail from "./pages/LocationDetail";
 import ItemDetail from "./pages/ItemDetail";
 import AdminSecurity from "./pages/AdminSecurity";
+import Notifications from "./pages/Notifications";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -83,6 +84,7 @@ const App = () => (
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
             <Route path="/locations/:id" element={<ProtectedRoute><LocationDetail /></ProtectedRoute>} />
+            <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
 
             {/* Permission-gated routes */}
             <Route path="/analytics" element={
