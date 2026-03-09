@@ -12,7 +12,8 @@ import { useTranslation } from 'react-i18next';
 
 export default function Signup() {
   const { t } = useTranslation();
-  const [fullName, setFullName] = useState('');
+  const [firstNames, setFirstNames] = useState('');
+  const [lastNames, setLastNames] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -22,7 +23,8 @@ export default function Signup() {
   const { toast } = useToast();
 
   const signupSchema = z.object({
-    fullName: z.string().trim().min(2, { message: t('auth.nameMin') }).max(100),
+    firstNames: z.string().trim().min(2, { message: t('auth.nameMin') }).max(100),
+    lastNames: z.string().trim().min(2, { message: t('auth.nameMin') }).max(100),
     email: z.string().trim().email({ message: t('auth.invalidEmail') }),
     password: z.string().min(6, { message: t('auth.passwordMin') }),
     confirmPassword: z.string(),
@@ -35,7 +37,7 @@ export default function Signup() {
     e.preventDefault();
     setErrors({});
 
-    const result = signupSchema.safeParse({ fullName, email, password, confirmPassword });
+    const result = signupSchema.safeParse({ firstNames, lastNames, email, password, confirmPassword });
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
       result.error.errors.forEach((err) => {
@@ -54,7 +56,8 @@ export default function Signup() {
       options: {
         emailRedirectTo: window.location.origin,
         data: {
-          full_name: fullName.trim(),
+          first_names: firstNames.trim(),
+          last_names: lastNames.trim(),
         },
       },
     });
@@ -87,10 +90,17 @@ export default function Signup() {
         </CardHeader>
         <form onSubmit={handleSignup}>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="fullName">{t('auth.fullName')}</Label>
-              <Input id="fullName" type="text" placeholder="Juan Pérez" value={fullName} onChange={(e) => setFullName(e.target.value)} disabled={loading} autoComplete="name" />
-              {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="firstNames">{t('auth.firstNames')}</Label>
+                <Input id="firstNames" type="text" placeholder="Juan Carlos" value={firstNames} onChange={(e) => setFirstNames(e.target.value)} disabled={loading} autoComplete="given-name" />
+                {errors.firstNames && <p className="text-sm text-destructive">{errors.firstNames}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lastNames">{t('auth.lastNames')}</Label>
+                <Input id="lastNames" type="text" placeholder="Pérez López" value={lastNames} onChange={(e) => setLastNames(e.target.value)} disabled={loading} autoComplete="family-name" />
+                {errors.lastNames && <p className="text-sm text-destructive">{errors.lastNames}</p>}
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">{t('auth.email')}</Label>

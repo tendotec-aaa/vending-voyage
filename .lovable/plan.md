@@ -1,96 +1,51 @@
+## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
+### What was implemented:
 
-## Master ERP Refactor: Professional Onboarding & Operator Performance Dashboard
+1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
 
-### Part 1: Signup Refactor (First Names / Last Names)
+2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
 
-**Current state**: Signup has a single `fullName` field. The `user_profiles` table already has `first_names` and `last_names` columns. The `handle_new_user_profile` trigger only sets `email`, `active`, `profile_completed` — it does NOT use auth metadata for names. So the signup metadata is unused.
+3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
 
-**Change**: Replace single `fullName` field with `firstNames` and `lastNames` in `Signup.tsx`. Pass them as `first_names` / `last_names` in auth metadata. After signup succeeds, update the `user_profiles` row with these names (or rely on the onboarding flow which already captures them).
+4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
 
-Files to modify:
-- `src/pages/Signup.tsx` — two fields, updated validation schema, pass metadata
-- `src/i18n/es.json` / `en.json` — add `auth.firstNames`, `auth.lastNames` keys
+5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
 
-### Part 2: Operator Performance Stats on Dashboard
+6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
 
-**Current state**: The `OperatorDashboard.tsx` shows route stops and pending issues. No performance KPIs exist.
+7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
 
-**New section**: Add a "Performance Stats" card grid between the route progress and the pending issues section. Uses a new `useOperatorPerformance` hook.
+### Architecture now:
+- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
+- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
+- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
+- **Audit trail**: Complete history of every stock movement with performer tracking
 
-**KPI Cards** (Current Week vs Previous Week, Monday-Sunday):
+---
 
-| Card | Data Source | Calculation |
-|------|-----------|-------------|
-| Visitas | `spot_visits` filtered by `operator_id` | Count this week vs last week |
-| Problemas | `maintenance_tickets` filtered by `reporter_id` | Count this week vs last week |
-| Tickets Resueltos | `maintenance_tickets` where `status='resolved'` and `resolved_at` in range | Count this week |
-| Efectivo Recaudado | `spot_visits.total_cash_collected` | Sum this week vs last week |
+## ✅ COMPLETED: Route Audit & Refill Reconciliation with Under-fill Warnings
 
-**Note on "Fill Efficiency" and "Service Velocity"**: The database has no "suggested refill" column or visit start/end timestamps on `spot_visits`. These metrics cannot be calculated from existing schema. Will implement the 4 KPIs above that ARE available.
+### What was implemented:
 
-Files to create/modify:
-- `src/hooks/useOperatorPerformance.tsx` — new hook querying week-over-week stats
-- `src/pages/OperatorDashboard.tsx` — add KPI card grid
-- `src/i18n/es.json` / `en.json` — add `operatorPerformance.*` keys
+1. **Database Migration** — Added `route_id` (uuid FK→routes) to `spot_visits`, and `completed_at` (timestamptz) + `auto_completed` (boolean) to `routes`.
 
-### Part 3: Stale Spot Alert System
+2. **Visit Submission Tagging** — `OperatorDashboard.tsx` now passes `route_id` as a URL param when navigating to `/visits/new`. `NewVisitReport.tsx` reads `route_id` from search params and includes it in the edge function payload. `submit-visit-report` edge function persists `route_id` on the `spot_visits` insert.
 
-**New KPI card** on the Operator Dashboard: "Puntos sin Visita (>7 días)" — counts spots where latest visit > 7 days ago. Scoped to operator's assigned locations.
+3. **Route Interface Update** — `useRoutes.tsx` Route interface now includes `completed_at` and `auto_completed` fields.
 
-**Interactive Dialog**: Clicking the card opens a dialog with a table:
-- Columns: Punto, Ubicación, Última Visita, Días Sin Visita
-- Sorted by oldest first
-- Color coding: 8-10 days = orange, 10+ days = red
-- For operators: filtered by their assigned locations
-- For admins in ghost mode: filtered by target user's locations
+4. **Reconciliation Tab** — New `ReconciliationTab` component (`src/components/routes/ReconciliationTab.tsx`) added as a third tab in `RouteDetail.tsx`, visible only to admin/accountant roles.
 
-Data query: For each spot in assigned locations, find the MAX `visit_date` from `spot_visits`, calculate days elapsed, filter where > 7 days.
+### Reconciliation Tab Features:
+- **Accuracy Score**: `(items where |variance|/suggested < 10%) / total_items × 100`
+- **Status Badges**: Route status, completion time, "System Verified" badge for auto-completed routes
+- **Audit Table per Location**: Item/Slot, System Suggested (velocity model), Actual Refill (visit_line_items), Variance with percentage
+- **Red variance text**: When `|variance| / suggested > 20%`
+- **Amber warning rows**: When `actual < suggested × 0.70` AND no operator notes — flags unexplained under-fills with ⚠️ tooltip
+- **Operator Notes**: Displayed below each location's table
+- **Fallback matching**: For pre-migration routes without `route_id`, matches visits by spot proximity + date ±1 day
 
-Files to create/modify:
-- `src/components/dashboard/StaleSpotDialog.tsx` — new dialog component
-- `src/hooks/useOperatorPerformance.tsx` — include stale spots query
-- `src/pages/OperatorDashboard.tsx` — add stale spot card + dialog trigger
-
-### Part 4: i18n for all new strings
-
-New translation keys under `operatorPerformance`:
-```
-"operatorPerformance": {
-  "title": "Mi Rendimiento",
-  "visits": "Visitas",
-  "issuesFlagged": "Problemas Reportados",
-  "ticketsResolved": "Tickets Resueltos",
-  "cashCollected": "Efectivo Recaudado",
-  "thisWeek": "esta semana",
-  "vsLastWeek": "vs semana anterior",
-  "staleSpots": "Puntos sin Visita (>7 días)",
-  "staleSpotsDesc": "Puntos que necesitan atención urgente",
-  "spotName": "Punto",
-  "locationName": "Ubicación",
-  "lastVisitDate": "Última Visita",
-  "daysElapsed": "Días Sin Visita",
-  "noStaleSpots": "Todos los puntos están al día",
-  "neverVisited": "Nunca visitado"
-}
-```
-
-Also add `auth.firstNames` ("Nombres") and `auth.lastNames` ("Apellidos") to both JSON files.
-
-### Part 5: Onboarding & UserProfile i18n
-
-Translate hardcoded strings in `Onboarding.tsx` and `UserProfile.tsx` to use `t()` calls. Add `profile.*` namespace keys.
-
-### Files Summary
-
-| File | Action |
-|------|--------|
-| `src/pages/Signup.tsx` | Split name into two fields |
-| `src/hooks/useOperatorPerformance.tsx` | New — week-over-week stats + stale spots |
-| `src/components/dashboard/StaleSpotDialog.tsx` | New — dialog with stale spots table |
-| `src/pages/OperatorDashboard.tsx` | Add performance cards + stale spot card |
-| `src/pages/Onboarding.tsx` | i18n all strings |
-| `src/pages/UserProfile.tsx` | i18n all strings |
-| `src/i18n/es.json` | Add all new keys |
-| `src/i18n/en.json` | Add all new keys |
-
+### Architecture:
+- **Forward-looking**: New visits from operator dashboard are tagged with `route_id`
+- **Backward-compatible**: Older routes use date/spot fallback matching
+- **Role-gated**: Reconciliation tab only visible to admin and accountant roles
