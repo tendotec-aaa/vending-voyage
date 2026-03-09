@@ -254,6 +254,9 @@ export default function RouteDetail() {
           <TabsList>
             <TabsTrigger value="stops">Stops ({stops.length})</TabsTrigger>
             <TabsTrigger value="picklist">Pick List</TabsTrigger>
+            {(role === 'admin' || role === 'accountant') && (
+              <TabsTrigger value="reconciliation">Reconciliation</TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="stops" className="space-y-3 mt-4">
@@ -296,6 +299,17 @@ export default function RouteDetail() {
               onOverridesChange={setManifestoOverrides}
             />
           </TabsContent>
+
+          {(role === 'admin' || role === 'accountant') && (
+            <TabsContent value="reconciliation" className="mt-4">
+              <ReconciliationTab
+                route={route}
+                stops={stops}
+                slots={slots}
+                velocityMap={velocityMap}
+              />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </AppLayout>
