@@ -483,6 +483,7 @@ export type Database = {
           created_at: string
           id: string
           is_asset: boolean
+          is_component: boolean
           is_routable: boolean
           is_sellable: boolean
           is_supply: boolean
@@ -492,6 +493,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_asset?: boolean
+          is_component?: boolean
           is_routable?: boolean
           is_sellable?: boolean
           is_supply?: boolean
@@ -501,6 +503,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_asset?: boolean
+          is_component?: boolean
           is_routable?: boolean
           is_sellable?: boolean
           is_supply?: boolean
