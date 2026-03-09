@@ -18,6 +18,8 @@ import { useCategories } from "@/hooks/useCategories";
 import { useItemTypes } from "@/hooks/useItemTypes";
 import { useAssemblies, type AssemblyComponent } from "@/hooks/useAssemblies";
 import { useWarehouseInventory } from "@/hooks/useWarehouseInventory";
+import { useUserRole } from "@/hooks/useUserRole";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { fmt2, fmt3 } from "@/lib/formatters";
@@ -32,13 +34,15 @@ interface ComponentLine {
 
 export default function NewAssembly() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
+  const { isAdmin } = useUserRole();
   const { categories, createCategory, createSubcategory, getSubcategoriesByCategory } = useCategories();
   const { itemTypes, createItemType } = useItemTypes();
   const { createAssembly, isCreating } = useAssemblies();
   const { warehouses } = useWarehouseInventory();
 
-  // Output item state
-  const [isNewItem, setIsNewItem] = useState(true);
+  // Output item state — non-admins forced to "Link Existing"
+  const [isNewItem, setIsNewItem] = useState(isAdmin);
   const [outputItemDetailId, setOutputItemDetailId] = useState<string>();
   const [outputItemName, setOutputItemName] = useState("");
   const [categoryId, setCategoryId] = useState<string>();
@@ -188,20 +192,22 @@ export default function NewAssembly() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-foreground">New Assembly</h1>
-            <p className="text-muted-foreground">Assemble components into a new product</p>
+            <h1 className="text-3xl font-bold text-foreground">{t('warehouse.newAssembly')}</h1>
+            <p className="text-muted-foreground">{t('warehouse.assemblyDesc')}</p>
           </div>
         </div>
 
         {/* Section 1: Assembly Header */}
         <Card>
-          <CardHeader><CardTitle>Output Product</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('warehouse.outputProduct')}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center gap-3">
-              <span className={cn("text-sm", isNewItem ? "text-foreground font-medium" : "text-muted-foreground")}>New Item</span>
-              <Switch checked={!isNewItem} onCheckedChange={(checked) => setIsNewItem(!checked)} />
-              <span className={cn("text-sm", !isNewItem ? "text-foreground font-medium" : "text-muted-foreground")}>Link Existing</span>
-            </div>
+            {isAdmin && (
+              <div className="flex items-center gap-3">
+                <span className={cn("text-sm", isNewItem ? "text-foreground font-medium" : "text-muted-foreground")}>{t('warehouse.newItem')}</span>
+                <Switch checked={!isNewItem} onCheckedChange={(checked) => setIsNewItem(!checked)} />
+                <span className={cn("text-sm", !isNewItem ? "text-foreground font-medium" : "text-muted-foreground")}>{t('warehouse.linkExisting')}</span>
+              </div>
+            )}
 
             <div className="grid gap-4 md:grid-cols-2">
               {isNewItem ? (

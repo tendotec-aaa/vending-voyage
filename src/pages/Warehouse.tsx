@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Package, Loader2, Plus, Truck, Warehouse as WarehouseIcon } from "lucide-react";
+import { Search, Package, Loader2, Plus, Truck, Warehouse as WarehouseIcon, Wrench } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -74,10 +75,12 @@ export default function Warehouse() {
 
   const destinationBodegas = standardWarehouses.filter((w) => w.id !== selectedWarehouse);
 
+  const { t } = useTranslation();
+
   return (
     <AppLayout
-      title="Warehouse Management"
-      subtitle="Operational stock control across your warehouses"
+      title={t('warehouse.title')}
+      subtitle={t('warehouse.subtitle')}
       actions={
         <div className="flex gap-2 flex-wrap">
           {isSelectedVehicle && canAdjust && (
@@ -89,18 +92,17 @@ export default function Warehouse() {
               isUnloading={isUnloading}
             />
           )}
+          {!isViewOnly && (
+            <Button variant="outline" onClick={() => navigate("/warehouse/assembly/new")}>
+              <Wrench className="mr-2 h-4 w-4" />
+              {t('warehouse.assemble')}
+            </Button>
+          )}
           {canManageFull && (
             <>
-              <Button variant="outline" onClick={() => navigate("/warehouse/assembly/new")}>
-                <Plus className="mr-2 h-4 w-4" />
-                New Assembly
-              </Button>
               <AddWarehouseItemDialog />
               <CreateWarehouseDialog onCreate={createWarehouse} isCreating={isCreatingWarehouse} />
             </>
-          )}
-          {isOperator && (
-            <AddWarehouseItemDialog />
           )}
         </div>
       }
