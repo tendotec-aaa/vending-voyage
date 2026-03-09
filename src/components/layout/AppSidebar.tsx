@@ -174,26 +174,51 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Assets & Inventory */}
-        <SidebarGroup className="mt-4">
-          <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            Assets & Inventory
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {assetsItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
-                    <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
-                      <item.icon className="w-5 h-5" />
-                      <span>{item.title}</span>
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {/* Field Tools - Operators only */}
+        {!isAdmin && (
+          <SidebarGroup className="mt-4">
+            <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+              Field Tools
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {fieldToolsItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
+                      <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                        <item.icon className="w-5 h-5" />
+                        <span>{item.title}</span>
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* Assets & Inventory - Admin only */}
+        {isAdmin && (
+          <SidebarGroup className="mt-4">
+            <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+              Assets & Inventory
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {assetsItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
+                      <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                        <item.icon className="w-5 h-5" />
+                        <span>{item.title}</span>
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {/* Locations */}
         <SidebarGroup className="mt-4">

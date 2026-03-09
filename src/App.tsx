@@ -186,8 +186,9 @@ const App = () => (
               </ProtectedRoute>
             } />
 
-            {/* Operator Dashboard */}
+            {/* Operator Dashboard & Field Tools */}
             <Route path="/dashboard" element={<ProtectedRoute><OperatorDashboard /></ProtectedRoute>} />
+            <Route path="/operator/inventory" element={<ProtectedRoute><OperatorInventory /></ProtectedRoute>} />
 
             {/* Admin-only routes */}
             <Route path="/admin/operators" element={
