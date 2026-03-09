@@ -173,6 +173,7 @@ Deno.serve(async (req) => {
       slots,
       sourceWarehouseId,
       returnWarehouseId,
+      routeId,
     } = payload;
 
     // Determine the warehouse for removals/swap-outs (fall back to source for backward compat)
