@@ -167,6 +167,13 @@ const App = () => (
                 </PermissionGuard>
               </ProtectedRoute>
             } />
+            <Route path="/insights/items" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="view_analytics">
+                  <ItemAnalytics />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
 
             {/* Admin-only routes */}
             <Route path="/admin/security" element={
