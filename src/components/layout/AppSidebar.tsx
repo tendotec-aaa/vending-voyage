@@ -17,7 +17,8 @@ import {
   Target,
   DollarSign,
   Route,
-  Shield
+  Shield,
+  TrendingUp
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -63,6 +64,7 @@ const locationsItems = [
 
 const insightsItems = [
   { title: "Analytics", icon: BarChart3, url: "/analytics" },
+  { title: "Profitability", icon: TrendingUp, url: "/insights/profitability" },
 ];
 
 const businessItems = [
@@ -97,7 +99,7 @@ export function AppSidebar() {
 
   // Permission-based visibility
   const showSupplyChain = has('view_costs') || has('manage_purchases') || has('manage_sales');
-  const showAnalytics = has('view_analytics');
+  const showAnalytics = has('view_analytics') || has('view_profits');
   const showBusiness = has('manage_users');
   const showAdmin = isAdmin;
 

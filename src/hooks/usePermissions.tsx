@@ -14,7 +14,8 @@ export type PermissionKey =
   | 'view_analytics'
   | 'manage_purchases'
   | 'manage_sales'
-  | 'manage_maintenance';
+  | 'manage_maintenance'
+  | 'manage_expenses';
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'view_costs',
@@ -28,10 +29,11 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'manage_purchases',
   'manage_sales',
   'manage_maintenance',
+  'manage_expenses',
 ];
 
 export const PERMISSION_CATEGORIES: Record<string, { label: string; keys: PermissionKey[] }> = {
-  finance: { label: 'Finance', keys: ['view_costs', 'view_profits'] },
+  finance: { label: 'Finance', keys: ['view_costs', 'view_profits', 'manage_expenses'] },
   inventory: { label: 'Inventory', keys: ['view_stock', 'edit_bodega'] },
   operations: { label: 'Operations', keys: ['view_all_routes', 'manage_own_route'] },
   supply_chain: { label: 'Supply Chain', keys: ['manage_purchases', 'manage_sales'] },
@@ -50,6 +52,7 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   manage_purchases: 'Manage Purchases',
   manage_sales: 'Manage Sales',
   manage_maintenance: 'Manage Maintenance',
+  manage_expenses: 'Manage Expenses',
 };
 
 interface UserPermissions {

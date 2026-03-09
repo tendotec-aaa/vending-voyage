@@ -796,6 +796,36 @@ export type Database = {
           },
         ]
       }
+      operating_expenses: {
+        Row: {
+          amount: number
+          category: Database["public"]["Enums"]["expense_category"]
+          created_at: string
+          created_by: string | null
+          description: string | null
+          expense_date: string
+          id: string
+        }
+        Insert: {
+          amount: number
+          category: Database["public"]["Enums"]["expense_category"]
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          expense_date?: string
+          id?: string
+        }
+        Update: {
+          amount?: number
+          category?: Database["public"]["Enums"]["expense_category"]
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          expense_date?: string
+          id?: string
+        }
+        Relationships: []
+      }
       purchase_global_fees: {
         Row: {
           amount: number
@@ -2011,6 +2041,13 @@ export type Database = {
     Enums: {
       assignment_scope: "global" | "location" | "personal"
       contract_term: "1_year" | "2_years" | "indefinite" | "custom"
+      expense_category:
+        | "payroll"
+        | "fuel"
+        | "maintenance"
+        | "location_commission"
+        | "software_utilities"
+        | "misc"
       item_type: "machine_model" | "merchandise" | "spare_part" | "supply"
       machine_status: "in_warehouse" | "deployed" | "maintenance" | "retired"
       negotiation_type: "fixed_rent" | "commission" | "hybrid"
@@ -2165,6 +2202,14 @@ export const Constants = {
     Enums: {
       assignment_scope: ["global", "location", "personal"],
       contract_term: ["1_year", "2_years", "indefinite", "custom"],
+      expense_category: [
+        "payroll",
+        "fuel",
+        "maintenance",
+        "location_commission",
+        "software_utilities",
+        "misc",
+      ],
       item_type: ["machine_model", "merchandise", "spare_part", "supply"],
       machine_status: ["in_warehouse", "deployed", "maintenance", "retired"],
       negotiation_type: ["fixed_rent", "commission", "hybrid"],

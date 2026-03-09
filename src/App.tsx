@@ -44,6 +44,7 @@ import LocationDetail from "./pages/LocationDetail";
 import ItemDetail from "./pages/ItemDetail";
 import AdminSecurity from "./pages/AdminSecurity";
 import Notifications from "./pages/Notifications";
+import Profitability from "./pages/Profitability";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -154,6 +155,14 @@ const App = () => (
               <ProtectedRoute>
                 <PermissionGuard requiredPerm="manage_users">
                   <CompanyProfile />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/insights/profitability" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="view_profits">
+                  <Profitability />
                 </PermissionGuard>
               </ProtectedRoute>
             } />
