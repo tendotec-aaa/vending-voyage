@@ -75,13 +75,27 @@ export function PlannedSwapDialog({ open, onOpenChange, slots, locationName, onC
     queryKey: ["swap-in-stock-products", selectedCategoryId],
     enabled: open && !!selectedCategoryId,
     queryFn: async (): Promise<InStockProduct[]> => {
-      // Step 1: Get merchandise items in this category
-      const { data: items } = await supabase
+      // Get routable item_type IDs
+      const { data: routableTypes } = await (supabase as any)
+        .from("item_types")
+        .select("id")
+        .eq("is_routable", true);
+      const routableIds = (routableTypes || []).map((t: any) => t.id);
+
+      // Step 1: Get routable items in this category
+      let itemQuery = supabase
         .from("item_details")
         .select("id, name")
         .eq("category_id", selectedCategoryId)
-        .eq("type", "merchandise")
         .order("name");
+
+      if (routableIds.length > 0) {
+        itemQuery = itemQuery.in("item_type_id", routableIds);
+      } else {
+        itemQuery = itemQuery.eq("type", "merchandise");
+      }
+
+      const { data: items } = await itemQuery;
       if (!items?.length) return [];
 
       const itemIds = items.map((i) => i.id);

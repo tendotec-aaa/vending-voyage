@@ -365,15 +365,29 @@ export default function NewVisitReport() {
     enabled: !!selectedSpot,
   });
 
-  // Fetch products (merchandise type items) with category_id
+  // Fetch products (routable items) with category_id
   const { data: products = [] } = useQuery({
     queryKey: ['products'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // First get routable item_type IDs
+      const { data: routableTypes } = await (supabase as any)
+        .from("item_types")
+        .select("id")
+        .eq("is_routable", true);
+      const routableIds = (routableTypes || []).map((t: any) => t.id);
+
+      let query = supabase
         .from('item_details')
         .select('id, name, sku, type, category_id')
-        .eq('type', 'merchandise')
         .order('name');
+
+      if (routableIds.length > 0) {
+        query = query.in('item_type_id', routableIds);
+      } else {
+        query = query.eq('type', 'merchandise');
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return (data || []) as (ItemDetailBasic & { category_id: string | null })[];
     },
