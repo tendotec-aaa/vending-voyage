@@ -75,6 +75,7 @@ const businessItems = [
 ];
 
 const adminItems = [
+  { title: "Operators", icon: Users, url: "/admin/operators" },
   { title: "Security", icon: Shield, url: "/admin/security" },
 ];
 
