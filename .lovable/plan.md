@@ -1,46 +1,97 @@
-## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
-### What was implemented:
 
-1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
+## Three Enhancements: Auto-Driver on Route, Auto-Assignment on Activation, Multi-Location Selection
 
-2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
+### What We're Building
 
-3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
-
-4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
-
-5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
-
-6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
-
-7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
-
-### Architecture now:
-- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
-- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
-- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
-- **Audit trail**: Complete history of every stock movement with performer tracking
+1. **Auto-assign driver on route creation**: When a non-admin creates a route, automatically set `driver_id` to the current user
+2. **Auto-assign "Route Operator" role on user activation**: When an admin activates a new user (first activation after the first user), automatically create a `user_assignments` row with the "Route Operator" role and global scope
+3. **Multi-select locations in User Assignments**: Change the single-location dropdown to a multi-select checkbox list using `user_location_assignments` table
 
 ---
 
-## ✅ COMPLETED: Fixed Overhead Generation & Historical Rent Ledger
+### 1. Auto-Assign Driver on Route Creation
 
-### What was implemented:
+**File**: `src/pages/Routes.tsx`
 
-1. **Database Migration** — Added `rent` and `depreciation` values to `expense_category` enum. Created `overhead_postings` tracking table with unique constraints on `(year_month, location_id, posting_type)` and `(year_month, setup_id, posting_type)` to prevent duplicate generation.
+**Current logic**:
+```typescript
+createRoute.mutate({ name, scheduled_for: date }, {...});
+```
 
-2. **`useProfitability.tsx` — Overhead Generation** — Added `generateOverhead` mutation that snapshots current `rent_amount` from all locations and machine depreciation from all active setups as permanent `operating_expenses` rows. Added `isOverheadPosted` and `overheadCount` status tracking. Added `rent` and `depreciation` to `ExpenseCategory` type, labels, and colors.
+**Updated logic**:
+- Import `useAuth` and `useUserRole`
+- If `!isAdmin`, pass `driver_id: user.id` to the mutation
+- Admin keeps the current behavior (no auto-assignment, can assign later)
 
-3. **`Profitability.tsx` — Generate Overhead Button** — Admin-only "Generate Monthly Overhead" button with AlertDialog confirmation. Shows "Overhead Posted (N entries)" badge when already generated. Button disabled when overhead already exists.
+---
 
-4. **`useSpotHealth.tsx` — Posted vs Projected Logic** — Fetches `overhead_postings` joined with `operating_expenses` for the selected month. If posted rent exists for a location, splits it equally among active spots. If posted depreciation exists for a setup, uses the snapshotted amount. Falls back to live calculation with `isProjectedRent`/`isProjectedDepreciation` flags.
+### 2. Auto-Assign Role on User Activation
 
-5. **`SpotHealth.tsx` — Projected Indicator** — Shows a "Projected" badge with tooltip when any rent/depreciation values are estimated. Individual cells show a `~` marker next to projected values.
+**File**: `src/hooks/useTeamManagement.tsx`
 
-### Architecture:
-- **Snapshot model**: "Generate Monthly Overhead" creates permanent expense rows — changing `rent_amount` later won't affect past months
-- **Location-level rent**: Rent comes from `locations.rent_amount`, split equally among active spots at that location
-- **Bottom-up depreciation**: Summed from `item_details.monthly_depreciation` for each machine in a setup
-- **Dual-source display**: Spot Health prefers posted actuals, falls back to projected from master data
-- **Duplicate prevention**: `overhead_postings` unique constraints prevent re-generation
+**Current logic**:
+`toggleUserActive` mutation only updates `user_profiles.active`
+
+**Updated logic** (in `onSuccess` when `active === true`):
+1. Query `app_roles` for the "Route Operator" role to get its ID
+2. Check if user already has a `user_assignments` row
+3. If not, insert a new `user_assignments` row with:
+   - `role_id`: Route Operator role ID (`a0000000-0000-0000-0000-000000000002`)
+   - `scope_type`: `'global'`
+   - `scope_id`: `null`
+
+This ensures newly activated users get a default assignment.
+
+---
+
+### 3. Multi-Select Locations in User Assignments Tab
+
+**File**: `src/pages/AdminSecurity.tsx` (UserAssignmentsTab component)
+
+**Current Implementation**:
+- Single `scope_id` in `user_assignments` table for one location
+- Uses `user_assignments.scope_id` as the location reference
+- Only shows a single-select dropdown
+
+**New Implementation**:
+- Use the existing `user_location_assignments` table (already supports multiple locations per user)
+- Replace the single-select dropdown with a multi-select popover/checkbox list
+- When scope_type is "location", show assigned locations as badges
+- Add a "Manage" button that opens a dialog with all locations as checkboxes
+- Insert/delete rows in `user_location_assignments` on toggle
+
+**UI Changes**:
+- Replace single `<Select>` with a `<Popover>` containing a checkbox list of all locations
+- Show selected locations as `<Badge>` pills
+- Use `useUserLocations` hook logic inline or create a new hook for bulk operations
+
+---
+
+### Files to Modify
+
+| File | Change |
+|------|--------|
+| `src/pages/Routes.tsx` | Auto-set `driver_id` for non-admin users |
+| `src/hooks/useTeamManagement.tsx` | Auto-create Route Operator assignment on activation |
+| `src/pages/AdminSecurity.tsx` | Multi-select locations using `user_location_assignments` |
+
+---
+
+### Data Flow
+
+```text
+Route Creation (non-admin):
+  → createRoute.mutate({ name, scheduled_for, driver_id: user.id })
+  → Route saved with current user as driver
+
+User Activation:
+  → toggleUserActive({ userId, active: true })
+  → If first activation: insert user_assignments (Route Operator, global)
+
+Location Assignment (Admin):
+  → Toggle checkbox in multi-select
+  → Insert/delete row in user_location_assignments
+  → Multiple locations can be assigned to one user
+```
+
