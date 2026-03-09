@@ -134,6 +134,16 @@ export function AppSidebar() {
                   </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              {!isAdmin && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive(operatorDashboardItem.url)} className="w-full">
+                    <NavLink to={operatorDashboardItem.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                      <operatorDashboardItem.icon className="w-5 h-5" />
+                      <span>{operatorDashboardItem.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
