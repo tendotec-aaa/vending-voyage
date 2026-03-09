@@ -80,3 +80,42 @@
 - **No running_balance in frontend**: RPC passes `0`, BEFORE INSERT trigger computes correct value
 - **Soft stock warnings**: UI warns but allows proceeding — inventory can go negative
 - **Ledger integrity**: Every sale creates `warehouse_sale` ledger entries, existing AFTER INSERT trigger syncs `inventory.quantity_on_hand`
+
+---
+
+## ✅ COMPLETED: Dynamic RBAC & Security Hub
+
+### What was implemented:
+
+1. **`app_roles` table** — Dynamic, admin-created roles with name + description. RLS: authenticated SELECT, admin-only INSERT/UPDATE/DELETE.
+
+2. **`role_permissions` table** — Maps roles to permission keys with `is_enabled` boolean. Cascading delete on role. Same RLS pattern.
+
+3. **`user_assignments` table** — Maps users to roles with `assignment_scope` enum (`global`, `location`, `personal`) and optional `scope_id`. Unique per user.
+
+4. **`has_permission()` SQL function** — SECURITY DEFINER. Joins `user_assignments` → `role_permissions` to check if a user has a specific permission key enabled.
+
+5. **`get_user_scope()` SQL function** — Returns user's scope type and scope_id.
+
+6. **Seed data** — 3 default roles (Administrator, Route Operator, Warehouse Manager) with 11 permission keys each. Existing users backfilled from `user_roles` table.
+
+7. **`usePermissions()` hook** — Fetches user's assignment, role name, enabled permission keys, and scope. Caches via React Query. Exposes `has(key)` function. Admins always pass all checks.
+
+8. **`PermissionGuard` component** — Route guard that shows `AccessDenied` (403 page with Shield icon) if user lacks required permission.
+
+9. **`AdminSecurity` page (`/admin/security`)** — Two-tab interface:
+   - **Tab 1: Roles & Permissions Matrix** — Left sidebar to select/create roles, main panel with categorized permission toggles (Finance, Inventory, Operations, Supply Chain, Admin). Instant mutation on each Switch toggle.
+   - **Tab 2: User Assignments** — DataTable of all users with Role dropdown, Scope dropdown, and Location selector (when scope = location). Instant upsert on change.
+
+10. **Dynamic Sidebar** — Supply Chain, Insights, Business, and Admin sections conditionally rendered based on permission keys. Dashboard, Operations, Assets, Locations, and Personal always visible.
+
+11. **Route Guards in App.tsx** — `/sales/*` → `manage_sales`, `/purchases/*` → `manage_purchases`, `/analytics` → `view_analytics`, `/users/*` + `/company` → `manage_users`, `/admin/security` → `RequireRole(['admin'])`.
+
+### Architecture:
+- **Backward compatible**: Old `user_roles` table and `has_role()` function preserved for existing RLS policies
+- **Data-driven**: Permissions stored in DB, not hardcoded. Admin can create new roles and toggle capabilities on the fly
+- **Instant mutations**: Each Switch/Select change fires immediate DB update via React Query mutation
+- **Scope stored but frontend-only initially**: Scope column assignable in UI, RLS wiring deferred
+
+### Permission Keys:
+`view_costs`, `view_profits`, `view_stock`, `edit_bodega`, `view_all_routes`, `manage_own_route`, `manage_users`, `view_analytics`, `manage_purchases`, `manage_sales`, `manage_maintenance`
