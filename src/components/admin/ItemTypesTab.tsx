@@ -17,6 +17,7 @@ const FLAG_COLUMNS: { key: ItemTypeFlag; label: string }[] = [
   { key: 'is_sellable', label: 'Sellable' },
   { key: 'is_asset', label: 'Asset' },
   { key: 'is_supply', label: 'Supply' },
+  { key: 'is_component', label: 'Component' },
 ];
 
 export function ItemTypesTab() {
