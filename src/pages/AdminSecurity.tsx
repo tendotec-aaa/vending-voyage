@@ -16,8 +16,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, Plus, Trash2, Users, Lock } from 'lucide-react';
+import { Shield, Plus, Trash2, Users, Lock, Package } from 'lucide-react';
 import { PERMISSION_CATEGORIES, PERMISSION_LABELS, ALL_PERMISSION_KEYS, type PermissionKey } from '@/hooks/usePermissions';
+import { ItemTypesTab } from '@/components/admin/ItemTypesTab';
 
 // ============ Hooks ============
 
