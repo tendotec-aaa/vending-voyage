@@ -1,46 +1,102 @@
-## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
-### What was implemented:
 
-1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
+## Route Audit & Refill Reconciliation — with Under-fill Warning Flag
 
-2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
+### Overview
 
-3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
-
-4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
-
-5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
-
-6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
-
-7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
-
-### Architecture now:
-- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
-- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
-- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
-- **Audit trail**: Complete history of every stock movement with performer tracking
+Add a "Reconciliation" tab to the existing `/routes/:id` page. This requires a DB migration to link visits to routes, updates to the visit submission flow to tag the route, and a new reconciliation UI with accuracy scoring and under-fill warnings.
 
 ---
 
-## ✅ COMPLETED: Fixed Overhead Generation & Historical Rent Ledger
+### Step 1: Database Migration
 
-### What was implemented:
+```sql
+-- Link visits to routes
+ALTER TABLE spot_visits ADD COLUMN route_id uuid REFERENCES routes(id);
 
-1. **Database Migration** — Added `rent` and `depreciation` values to `expense_category` enum. Created `overhead_postings` tracking table with unique constraints on `(year_month, location_id, posting_type)` and `(year_month, setup_id, posting_type)` to prevent duplicate generation.
+-- Track route completion metadata
+ALTER TABLE routes ADD COLUMN completed_at timestamptz;
+ALTER TABLE routes ADD COLUMN auto_completed boolean DEFAULT false;
+```
 
-2. **`useProfitability.tsx` — Overhead Generation** — Added `generateOverhead` mutation that snapshots current `rent_amount` from all locations and machine depreciation from all active setups as permanent `operating_expenses` rows. Added `isOverheadPosted` and `overheadCount` status tracking. Added `rent` and `depreciation` to `ExpenseCategory` type, labels, and colors.
+Update `src/integrations/supabase/types.ts` to reflect these new columns.
 
-3. **`Profitability.tsx` — Generate Overhead Button** — Admin-only "Generate Monthly Overhead" button with AlertDialog confirmation. Shows "Overhead Posted (N entries)" badge when already generated. Button disabled when overhead already exists.
+---
 
-4. **`useSpotHealth.tsx` — Posted vs Projected Logic** — Fetches `overhead_postings` joined with `operating_expenses` for the selected month. If posted rent exists for a location, splits it equally among active spots. If posted depreciation exists for a setup, uses the snapshotted amount. Falls back to live calculation with `isProjectedRent`/`isProjectedDepreciation` flags.
+### Step 2: Tag Route on Visit Submission
 
-5. **`SpotHealth.tsx` — Projected Indicator** — Shows a "Projected" badge with tooltip when any rent/depreciation values are estimated. Individual cells show a `~` marker next to projected values.
+**`src/pages/OperatorDashboard.tsx`**: Pass `route_id` as a URL param when navigating to `/visits/new`.
 
-### Architecture:
-- **Snapshot model**: "Generate Monthly Overhead" creates permanent expense rows — changing `rent_amount` later won't affect past months
-- **Location-level rent**: Rent comes from `locations.rent_amount`, split equally among active spots at that location
-- **Bottom-up depreciation**: Summed from `item_details.monthly_depreciation` for each machine in a setup
-- **Dual-source display**: Spot Health prefers posted actuals, falls back to projected from master data
-- **Duplicate prevention**: `overhead_postings` unique constraints prevent re-generation
+**`src/pages/NewVisitReport.tsx`**: Read `route_id` from URL search params, pass it to the edge function payload.
+
+**`supabase/functions/submit-visit-report/index.ts`**: Accept `route_id` in `VisitPayload`, include it in the `spot_visits` insert.
+
+---
+
+### Step 3: Reconciliation Tab in RouteDetail
+
+**File**: `src/pages/RouteDetail.tsx` — add a third tab "Reconciliation" (visible to admin/accountant).
+
+**New query** (`useQuery`): Fetch `spot_visits` where `route_id = :id`, then fetch their `visit_line_items` with product/slot joins.
+
+**Fallback for pre-migration routes**: Match visits by spot_id (spots within route locations) + `visit_date` within ±1 day of `scheduled_for`.
+
+#### Reconciliation Table (per location/spot)
+
+| Column | Source |
+|--------|--------|
+| Item Name & Slot | `visit_line_items.product` + `slot.slot_number` |
+| System Suggested | `computeSlotRefill()` using velocity data at route creation time |
+| Actual Refill | `visit_line_items.quantity_added` |
+| Variance | `actual - suggested` |
+
+#### Variance Highlighting
+- **Red text**: If `abs(variance) / suggested > 0.20` (20% threshold)
+- **Warning row highlight** (amber/orange background): If `actual < suggested` by more than 30% AND the `spot_visits.notes` is null/empty. This flags unexplained under-fills forcing a conversation about the discrepancy.
+
+#### Operator Notes
+Display `spot_visits.notes` inline below each spot's rows.
+
+---
+
+### Step 4: Accuracy Score & Status Badges
+
+At the top of the Reconciliation tab:
+
+- **Suggested Accuracy**: `(items where abs(variance)/suggested < 0.10) / total_items * 100`%
+- **Route Status** badge (planned/in_progress/completed)
+- **Completion Time**: `routes.completed_at` formatted
+- **"System Verified"** badge: shown when `routes.auto_completed = true`
+
+---
+
+### Step 5: Update Route Interface
+
+**`src/hooks/useRoutes.tsx`**: Add `completed_at` and `auto_completed` to the `Route` interface. Update the route detail query to select these fields.
+
+---
+
+### Files to Modify
+
+| File | Change |
+|------|--------|
+| DB Migration | Add `route_id` to `spot_visits`, `completed_at` + `auto_completed` to `routes` |
+| `src/integrations/supabase/types.ts` | Add new columns to types |
+| `src/pages/OperatorDashboard.tsx` | Pass `route_id` in nav URL |
+| `src/pages/NewVisitReport.tsx` | Read `route_id`, pass to edge function |
+| `supabase/functions/submit-visit-report/index.ts` | Persist `route_id` on `spot_visits` insert |
+| `src/hooks/useRoutes.tsx` | Update `Route` interface with new fields |
+| `src/pages/RouteDetail.tsx` | Add Reconciliation tab with table, accuracy score, status badges, and under-fill warning rows |
+
+---
+
+### Under-fill Warning Rule (Addendum)
+
+```
+IF (actual < suggested * 0.70) AND (notes IS NULL OR notes = ''):
+  → Highlight entire row with amber/warning background
+  → Show ⚠️ icon with tooltip: "Significant under-fill with no explanation"
+```
+
+This creates accountability — operators must explain why they deviated significantly from the system suggestion, or the row gets flagged for admin review.
+
