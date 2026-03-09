@@ -9,10 +9,11 @@ export interface ItemType {
   is_sellable: boolean;
   is_asset: boolean;
   is_supply: boolean;
+  is_component: boolean;
   created_at: string;
 }
 
-export type ItemTypeFlag = "is_routable" | "is_sellable" | "is_asset" | "is_supply";
+export type ItemTypeFlag = "is_routable" | "is_sellable" | "is_asset" | "is_supply" | "is_component";
 
 export function useItemTypes() {
   const { toast } = useToast();
