@@ -100,7 +100,7 @@ function useConsolidatedInventory() {
           const totalQty = itemMachines.filter((m: any) => m.status !== "retired").length;
 
           const wac = wacMap.get(item.id) || 0;
-          const totalInventoryCost = totalQty * wac;
+          const totalInventoryCost = Math.max(0, totalQty) * wac;
 
           return {
             id: item.id,
@@ -127,7 +127,7 @@ function useConsolidatedInventory() {
         const totalQty = warehouseQty + inMachinesQty;
 
         const wac = wacMap.get(item.id) || 0;
-        const totalInventoryCost = totalQty * wac;
+        const totalInventoryCost = Math.max(0, totalQty) * wac;
 
         return {
           id: item.id,
