@@ -247,7 +247,22 @@ export default function NewVisitReport() {
   const [showPerformanceGrade, setShowPerformanceGrade] = useState(false);
   const [performanceGrade, setPerformanceGrade] = useState<PerformanceGrade | null>(null);
 
-  // Fetch locations
+  // Auto-resolve location from spot_id URL param when location_id not provided
+  useEffect(() => {
+    if (paramSpotId && !paramLocationId) {
+      supabase
+        .from('spots')
+        .select('location_id')
+        .eq('id', paramSpotId)
+        .single()
+        .then(({ data }) => {
+          if (data?.location_id) {
+            setSelectedLocation(data.location_id);
+          }
+        });
+    }
+  }, [paramSpotId, paramLocationId]);
+
   const { data: locations = [] } = useQuery({
     queryKey: ['locations'],
     queryFn: async () => {
