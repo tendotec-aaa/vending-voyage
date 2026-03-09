@@ -1,51 +1,136 @@
-## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
-### What was implemented:
 
-1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
+## System-Wide Spanish Translation (i18n)
 
-2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
+### Scope
+Install `i18next` and `react-i18next`, create translation files, migrate all UI strings, add a language switcher in Settings, and default to Spanish.
 
-3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
+### Step 1: Install & Configure i18next
 
-4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
+Install `i18next`, `react-i18next`, and `i18next-browser-languagedetector`.
 
-5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
+Create `src/i18n/index.ts` — initialize i18next with `es` as default language, fallback to `en`.
 
-6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
+Create `src/i18n/en.json` and `src/i18n/es.json` with structured keys:
 
-7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
+```json
+{
+  "sidebar": {
+    "dashboard": "Panel Principal",
+    "myDashboard": "Mi Panel",
+    "operations": "Operaciones",
+    "visitReports": "Reportes de Visita",
+    "routes": "Rutas",
+    "maintenance": "Mantenimiento",
+    "warehouse": "Bodega",
+    "assetsInventory": "Activos e Inventario",
+    "inventoryValuation": "Inventario y Valoración",
+    "machines": "Máquinas",
+    "setups": "Configuraciones",
+    "locations": "Ubicaciones",
+    "spots": "Puntos de Venta",
+    "supplyChain": "Cadena de Suministro",
+    "suppliers": "Proveedores",
+    "purchases": "Compras",
+    "sales": "Ventas",
+    "insights": "Análisis",
+    "analytics": "Analíticas",
+    "itemAnalytics": "Analítica de Mercadería",
+    "spotHealth": "Salud de Puntos",
+    "profitability": "Rentabilidad",
+    "business": "Negocio",
+    "users": "Usuarios",
+    "company": "Empresa",
+    "admin": "Administración",
+    "operators": "Operadores",
+    "security": "Seguridad",
+    "personal": "Personal",
+    "profile": "Perfil",
+    "settings": "Configuración"
+  },
+  "profitability": {
+    "revenue": "Ingresos",
+    "expenses": "Gastos",
+    "netProfit": "Utilidad Neta",
+    "wac": "CPP (Costo Promedio Ponderado)"
+  },
+  "common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "export": "Exportar",
+    "loading": "Cargando...",
+    "signOut": "Cerrar Sesión"
+  }
+}
+```
 
-### Architecture now:
-- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
-- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
-- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
-- **Audit trail**: Complete history of every stock movement with performer tracking
+English file mirrors the same keys with English values.
 
----
+### Step 2: Initialize in App
 
-## ✅ COMPLETED: Route Audit & Refill Reconciliation with Under-fill Warnings
+Import `src/i18n/index.ts` in `src/main.tsx` before rendering. Wrap app with `I18nextProvider` (or use the auto-detection via `react-i18next`'s `initReactI18next` plugin — no provider needed).
 
-### What was implemented:
+### Step 3: Migrate Components (Initial Load)
 
-1. **Database Migration** — Added `route_id` (uuid FK→routes) to `spot_visits`, and `completed_at` (timestamptz) + `auto_completed` (boolean) to `routes`.
+Priority components to update with `useTranslation()` and `t('key')`:
 
-2. **Visit Submission Tagging** — `OperatorDashboard.tsx` now passes `route_id` as a URL param when navigating to `/visits/new`. `NewVisitReport.tsx` reads `route_id` from search params and includes it in the edge function payload. `submit-visit-report` edge function persists `route_id` on the `spot_visits` insert.
+| Component | Strings to migrate |
+|-----------|-------------------|
+| `AppSidebar.tsx` | All menu labels, group labels, "Operations Hub" subtitle |
+| `OperatorDashboard.tsx` | Page title, stop labels, progress text, badges |
+| `NewVisitReport.tsx` | Form labels, buttons, validation messages |
+| `Profitability.tsx` | Revenue/Expenses/Net Profit, month names, column headers |
+| `AppLayout.tsx` | Any static text |
+| `Settings.tsx` | Section titles, labels, button text |
+| `QuickActions.tsx` | Button labels |
+| `ReconciliationTab.tsx` | Column headers, accuracy label, badges |
 
-3. **Route Interface Update** — `useRoutes.tsx` Route interface now includes `completed_at` and `auto_completed` fields.
+All other pages (Spots, Routes, Inventory, etc.) will also be migrated — every hardcoded string replaced with `t()` calls.
 
-4. **Reconciliation Tab** — New `ReconciliationTab` component (`src/components/routes/ReconciliationTab.tsx`) added as a third tab in `RouteDetail.tsx`, visible only to admin/accountant roles.
+### Step 4: Language Switcher
 
-### Reconciliation Tab Features:
-- **Accuracy Score**: `(items where |variance|/suggested < 10%) / total_items × 100`
-- **Status Badges**: Route status, completion time, "System Verified" badge for auto-completed routes
-- **Audit Table per Location**: Item/Slot, System Suggested (velocity model), Actual Refill (visit_line_items), Variance with percentage
-- **Red variance text**: When `|variance| / suggested > 20%`
-- **Amber warning rows**: When `actual < suggested × 0.70` AND no operator notes — flags unexplained under-fills with ⚠️ tooltip
-- **Operator Notes**: Displayed below each location's table
-- **Fallback matching**: For pre-migration routes without `route_id`, matches visits by spot proximity + date ±1 day
+Add a language toggle in `Settings.tsx` under the Appearance section:
+- Two buttons: "Español" / "English"
+- Calls `i18n.changeLanguage('es')` or `i18n.changeLanguage('en')`
+- Persists choice to `localStorage` (i18next handles this via the language detector)
+- Default for all users: Spanish (`es`)
 
-### Architecture:
-- **Forward-looking**: New visits from operator dashboard are tagged with `route_id`
-- **Backward-compatible**: Older routes use date/spot fallback matching
-- **Role-gated**: Reconciliation tab only visible to admin and accountant roles
+### Step 5: Guayaquil Terminology
+
+The Spanish translations will use local business terminology:
+
+| English | Spanish (Guayaquil) |
+|---------|-------------------|
+| Warehouse | Bodega |
+| Items/Products | Mercadería / Juguetes |
+| WAC | CPP (Costo Promedio Ponderado) |
+| Spot | Punto de Venta |
+| Route | Ruta |
+| Visit Report | Reporte de Visita |
+| Revenue | Ingresos |
+| Expenses | Gastos |
+| Net Profit | Utilidad Neta |
+
+### Files to Create/Modify
+
+| File | Change |
+|------|--------|
+| `src/i18n/index.ts` | New — i18next config |
+| `src/i18n/en.json` | New — English translations |
+| `src/i18n/es.json` | New — Spanish translations |
+| `src/main.tsx` | Import i18n config |
+| `src/components/layout/AppSidebar.tsx` | Use `t()` for all labels |
+| `src/pages/Settings.tsx` | Add language switcher + translate labels |
+| `src/pages/OperatorDashboard.tsx` | Translate all strings |
+| `src/pages/NewVisitReport.tsx` | Translate form labels/buttons |
+| `src/pages/Profitability.tsx` | Translate financial terms |
+| `src/components/dashboard/QuickActions.tsx` | Translate button labels |
+| `src/components/routes/ReconciliationTab.tsx` | Translate headers |
+| All other page files | Migrate hardcoded strings to `t()` |
+
+### Implementation Note
+
+Given the size of this codebase (~50+ pages/components), implementation will proceed in batches: core infrastructure first, then sidebar + settings, then operator-facing pages, then admin pages.
+
