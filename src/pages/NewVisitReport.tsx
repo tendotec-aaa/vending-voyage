@@ -511,9 +511,9 @@ export default function NewVisitReport() {
 
   // Filtered products based on category filter
   const filteredProducts = useMemo(() => {
-    if (toyCategoryFilter === "all") return products;
-    return products.filter((p) => p.category_id === toyCategoryFilter);
-  }, [products, toyCategoryFilter]);
+    if (toyCategoryFilter === "all") return availableProducts;
+    return availableProducts.filter((p) => p.category_id === toyCategoryFilter);
+  }, [availableProducts, toyCategoryFilter]);
 
   // Calculate days since last visit (using startOfDay for accurate calendar-day count)
   const selectedLocation_ = locations.find(l => l.id === selectedLocation);
