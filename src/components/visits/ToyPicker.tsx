@@ -34,6 +34,7 @@ interface Product {
   name: string;
   sku: string;
   category_id: string | null;
+  available?: number;
 }
 
 interface ToyPickerProps {
@@ -44,6 +45,7 @@ interface ToyPickerProps {
   placeholder?: string;
   label?: string;
   showCategoryFilter?: boolean;
+  showStock?: boolean;
 }
 
 export function ToyPicker({
@@ -54,6 +56,7 @@ export function ToyPicker({
   placeholder = "Search toy...",
   label,
   showCategoryFilter = true,
+  showStock = false,
 }: ToyPickerProps) {
   const [open, setOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -120,7 +123,12 @@ export function ToyPicker({
                           value === product.id ? "opacity-100" : "opacity-0"
                         )}
                       />
-                      {product.name}
+                      <span className="flex-1">{product.name}</span>
+                      {showStock && product.available !== undefined && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          ({product.available} avail)
+                        </span>
+                      )}
                     </CommandItem>
                   ))}
                 </CommandGroup>

@@ -365,34 +365,6 @@ export default function NewVisitReport() {
     enabled: !!selectedSpot,
   });
 
-  // Fetch products (routable items) with category_id
-  const { data: products = [] } = useQuery({
-    queryKey: ['products'],
-    queryFn: async () => {
-      // First get routable item_type IDs
-      const { data: routableTypes } = await (supabase as any)
-        .from("item_types")
-        .select("id")
-        .eq("is_routable", true);
-      const routableIds = (routableTypes || []).map((t: any) => t.id);
-
-      let query = supabase
-        .from('item_details')
-        .select('id, name, sku, type, category_id')
-        .order('name');
-
-      if (routableIds.length > 0) {
-        query = query.in('item_type_id', routableIds);
-      } else {
-        query = query.eq('type', 'merchandise');
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-      return (data || []) as (ItemDetailBasic & { category_id: string | null })[];
-    },
-  });
-
   // Fetch categories for toy picker filter
   const { data: toyCategories = [] } = useQuery({
     queryKey: ['categories-for-visit'],
@@ -425,6 +397,42 @@ export default function NewVisitReport() {
 
   const [sourceWarehouseId, setSourceWarehouseId] = useState<string>("");
   const [returnWarehouseId, setReturnWarehouseId] = useState<string>("");
+
+  // Fetch available routable products with stock > 0 from source warehouse
+  const { data: availableProducts = [] } = useQuery({
+    queryKey: ['available-products', sourceWarehouseId],
+    queryFn: async () => {
+      if (!sourceWarehouseId) return [];
+      // First get routable item_type IDs
+      const { data: routableTypes } = await (supabase as any)
+        .from("item_types")
+        .select("id")
+        .eq("is_routable", true);
+      const routableIds = (routableTypes || []).map((t: any) => t.id);
+
+      // Query inventory with stock > 0 in selected warehouse, joined with item_details
+      const { data, error } = await supabase
+        .from('inventory')
+        .select('item_detail_id, quantity_on_hand, item_detail:item_details(id, name, sku, type, category_id, item_type_id)')
+        .eq('warehouse_id', sourceWarehouseId)
+        .gt('quantity_on_hand', 0);
+
+      if (error) throw error;
+
+      // Filter by routable type and transform
+      return (data || [])
+        .filter((inv: any) => routableIds.length === 0 || routableIds.includes(inv.item_detail?.item_type_id))
+        .map((inv: any) => ({
+          id: inv.item_detail.id,
+          name: inv.item_detail.name,
+          sku: inv.item_detail.sku,
+          type: inv.item_detail.type,
+          category_id: inv.item_detail.category_id,
+          available: inv.quantity_on_hand,
+        })) as (ItemDetailBasic & { category_id: string | null; available: number })[];
+    },
+    enabled: !!sourceWarehouseId,
+  });
 
   // Auto-select first refill source when loaded
   useEffect(() => {
@@ -503,9 +511,9 @@ export default function NewVisitReport() {
 
   // Filtered products based on category filter
   const filteredProducts = useMemo(() => {
-    if (toyCategoryFilter === "all") return products;
-    return products.filter((p) => p.category_id === toyCategoryFilter);
-  }, [products, toyCategoryFilter]);
+    if (toyCategoryFilter === "all") return availableProducts;
+    return availableProducts.filter((p) => p.category_id === toyCategoryFilter);
+  }, [availableProducts, toyCategoryFilter]);
 
   // Calculate days since last visit (using startOfDay for accurate calendar-day count)
   const selectedLocation_ = locations.find(l => l.id === selectedLocation);
@@ -572,7 +580,7 @@ export default function NewVisitReport() {
     if (machineSlots.length > 0 && selectedSpot && visitType) {
       const generatedSlots: SlotEntry[] = machineSlots.map((slot) => {
         const machine = machines.find(m => m.id === slot.machine_id);
-        const product = products.length > 0 ? products.find(p => p.id === slot.current_product_id) : undefined;
+        const product = availableProducts.length > 0 ? availableProducts.find(p => p.id === slot.current_product_id) : undefined;
         
         return {
           id: slot.id,
@@ -653,7 +661,7 @@ export default function NewVisitReport() {
     } else if (!selectedSpot || !visitType) {
       setSlots([]);
     }
-  }, [machineSlots, machines, products, selectedSpot, visitType]);
+  }, [machineSlots, machines, availableProducts, selectedSpot, visitType]);
 
   // Auto-save form state to localStorage
   useEffect(() => {
