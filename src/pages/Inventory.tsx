@@ -270,7 +270,7 @@ export default function InventoryPage() {
                   <TableCell className={`text-right font-medium ${item.total < 0 ? 'text-destructive' : 'text-foreground'}`}>
                     {item.total.toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-right text-foreground">
+                  <TableCell className={`text-right ${item.totalInventoryCost < 0 ? 'text-destructive font-medium' : 'text-foreground'}`}>
                     ${item.totalInventoryCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                 </TableRow>
