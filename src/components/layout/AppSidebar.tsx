@@ -81,6 +81,10 @@ const adminItems = [
   { title: "Security", icon: Shield, url: "/admin/security" },
 ];
 
+const fieldToolsItems = [
+  { title: "Inventory", icon: Boxes, url: "/operator/inventory" },
+];
+
 const personalItems = [
   { title: "Profile", icon: Users, url: "/profile" },
   { title: "Settings", icon: Settings, url: "/settings" },
