@@ -38,10 +38,10 @@ export function ReconciliationTab({ route, stops, slots, velocityMap }: Reconcil
     queryKey: ["route-reconciliation-visits", routeId],
     queryFn: async () => {
       // Try direct route_id link first
-      const { data: directVisits } = await supabase
+      const { data: directVisits } = await (supabase
         .from("spot_visits")
-        .select("id, spot_id, visit_date, notes, route_id")
-        .eq("route_id" as any, routeId);
+        .select("id, spot_id, visit_date, notes, route_id") as any)
+        .eq("route_id", routeId);
 
       if (directVisits && directVisits.length > 0) {
         return directVisits;
