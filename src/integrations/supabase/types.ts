@@ -2159,7 +2159,7 @@ export type Database = {
       spot_status: "active" | "inactive"
       ticket_priority: "low" | "medium" | "high" | "urgent"
       ticket_status: "pending" | "in_progress" | "completed"
-      user_role: "admin" | "route_operator" | "warehouse_manager"
+      user_role: "admin" | "route_operator" | "warehouse_manager" | "accountant"
       visit_action_type:
         | "restock"
         | "collection"
@@ -2324,7 +2324,7 @@ export const Constants = {
       spot_status: ["active", "inactive"],
       ticket_priority: ["low", "medium", "high", "urgent"],
       ticket_status: ["pending", "in_progress", "completed"],
-      user_role: ["admin", "route_operator", "warehouse_manager"],
+      user_role: ["admin", "route_operator", "warehouse_manager", "accountant"],
       visit_action_type: [
         "restock",
         "collection",
