@@ -12,12 +12,14 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MapPin, CheckCircle2, Clock, Route, AlertTriangle, Eye, Package } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const OperatorDashboard = () => {
   const { user } = useAuth();
   const { isAdmin } = useUserRole();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const asUser = searchParams.get('as_user');
   const isGhostMode = !!asUser && isAdmin;
@@ -28,13 +30,10 @@ const OperatorDashboard = () => {
 
   const { locationIds, isLoading: locLoading } = useUserLocations(targetUserId ?? undefined);
 
-  // Pending issues: stock discrepancies for assigned locations
   const { data: pendingIssues } = useQuery({
     queryKey: ['operator-pending-issues', targetUserId, locationIds],
     queryFn: async () => {
       if (!locationIds.length && !isAdmin) return [];
-
-      // Get spots for assigned locations (or all if admin ghost)
       let spotsQuery = supabase.from('spots').select('id, name, location_id');
       if (locationIds.length > 0) {
         spotsQuery = spotsQuery.in('location_id', locationIds);
@@ -42,8 +41,6 @@ const OperatorDashboard = () => {
       const { data: spots } = await spotsQuery;
       if (!spots?.length) return [];
 
-      // Get pending discrepancies - stock_discrepancy doesn't have spot_id directly,
-      // so we need to join through inventory_adjustments
       const { data: discrepancies, error } = await supabase
         .from('stock_discrepancy')
         .select('id, item_detail_id, discrepancy_type, difference, status, occurrence_date, item_details:item_detail_id(name)')
@@ -51,51 +48,32 @@ const OperatorDashboard = () => {
         .order('occurrence_date', { ascending: false })
         .limit(20);
 
-      if (error) {
-        console.error('Error fetching discrepancies:', error);
-        return [];
-      }
+      if (error) { console.error('Error fetching discrepancies:', error); return []; }
 
       return (discrepancies ?? []).map((d: any) => ({
-        id: d.id,
-        itemName: d.item_details?.name ?? 'Unknown',
-        type: d.discrepancy_type,
-        difference: d.difference,
-        date: d.occurrence_date,
+        id: d.id, itemName: d.item_details?.name ?? t('common.unknown'),
+        type: d.discrepancy_type, difference: d.difference, date: d.occurrence_date,
       }));
     },
     enabled: !!targetUserId && (!locLoading || isAdmin),
   });
 
-  // Pending maintenance tickets for assigned locations
   const { data: pendingTickets } = useQuery({
     queryKey: ['operator-pending-tickets', targetUserId, locationIds],
     queryFn: async () => {
       if (!locationIds.length && !isAdmin) return [];
-
       let query = supabase
         .from('maintenance_tickets')
         .select('id, issue_type, description, priority, location_id, locations:location_id(name)')
         .eq('status', 'pending')
         .order('created_at', { ascending: false })
         .limit(10);
-
-      if (locationIds.length > 0) {
-        query = query.in('location_id', locationIds);
-      }
-
+      if (locationIds.length > 0) { query = query.in('location_id', locationIds); }
       const { data, error } = await query;
-      if (error) {
-        console.error('Error fetching tickets:', error);
-        return [];
-      }
-
+      if (error) { console.error('Error fetching tickets:', error); return []; }
       return (data ?? []).map((t: any) => ({
-        id: t.id,
-        issueType: t.issue_type,
-        description: t.description,
-        priority: t.priority,
-        locationName: t.locations?.name ?? 'Unknown',
+        id: t.id, issueType: t.issue_type, description: t.description,
+        priority: t.priority, locationName: t.locations?.name ?? 'Unknown',
       }));
     },
     enabled: !!targetUserId && (!locLoading || isAdmin),
@@ -108,7 +86,7 @@ const OperatorDashboard = () => {
 
   if (isLoading) {
     return (
-      <AppLayout title="My Dashboard" subtitle="Loading your route...">
+      <AppLayout title={t('operatorDashboard.title')} subtitle={t('operatorDashboard.loadingRoute')}>
         <div className="flex items-center justify-center py-20">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -118,51 +96,41 @@ const OperatorDashboard = () => {
 
   return (
     <AppLayout
-      title="My Dashboard"
-      subtitle={route ? `Route: ${route.name}` : "Today's route overview"}
+      title={t('operatorDashboard.title')}
+      subtitle={route ? t('operatorDashboard.routeSubtitle', { name: route.name }) : t('operatorDashboard.todayOverview')}
     >
-      {/* Ghost Mode Banner */}
       {isGhostMode && (
         <Alert className="mb-4 border-primary/50 bg-primary/5">
           <Eye className="h-4 w-4 text-primary" />
           <AlertDescription className="text-primary">
-            <strong>Ghost Mode:</strong> You are viewing this operator's dashboard.{' '}
-            <button
-              onClick={() => navigate('/admin/operators')}
-              className="underline hover:no-underline"
-            >
-              Back to Operators
+            <strong>{t('operatorDashboard.ghostMode')}:</strong> {t('operatorDashboard.ghostModeDesc')}{' '}
+            <button onClick={() => navigate('/admin/operators')} className="underline hover:no-underline">
+              {t('operatorDashboard.backToOperators')}
             </button>
           </AlertDescription>
         </Alert>
       )}
 
-      {/* No Route State */}
       {!route && (
         <Card className="p-8 text-center bg-card border-border">
           <Route className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-          <h3 className="text-lg font-semibold text-foreground mb-1">No route assigned</h3>
-          <p className="text-sm text-muted-foreground">
-            There are no active or planned routes for today.
-          </p>
+          <h3 className="text-lg font-semibold text-foreground mb-1">{t('operatorDashboard.noRoute')}</h3>
+          <p className="text-sm text-muted-foreground">{t('operatorDashboard.noRouteDesc')}</p>
         </Card>
       )}
 
-      {/* Route Content */}
       {route && (
         <div className="space-y-4">
-          {/* Progress Tracker */}
           <Card className="p-4 bg-card border-border">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-foreground">
-                Progress: {visitedStops}/{totalStops} stops
+                {t('operatorDashboard.progress', { visited: visitedStops, total: totalStops })}
               </span>
               <span className="text-sm font-semibold text-primary">{progressPct}%</span>
             </div>
             <Progress value={progressPct} className="h-3" />
           </Card>
 
-          {/* Route Stops List */}
           <div className="space-y-3">
             {stops.map((stop, index) => (
               <Card
@@ -174,12 +142,8 @@ const OperatorDashboard = () => {
                   if (!stop.visited && stop.location?.id) {
                     const params = new URLSearchParams();
                     params.set('location_id', stop.location.id);
-                    if (stop.spots.length > 0) {
-                      params.set('spot_id', stop.spots[0].id);
-                    }
-                    if (route?.id) {
-                      params.set('route_id', route.id);
-                    }
+                    if (stop.spots.length > 0) params.set('spot_id', stop.spots[0].id);
+                    if (route?.id) params.set('route_id', route.id);
                     navigate(`/visits/new?${params.toString()}`);
                   }
                 }}
@@ -191,7 +155,7 @@ const OperatorDashboard = () => {
                     </div>
                     <div className="min-w-0">
                       <p className="font-medium text-foreground truncate">
-                        {stop.location?.name ?? 'Unknown Location'}
+                        {stop.location?.name ?? t('operatorDashboard.unknownLocation')}
                       </p>
                       {stop.location?.address && (
                         <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
@@ -206,17 +170,14 @@ const OperatorDashboard = () => {
                       )}
                     </div>
                   </div>
-                  <Badge
-                    variant={stop.visited ? 'default' : 'secondary'}
-                    className="flex-shrink-0"
-                  >
+                  <Badge variant={stop.visited ? 'default' : 'secondary'} className="flex-shrink-0">
                     {stop.visited ? (
                       <span className="flex items-center gap-1">
-                        <CheckCircle2 className="h-3 w-3" /> Visited
+                        <CheckCircle2 className="h-3 w-3" /> {t('operatorDashboard.visited')}
                       </span>
                     ) : (
                       <span className="flex items-center gap-1">
-                        <Clock className="h-3 w-3" /> Pending
+                        <Clock className="h-3 w-3" /> {t('operatorDashboard.pending')}
                       </span>
                     )}
                   </Badge>
@@ -228,28 +189,23 @@ const OperatorDashboard = () => {
           {stops.length === 0 && (
             <Card className="p-6 text-center bg-card border-border">
               <AlertTriangle className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">
-                This route has no stops configured.
-              </p>
+              <p className="text-sm text-muted-foreground">{t('operatorDashboard.noStops')}</p>
             </Card>
           )}
         </div>
       )}
 
-      {/* Pending Issues Section */}
       <div className="mt-6">
         <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-destructive" />
-          Pending Issues
-          {allIssues.length > 0 && (
-            <Badge variant="destructive">{allIssues.length}</Badge>
-          )}
+          {t('operatorDashboard.pendingIssues')}
+          {allIssues.length > 0 && <Badge variant="destructive">{allIssues.length}</Badge>}
         </h2>
 
         {allIssues.length === 0 ? (
           <Card className="p-6 text-center bg-card border-border">
             <CheckCircle2 className="h-8 w-8 text-primary mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">No pending issues. All clear!</p>
+            <p className="text-sm text-muted-foreground">{t('operatorDashboard.allClear')}</p>
           </Card>
         ) : (
           <div className="space-y-2">
@@ -257,11 +213,7 @@ const OperatorDashboard = () => {
               <Card
                 key={issue.kind === 'discrepancy' ? `d-${issue.id}` : `t-${issue.id}`}
                 className="p-3 bg-card border-border cursor-pointer hover:border-primary/50 transition-colors"
-                onClick={() => {
-                  if (issue.kind === 'ticket') {
-                    navigate('/maintenance');
-                  }
-                }}
+                onClick={() => { if (issue.kind === 'ticket') navigate('/maintenance'); }}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
@@ -269,7 +221,7 @@ const OperatorDashboard = () => {
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">
                         {issue.kind === 'discrepancy'
-                          ? `Stock: ${(issue as any).itemName} (${(issue as any).difference > 0 ? '+' : ''}${(issue as any).difference})`
+                          ? `${t('operatorDashboard.stock')}: ${(issue as any).itemName} (${(issue as any).difference > 0 ? '+' : ''}${(issue as any).difference})`
                           : `${(issue as any).issueType}: ${(issue as any).locationName}`}
                       </p>
                       <p className="text-xs text-muted-foreground">
@@ -278,7 +230,7 @@ const OperatorDashboard = () => {
                     </div>
                   </div>
                   <Badge variant={issue.kind === 'ticket' && (issue as any).priority === 'high' ? 'destructive' : 'secondary'} className="flex-shrink-0">
-                    {issue.kind === 'discrepancy' ? 'Discrepancy' : (issue as any).priority}
+                    {issue.kind === 'discrepancy' ? t('operatorDashboard.discrepancy') : (issue as any).priority}
                   </Badge>
                 </div>
               </Card>
