@@ -56,6 +56,7 @@ export function ToyPicker({
   placeholder = "Search toy...",
   label,
   showCategoryFilter = true,
+  showStock = false,
 }: ToyPickerProps) {
   const [open, setOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("all");
