@@ -216,6 +216,7 @@ export function useItemAnalytics(year: number, month: number) {
 
         rows.push({
           itemId: item.id,
+          itemTypeId: item.item_type_id || '',
           name: item.name,
           sku: item.sku,
           unitsSold,
@@ -227,7 +228,7 @@ export function useItemAnalytics(year: number, month: number) {
           grossProfit,
           currentStock,
           stockCover,
-          isTopNotch: false, // computed below
+          isTopNotch: false, // computed on the page after filtering
         });
       }
 
