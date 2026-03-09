@@ -64,6 +64,7 @@ const locationsItems = [
 
 const insightsItems = [
   { title: "Analytics", icon: BarChart3, url: "/analytics" },
+  { title: "Item Analytics", icon: Package, url: "/insights/items" },
   { title: "Profitability", icon: TrendingUp, url: "/insights/profitability" },
 ];
 
