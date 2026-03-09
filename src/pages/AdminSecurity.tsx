@@ -74,7 +74,7 @@ function useUserAssignments() {
       const { data: locationAssignments, error: laErr } = await supabase
         .from('user_location_assignments')
         .select('user_id, location_id');
-      if (laErr) throw laErr;
+      if (laErr) console.warn('Could not fetch location assignments:', laErr.message);
 
       return { 
         profiles: profiles || [], 
