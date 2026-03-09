@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { RequireRole } from "@/components/auth/RequireRole";
@@ -54,6 +54,11 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+// Role sets for convenience
+const ADMIN_ACCOUNTANT = ['admin', 'accountant'] as const;
+const ADMIN_ONLY = ['admin'] as const;
+const ALL_ROLES = ['admin', 'accountant', 'route_operator', 'warehouse_manager'] as const;
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -66,146 +71,273 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
-            
-            {/* Protected routes */}
-            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-            <Route path="/machines" element={<ProtectedRoute><Machines /></ProtectedRoute>} />
-            <Route path="/machines/:id" element={<ProtectedRoute><MachineDetail /></ProtectedRoute>} />
-            <Route path="/setups" element={<ProtectedRoute><Setups /></ProtectedRoute>} />
+
+            {/* Admin/Accountant Dashboard (/) — operators redirected to /dashboard */}
+            <Route path="/" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]} redirectTo="/dashboard">
+                  <Index />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+
+            {/* Operator Dashboard — accessible to all */}
+            <Route path="/dashboard" element={<ProtectedRoute><OperatorDashboard /></ProtectedRoute>} />
+
+            {/* Operations — all roles */}
             <Route path="/visits" element={<ProtectedRoute><Visits /></ProtectedRoute>} />
             <Route path="/visits/new" element={<ProtectedRoute><NewVisitReport /></ProtectedRoute>} />
+            <Route path="/visits/:id" element={<ProtectedRoute><VisitDetail /></ProtectedRoute>} />
             <Route path="/routes" element={<ProtectedRoute><RoutesPage /></ProtectedRoute>} />
             <Route path="/routes/:id" element={<ProtectedRoute><RouteDetail /></ProtectedRoute>} />
-            <Route path="/visits/:id" element={<ProtectedRoute><VisitDetail /></ProtectedRoute>} />
-            <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
-            <Route path="/inventory/:id" element={<ProtectedRoute><ItemDetail /></ProtectedRoute>} />
-            <Route path="/locations" element={<ProtectedRoute><Locations /></ProtectedRoute>} />
             <Route path="/maintenance" element={<ProtectedRoute><Maintenance /></ProtectedRoute>} />
-            <Route path="/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
-            <Route path="/suppliers/:id" element={<ProtectedRoute><SupplierDetail /></ProtectedRoute>} />
-            <Route path="/warehouse" element={<ProtectedRoute><Warehouse /></ProtectedRoute>} />
-            <Route path="/warehouse/assembly/new" element={<ProtectedRoute><NewAssembly /></ProtectedRoute>} />
-            <Route path="/spots" element={<ProtectedRoute><Spots /></ProtectedRoute>} />
-            <Route path="/spots/:id" element={<ProtectedRoute><SpotDetail /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
-            <Route path="/locations/:id" element={<ProtectedRoute><LocationDetail /></ProtectedRoute>} />
-            <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
 
-            {/* Permission-gated routes */}
-            <Route path="/analytics" element={
+            {/* Warehouse — Admin, Accountant, Operator */}
+            <Route path="/warehouse" element={
               <ProtectedRoute>
-                <PermissionGuard requiredPerm="view_analytics">
-                  <Analytics />
-                </PermissionGuard>
+                <RequireRole roles={[...ALL_ROLES]}>
+                  <Warehouse />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+            <Route path="/warehouse/assembly/new" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <NewAssembly />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+
+            {/* Operator Inventory → redirect to /warehouse */}
+            <Route path="/operator/inventory" element={<Navigate to="/warehouse" replace />} />
+
+            {/* Inventory & Valuation — Admin and Accountant ONLY */}
+            <Route path="/inventory" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <Inventory />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+            <Route path="/inventory/:id" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <ItemDetail />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+
+            {/* Assets — Admin and Accountant */}
+            <Route path="/machines" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <Machines />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+            <Route path="/machines/:id" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <MachineDetail />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+            <Route path="/setups" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <Setups />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+
+            {/* Locations — Admin and Accountant */}
+            <Route path="/locations" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <Locations />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+            <Route path="/locations/:id" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <LocationDetail />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+            <Route path="/spots" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <Spots />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+            <Route path="/spots/:id" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <SpotDetail />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+
+            {/* Supply Chain — Admin and Accountant */}
+            <Route path="/suppliers" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <Suppliers />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+            <Route path="/suppliers/:id" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <SupplierDetail />
+                </RequireRole>
               </ProtectedRoute>
             } />
             <Route path="/purchases" element={
               <ProtectedRoute>
-                <PermissionGuard requiredPerm="manage_purchases">
-                  <Purchases />
-                </PermissionGuard>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <PermissionGuard requiredPerm="manage_purchases">
+                    <Purchases />
+                  </PermissionGuard>
+                </RequireRole>
               </ProtectedRoute>
             } />
             <Route path="/purchases/new" element={
               <ProtectedRoute>
-                <PermissionGuard requiredPerm="manage_purchases">
-                  <NewPurchase />
-                </PermissionGuard>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <PermissionGuard requiredPerm="manage_purchases">
+                    <NewPurchase />
+                  </PermissionGuard>
+                </RequireRole>
               </ProtectedRoute>
             } />
             <Route path="/purchases/:id" element={
               <ProtectedRoute>
-                <PermissionGuard requiredPerm="manage_purchases">
-                  <PurchaseDetail />
-                </PermissionGuard>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <PermissionGuard requiredPerm="manage_purchases">
+                    <PurchaseDetail />
+                  </PermissionGuard>
+                </RequireRole>
               </ProtectedRoute>
             } />
             <Route path="/sales" element={
               <ProtectedRoute>
-                <PermissionGuard requiredPerm="manage_sales">
-                  <Sales />
-                </PermissionGuard>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <PermissionGuard requiredPerm="manage_sales">
+                    <Sales />
+                  </PermissionGuard>
+                </RequireRole>
               </ProtectedRoute>
             } />
             <Route path="/sales/new" element={
               <ProtectedRoute>
-                <PermissionGuard requiredPerm="manage_sales">
-                  <NewSale />
-                </PermissionGuard>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <PermissionGuard requiredPerm="manage_sales">
+                    <NewSale />
+                  </PermissionGuard>
+                </RequireRole>
               </ProtectedRoute>
             } />
             <Route path="/sales/:id" element={
               <ProtectedRoute>
-                <PermissionGuard requiredPerm="manage_sales">
-                  <SaleDetail />
-                </PermissionGuard>
-              </ProtectedRoute>
-            } />
-            <Route path="/users" element={
-              <ProtectedRoute>
-                <PermissionGuard requiredPerm="manage_users">
-                  <Users />
-                </PermissionGuard>
-              </ProtectedRoute>
-            } />
-            <Route path="/users/:id" element={
-              <ProtectedRoute>
-                <PermissionGuard requiredPerm="manage_users">
-                  <UserDetail />
-                </PermissionGuard>
-              </ProtectedRoute>
-            } />
-            <Route path="/company" element={
-              <ProtectedRoute>
-                <PermissionGuard requiredPerm="manage_users">
-                  <CompanyProfile />
-                </PermissionGuard>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <PermissionGuard requiredPerm="manage_sales">
+                    <SaleDetail />
+                  </PermissionGuard>
+                </RequireRole>
               </ProtectedRoute>
             } />
 
+            {/* Insights — Admin and Accountant */}
+            <Route path="/analytics" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <PermissionGuard requiredPerm="view_analytics">
+                    <Analytics />
+                  </PermissionGuard>
+                </RequireRole>
+              </ProtectedRoute>
+            } />
             <Route path="/insights/profitability" element={
               <ProtectedRoute>
-                <PermissionGuard requiredPerm="view_profits">
-                  <Profitability />
-                </PermissionGuard>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <PermissionGuard requiredPerm="view_profits">
+                    <Profitability />
+                  </PermissionGuard>
+                </RequireRole>
               </ProtectedRoute>
             } />
             <Route path="/insights/items" element={
               <ProtectedRoute>
-                <PermissionGuard requiredPerm="view_analytics">
-                  <ItemAnalytics />
-                </PermissionGuard>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <PermissionGuard requiredPerm="view_analytics">
+                    <ItemAnalytics />
+                  </PermissionGuard>
+                </RequireRole>
               </ProtectedRoute>
             } />
             <Route path="/insights/spots" element={
               <ProtectedRoute>
-                <PermissionGuard requiredPerm="view_analytics">
-                  <SpotHealth />
-                </PermissionGuard>
+                <RequireRole roles={[...ADMIN_ACCOUNTANT]}>
+                  <PermissionGuard requiredPerm="view_analytics">
+                    <SpotHealth />
+                  </PermissionGuard>
+                </RequireRole>
               </ProtectedRoute>
             } />
 
-            {/* Operator Dashboard & Field Tools */}
-            <Route path="/dashboard" element={<ProtectedRoute><OperatorDashboard /></ProtectedRoute>} />
-            <Route path="/operator/inventory" element={<ProtectedRoute><OperatorInventory /></ProtectedRoute>} />
+            {/* Business — Admin ONLY */}
+            <Route path="/users" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ONLY]}>
+                  <PermissionGuard requiredPerm="manage_users">
+                    <Users />
+                  </PermissionGuard>
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+            <Route path="/users/:id" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ONLY]}>
+                  <PermissionGuard requiredPerm="manage_users">
+                    <UserDetail />
+                  </PermissionGuard>
+                </RequireRole>
+              </ProtectedRoute>
+            } />
+            <Route path="/company" element={
+              <ProtectedRoute>
+                <RequireRole roles={[...ADMIN_ONLY]}>
+                  <PermissionGuard requiredPerm="manage_users">
+                    <CompanyProfile />
+                  </PermissionGuard>
+                </RequireRole>
+              </ProtectedRoute>
+            } />
 
             {/* Admin-only routes */}
             <Route path="/admin/operators" element={
               <ProtectedRoute>
-                <RequireRole roles={['admin']}>
+                <RequireRole roles={[...ADMIN_ONLY]}>
                   <AdminOperators />
                 </RequireRole>
               </ProtectedRoute>
             } />
             <Route path="/admin/security" element={
               <ProtectedRoute>
-                <RequireRole roles={['admin']}>
+                <RequireRole roles={[...ADMIN_ONLY]}>
                   <AdminSecurity />
                 </RequireRole>
               </ProtectedRoute>
             } />
-            
+
+            {/* Personal — all */}
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
+            <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />
           </Routes>

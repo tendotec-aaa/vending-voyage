@@ -19,7 +19,6 @@ import {
   Route,
   Shield,
   TrendingUp,
-  AlertTriangle
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -35,66 +34,13 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
-import { usePermissions } from "@/hooks/usePermissions";
-
-const dashboardItem = { title: "Dashboard", icon: LayoutDashboard, url: "/" };
-const operatorDashboardItem = { title: "My Dashboard", icon: LayoutDashboard, url: "/dashboard" };
-
-const operationsItems = [
-  { title: "Visit Reports", icon: ClipboardList, url: "/visits" },
-  { title: "Routes", icon: Route, url: "/routes" },
-  { title: "Maintenance", icon: Wrench, url: "/maintenance" },
-];
-
-const assetsItems = [
-  { title: "Inventory", icon: Boxes, url: "/inventory" },
-  { title: "Warehouse", icon: Warehouse, url: "/warehouse" },
-  { title: "Machines", icon: Truck, url: "/machines" },
-  { title: "Setups", icon: Layers, url: "/setups" },
-];
-
-const supplyChainItems = [
-  { title: "Suppliers", icon: Building2, url: "/suppliers" },
-  { title: "Purchases", icon: ShoppingCart, url: "/purchases" },
-  { title: "Sales", icon: DollarSign, url: "/sales" },
-];
-
-const locationsItems = [
-  { title: "Locations", icon: MapPin, url: "/locations" },
-  { title: "Spots", icon: Target, url: "/spots" },
-];
-
-const insightsItems = [
-  { title: "Analytics", icon: BarChart3, url: "/analytics" },
-  { title: "Item Analytics", icon: Package, url: "/insights/items" },
-  { title: "Spot Health", icon: Target, url: "/insights/spots" },
-  { title: "Profitability", icon: TrendingUp, url: "/insights/profitability" },
-];
-
-const businessItems = [
-  { title: "Users", icon: Users, url: "/users" },
-  { title: "Company", icon: Building2, url: "/company" },
-];
-
-const adminItems = [
-  { title: "Operators", icon: Users, url: "/admin/operators" },
-  { title: "Security", icon: Shield, url: "/admin/security" },
-];
-
-const fieldToolsItems = [
-  { title: "Inventory", icon: Boxes, url: "/operator/inventory" },
-];
-
-const personalItems = [
-  { title: "Profile", icon: Users, url: "/profile" },
-  { title: "Settings", icon: Settings, url: "/settings" },
-];
+import { useUserRole } from "@/hooks/useUserRole";
 
 export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
-  const { has, isAdmin, isLoading: permLoading } = usePermissions();
+  const { isAdmin, isAccountant, isOperator, hasFinancialAccess, isLoading } = useUserRole();
 
   const isActive = (url: string) => {
     if (url === "/") return location.pathname === "/";
@@ -106,11 +52,17 @@ export function AppSidebar() {
     navigate('/login');
   };
 
-  // Permission-based visibility
-  const showSupplyChain = has('view_costs') || has('manage_purchases') || has('manage_sales');
-  const showAnalytics = has('view_analytics') || has('view_profits');
-  const showBusiness = has('manage_users');
-  const showAdmin = isAdmin;
+  if (isLoading) return null;
+
+  // Computed visibility flags
+  const showAdminDashboard = isAdmin || isAccountant;
+  const showOperatorDashboard = true; // everyone can access /dashboard
+  const showAssets = isAdmin || isAccountant;
+  const showLocations = isAdmin || isAccountant;
+  const showSupplyChain = isAdmin || isAccountant;
+  const showInsights = isAdmin || isAccountant;
+  const showBusiness = isAdmin; // admin only
+  const showAdminSection = isAdmin; // admin only
 
   return (
     <Sidebar className="border-r border-sidebar-border">
@@ -127,24 +79,28 @@ export function AppSidebar() {
       </SidebarHeader>
       
       <SidebarContent className="px-3 py-4">
-        {/* Dashboard */}
+        {/* Dashboard Section */}
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive(dashboardItem.url)} className="w-full">
-                  <NavLink to={dashboardItem.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
-                    <dashboardItem.icon className="w-5 h-5" />
-                    <span>{dashboardItem.title}</span>
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              {!isAdmin && (
+              {/* Admin/Accountant main dashboard */}
+              {showAdminDashboard && (
                 <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={isActive(operatorDashboardItem.url)} className="w-full">
-                    <NavLink to={operatorDashboardItem.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
-                      <operatorDashboardItem.icon className="w-5 h-5" />
-                      <span>{operatorDashboardItem.title}</span>
+                  <SidebarMenuButton asChild isActive={isActive("/")} className="w-full">
+                    <NavLink to="/" className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                      <LayoutDashboard className="w-5 h-5" />
+                      <span>Dashboard</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+              {/* Operator field dashboard */}
+              {isOperator && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/dashboard")} className="w-full">
+                    <NavLink to="/dashboard" className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                      <LayoutDashboard className="w-5 h-5" />
+                      <span>My Dashboard</span>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -153,14 +109,18 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Operations */}
+        {/* Operations — all roles */}
         <SidebarGroup className="mt-4">
           <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
             Operations
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {operationsItems.map((item) => (
+              {[
+                { title: "Visit Reports", icon: ClipboardList, url: "/visits" },
+                { title: "Routes", icon: Route, url: "/routes" },
+                { title: "Maintenance", icon: Wrench, url: "/maintenance" },
+              ].map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
                     <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
@@ -170,42 +130,32 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+              {/* Warehouse: visible to all (operators get view+adjust, accountant view-only) */}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/warehouse")} className="w-full">
+                  <NavLink to="/warehouse" className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                    <Warehouse className="w-5 h-5" />
+                    <span>Warehouse</span>
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Field Tools - Operators only */}
-        {!isAdmin && (
-          <SidebarGroup className="mt-4">
-            <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-              Field Tools
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {fieldToolsItems.map((item) => (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
-                      <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
-                        <item.icon className="w-5 h-5" />
-                        <span>{item.title}</span>
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
-        {/* Assets & Inventory - Admin only */}
-        {isAdmin && (
+        {/* Assets & Inventory — Admin and Accountant only */}
+        {showAssets && (
           <SidebarGroup className="mt-4">
             <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
               Assets & Inventory
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {assetsItems.map((item) => (
+                {[
+                  { title: "Inventory & Valuation", icon: Boxes, url: "/inventory" },
+                  { title: "Machines", icon: Truck, url: "/machines" },
+                  { title: "Setups", icon: Layers, url: "/setups" },
+                ].map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
                       <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
@@ -220,28 +170,33 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
 
-        {/* Locations */}
-        <SidebarGroup className="mt-4">
-          <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            Locations
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {locationsItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
-                    <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
-                      <item.icon className="w-5 h-5" />
-                      <span>{item.title}</span>
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {/* Locations — Admin and Accountant */}
+        {showLocations && (
+          <SidebarGroup className="mt-4">
+            <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+              Locations
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {[
+                  { title: "Locations", icon: MapPin, url: "/locations" },
+                  { title: "Spots", icon: Target, url: "/spots" },
+                ].map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
+                      <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                        <item.icon className="w-5 h-5" />
+                        <span>{item.title}</span>
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
-        {/* Supply Chain - Permission gated */}
+        {/* Supply Chain — Admin and Accountant */}
         {showSupplyChain && (
           <SidebarGroup className="mt-4">
             <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
@@ -249,7 +204,11 @@ export function AppSidebar() {
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {supplyChainItems.map((item) => (
+                {[
+                  { title: "Suppliers", icon: Building2, url: "/suppliers" },
+                  { title: "Purchases", icon: ShoppingCart, url: "/purchases" },
+                  { title: "Sales", icon: DollarSign, url: "/sales" },
+                ].map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
                       <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
@@ -264,15 +223,20 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
 
-        {/* Insights - Permission gated */}
-        {showAnalytics && (
+        {/* Insights — Admin and Accountant */}
+        {showInsights && (
           <SidebarGroup className="mt-4">
             <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
               Insights
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {insightsItems.map((item) => (
+                {[
+                  { title: "Analytics", icon: BarChart3, url: "/analytics" },
+                  { title: "Item Analytics", icon: Package, url: "/insights/items" },
+                  { title: "Spot Health", icon: Target, url: "/insights/spots" },
+                  { title: "Profitability", icon: TrendingUp, url: "/insights/profitability" },
+                ].map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
                       <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
@@ -287,7 +251,7 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
 
-        {/* Business - Permission gated */}
+        {/* Business — Admin ONLY */}
         {showBusiness && (
           <SidebarGroup className="mt-4">
             <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
@@ -295,7 +259,10 @@ export function AppSidebar() {
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {businessItems.map((item) => (
+                {[
+                  { title: "Users", icon: Users, url: "/users" },
+                  { title: "Company", icon: Building2, url: "/company" },
+                ].map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
                       <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
@@ -310,15 +277,18 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
 
-        {/* Admin - Admin only */}
-        {showAdmin && (
+        {/* Admin — Admin ONLY */}
+        {showAdminSection && (
           <SidebarGroup className="mt-4">
             <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
               Admin
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {adminItems.map((item) => (
+                {[
+                  { title: "Operators", icon: Users, url: "/admin/operators" },
+                  { title: "Security", icon: Shield, url: "/admin/security" },
+                ].map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
                       <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
@@ -333,14 +303,17 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
 
-        {/* Personal */}
+        {/* Personal — all roles */}
         <SidebarGroup className="mt-4">
           <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
             Personal
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {personalItems.map((item) => (
+              {[
+                { title: "Profile", icon: Users, url: "/profile" },
+                { title: "Settings", icon: Settings, url: "/settings" },
+              ].map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)} className="w-full">
                     <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">

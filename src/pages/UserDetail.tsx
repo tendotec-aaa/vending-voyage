@@ -5,7 +5,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Shield, Truck, Warehouse } from "lucide-react";
+import { ArrowLeft, Shield, Truck, Warehouse, Calculator } from "lucide-react";
 import { RequireRole } from "@/components/auth/RequireRole";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -15,6 +15,7 @@ const roleConfig: Record<UserRole, { label: string; color: string; icon: React.E
   admin: { label: "Admin", color: "bg-destructive text-destructive-foreground", icon: Shield },
   route_operator: { label: "Route Operator", color: "bg-primary text-primary-foreground", icon: Truck },
   warehouse_manager: { label: "Warehouse Mgr", color: "bg-secondary text-secondary-foreground", icon: Warehouse },
+  accountant: { label: "Accountant", color: "bg-accent text-accent-foreground", icon: Calculator },
 };
 
 function UserDetailContent() {
