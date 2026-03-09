@@ -53,6 +53,7 @@ interface VisitPayload {
   slots: SlotPayload[];
   sourceWarehouseId: string | null;
   returnWarehouseId: string | null;
+  routeId: string | null;
 }
 
 // ── Helper: get latest running balance for a location ──
