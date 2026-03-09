@@ -829,6 +829,61 @@ export type Database = {
         }
         Relationships: []
       }
+      overhead_postings: {
+        Row: {
+          expense_id: string
+          id: string
+          location_id: string | null
+          posted_at: string
+          posted_by: string | null
+          posting_type: string
+          setup_id: string | null
+          year_month: string
+        }
+        Insert: {
+          expense_id: string
+          id?: string
+          location_id?: string | null
+          posted_at?: string
+          posted_by?: string | null
+          posting_type: string
+          setup_id?: string | null
+          year_month: string
+        }
+        Update: {
+          expense_id?: string
+          id?: string
+          location_id?: string | null
+          posted_at?: string
+          posted_by?: string | null
+          posting_type?: string
+          setup_id?: string | null
+          year_month?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "overhead_postings_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "operating_expenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "overhead_postings_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "overhead_postings_setup_id_fkey"
+            columns: ["setup_id"]
+            isOneToOne: false
+            referencedRelation: "setups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       purchase_global_fees: {
         Row: {
           amount: number
@@ -2057,6 +2112,8 @@ export type Database = {
         | "location_commission"
         | "software_utilities"
         | "misc"
+        | "rent"
+        | "depreciation"
       item_type: "machine_model" | "merchandise" | "spare_part" | "supply"
       machine_status: "in_warehouse" | "deployed" | "maintenance" | "retired"
       negotiation_type: "fixed_rent" | "commission" | "hybrid"
@@ -2218,6 +2275,8 @@ export const Constants = {
         "location_commission",
         "software_utilities",
         "misc",
+        "rent",
+        "depreciation",
       ],
       item_type: ["machine_model", "merchandise", "spare_part", "supply"],
       machine_status: ["in_warehouse", "deployed", "maintenance", "retired"],
