@@ -1,111 +1,46 @@
+## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
+### What was implemented:
 
-## Final RBAC Audit & Inventory/Warehouse Separation
+1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
 
-### Current State
+2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
 
-- **Roles**: `user_roles` table has `admin`, `route_operator`, `warehouse_manager`. The `useUserRole` hook exposes `isAdmin`, `isRouteOperator`, `isWarehouseManager`.
-- **Permissions**: `usePermissions` hook checks `app_roles` + `role_permissions` + `user_assignments`. Admins bypass all checks.
-- **Sidebar**: Already has role-based filtering (admin vs non-admin) but doesn't distinguish Accountant from Operator.
-- **Pages**: Most pages are only `ProtectedRoute` wrapped without role/permission guards. Only `/purchases`, `/sales`, `/users`, `/company`, `/insights/*`, `/admin/*` have guards.
-- **Inventory page** (`/inventory`): Shows financial data (WAC, Total Inventory Cost). No role restriction.
-- **Warehouse page** (`/warehouse`): Operational view but also visible to everyone. No cost columns currently.
-- **OperatorInventory** (`/operator/inventory`): Simplified view already exists but is separate.
+3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
 
-### Approach
+4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
 
-Rather than adding a new DB role "accountant", we'll use the existing `warehouse_manager` role as the "Accountant" role (or we can add it). Looking at the `user_role` enum...
+5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
 
-The `user_role` enum currently has: `admin`, `route_operator`, `warehouse_manager`. The user wants three roles: Admin, Accountant, Operator. We should **not** modify the enum (per constraints), but we can map `warehouse_manager` → Accountant conceptually, OR we can add `accountant` to the enum.
+6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
 
-Given the user explicitly mentions "Accountant" as a distinct role, we need to add it to the `user_role` enum.
+7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
 
-### Database Changes
+### Architecture now:
+- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
+- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
+- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
+- **Audit trail**: Complete history of every stock movement with performer tracking
 
-1. Add `'accountant'` to the `user_role` enum
-2. Update `useUserRole` to expose `isAccountant`
+---
 
-### Implementation Plan
+## ✅ COMPLETED: Fixed Overhead Generation & Historical Rent Ledger
 
-#### 1. Database Migration
-- Add `'accountant'` value to `user_role` enum
+### What was implemented:
 
-#### 2. Update `useUserRole` hook
-- Add `isAccountant` boolean (`role === 'accountant'`)
-- Update the `UserRole` type
+1. **Database Migration** — Added `rent` and `depreciation` values to `expense_category` enum. Created `overhead_postings` tracking table with unique constraints on `(year_month, location_id, posting_type)` and `(year_month, setup_id, posting_type)` to prevent duplicate generation.
 
-#### 3. Warehouse Management Page (Repurpose existing `/warehouse`)
-- The existing `/warehouse` page already shows Item Name, SKU, Category, Quantity — no financial columns
-- Rename in sidebar to "Warehouse Management" under an "Operations" group
-- Add access: Admin (full), Operator (view + adjustment via existing `AddWarehouseItemDialog`), Accountant (view only — hide action buttons)
-- The existing `OperatorInventory` page becomes redundant; redirect `/operator/inventory` → `/warehouse`
+2. **`useProfitability.tsx` — Overhead Generation** — Added `generateOverhead` mutation that snapshots current `rent_amount` from all locations and machine depreciation from all active setups as permanent `operating_expenses` rows. Added `isOverheadPosted` and `overheadCount` status tracking. Added `rent` and `depreciation` to `ExpenseCategory` type, labels, and colors.
 
-#### 4. Inventory & Valuation Page (Keep existing `/inventory`)
-- Already shows WAC, Purchase Price, Total Valuation
-- Add route guard: `RequireRole roles={['admin', 'accountant']}` (deny operators)
-- Move to sidebar under "Supply Chain" group
+3. **`Profitability.tsx` — Generate Overhead Button** — Admin-only "Generate Monthly Overhead" button with AlertDialog confirmation. Shows "Overhead Posted (N entries)" badge when already generated. Button disabled when overhead already exists.
 
-#### 5. Route Guards (App.tsx)
-Apply `RequireRole` wrappers:
+4. **`useSpotHealth.tsx` — Posted vs Projected Logic** — Fetches `overhead_postings` joined with `operating_expenses` for the selected month. If posted rent exists for a location, splits it equally among active spots. If posted depreciation exists for a setup, uses the snapshotted amount. Falls back to live calculation with `isProjectedRent`/`isProjectedDepreciation` flags.
 
-| Route | Allowed Roles |
-|-------|--------------|
-| `/` (Admin Dashboard) | admin, accountant |
-| `/dashboard` | all (operator default) |
-| `/inventory`, `/inventory/:id` | admin, accountant |
-| `/insights/*` (Profitability, Item Analytics, Spot Health) | admin, accountant |
-| `/users`, `/users/:id`, `/company` | admin only |
-| `/admin/*` | admin only |
-| `/warehouse` | admin, accountant, route_operator |
-| `/purchases/*`, `/sales/*` | admin, accountant |
-| `/visits/new` | all |
-| `/visits`, `/visits/:id` | all |
-| `/routes`, `/routes/:id` | all |
-| `/machines`, `/machines/:id`, `/setups` | admin, accountant |
-| `/locations`, `/locations/:id`, `/spots`, `/spots/:id` | admin, accountant |
-| `/maintenance` | all |
+5. **`SpotHealth.tsx` — Projected Indicator** — Shows a "Projected" badge with tooltip when any rent/depreciation values are estimated. Individual cells show a `~` marker next to projected values.
 
-#### 6. Sidebar Cleanup (AppSidebar.tsx)
-Restructure using role checks (not just `isAdmin`):
-
-**Admin sees**: Everything
-**Accountant sees**: Dashboard, Operations (Visits, Routes, Maintenance), Assets (Inventory, Warehouse, Machines, Setups), Locations, Supply Chain, Insights, Business (minus User Management), Personal
-**Operator sees**: My Dashboard, Operations (Visits, Routes, Maintenance), Warehouse, Personal
-
-Remove "Field Tools" section — replace with Warehouse under Operations for operators.
-
-#### 7. Files Modified
-
-| File | Change |
-|------|--------|
-| Migration SQL | Add `'accountant'` to `user_role` enum |
-| `src/hooks/useUserRole.tsx` | Add `isAccountant`, update type |
-| `src/App.tsx` | Add `RequireRole` guards to all unprotected routes |
-| `src/components/layout/AppSidebar.tsx` | Role-based sidebar filtering for 3 roles |
-| `src/pages/Warehouse.tsx` | Hide action buttons for accountant role |
-| `src/pages/OperatorInventory.tsx` | Can be removed; `/operator/inventory` redirects to `/warehouse` |
-
-#### 8. Handling the Redirect
-- `/operator/inventory` → redirect to `/warehouse`
-- Operators hitting `/` → redirect to `/dashboard`
-- Operators hitting `/inventory` → `RequireRole` redirects to `/`
-
-### Role Matrix Summary
-
-```text
-Page/Feature              Admin  Accountant  Operator
-─────────────────────────────────────────────────────
-Admin Dashboard (/)         ✓       ✓          ✗→/dashboard
-Operator Dashboard          ✓       ✓          ✓
-Inventory & Valuation       ✓       ✓          ✗
-Warehouse Management        ✓       ✓(view)    ✓(view+adjust)
-Machines/Setups             ✓       ✓          ✗
-Locations/Spots             ✓       ✓          ✗
-Suppliers/Purchases/Sales   ✓       ✓          ✗
-Insights (all)              ✓       ✓          ✗
-Users/Company               ✓       ✗          ✗
-Admin (Operators/Security)  ✓       ✗          ✗
-Visits/Routes/Maintenance   ✓       ✓          ✓
-Submit Visit                ✓       ✓          ✓
-```
-
+### Architecture:
+- **Snapshot model**: "Generate Monthly Overhead" creates permanent expense rows — changing `rent_amount` later won't affect past months
+- **Location-level rent**: Rent comes from `locations.rent_amount`, split equally among active spots at that location
+- **Bottom-up depreciation**: Summed from `item_details.monthly_depreciation` for each machine in a setup
+- **Dual-source display**: Spot Health prefers posted actuals, falls back to projected from master data
+- **Duplicate prevention**: `overhead_postings` unique constraints prevent re-generation

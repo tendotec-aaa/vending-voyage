@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 
-type UserRole = 'admin' | 'route_operator' | 'warehouse_manager';
+type UserRole = 'admin' | 'route_operator' | 'warehouse_manager' | 'accountant';
 
 export function useUserRole() {
   const { user } = useAuth();
@@ -31,6 +31,11 @@ export function useUserRole() {
   const isAdmin = role === 'admin';
   const isRouteOperator = role === 'route_operator';
   const isWarehouseManager = role === 'warehouse_manager';
+  const isAccountant = role === 'accountant';
+  // Operators = route_operator only (not admin/accountant)
+  const isOperator = role === 'route_operator';
+  // Financial access = admin or accountant
+  const hasFinancialAccess = role === 'admin' || role === 'accountant';
 
   return {
     role,
@@ -38,5 +43,8 @@ export function useUserRole() {
     isAdmin,
     isRouteOperator,
     isWarehouseManager,
+    isAccountant,
+    isOperator,
+    hasFinancialAccess,
   };
 }

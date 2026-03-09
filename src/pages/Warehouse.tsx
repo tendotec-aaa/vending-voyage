@@ -18,12 +18,14 @@ import { UnloadVehicleDialog } from "@/components/warehouse/UnloadVehicleDialog"
 import { useWarehouseInventory } from "@/hooks/useWarehouseInventory";
 import { useCategories } from "@/hooks/useCategories";
 import { useAuth } from "@/hooks/useAuth";
+import { useUserRole } from "@/hooks/useUserRole";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 
 export default function Warehouse() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isAdmin, isAccountant, isOperator } = useUserRole();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [selectedWarehouse, setSelectedWarehouse] = useState("all");
@@ -32,6 +34,11 @@ export default function Warehouse() {
   const { inventory, warehouses, isLoading, isWarehousesLoading, createWarehouse, isCreatingWarehouse, unloadVehicle, isUnloading } =
     useWarehouseInventory(selectedWarehouse);
   const { categories } = useCategories();
+
+  // Accountants are view-only; operators can view + adjust (no create warehouse / new assembly)
+  const canManageFull = isAdmin;
+  const canAdjust = isAdmin || isOperator;
+  const isViewOnly = isAccountant;
 
   const handleCategoryChange = (value: string) => setCategoryFilter(value);
 
@@ -65,16 +72,15 @@ export default function Warehouse() {
     await unloadVehicle({ vehicleId: selectedWarehouse, destinationWarehouseId: destinationId, userId: user.id });
   };
 
-  // Destination bodegas for unloading (non-transitional, non-system)
   const destinationBodegas = standardWarehouses.filter((w) => w.id !== selectedWarehouse);
 
   return (
     <AppLayout
-      title="Warehouses"
-      subtitle="Manage inventory across your warehouses"
+      title="Warehouse Management"
+      subtitle="Operational stock control across your warehouses"
       actions={
         <div className="flex gap-2 flex-wrap">
-          {isSelectedVehicle && (
+          {isSelectedVehicle && canAdjust && (
             <UnloadVehicleDialog
               vehicleId={selectedWarehouse}
               vehicleName={selectedWh?.name || ""}
@@ -83,12 +89,19 @@ export default function Warehouse() {
               isUnloading={isUnloading}
             />
           )}
-          <Button variant="outline" onClick={() => navigate("/warehouse/assembly/new")}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Assembly
-          </Button>
-          <AddWarehouseItemDialog />
-          <CreateWarehouseDialog onCreate={createWarehouse} isCreating={isCreatingWarehouse} />
+          {canManageFull && (
+            <>
+              <Button variant="outline" onClick={() => navigate("/warehouse/assembly/new")}>
+                <Plus className="mr-2 h-4 w-4" />
+                New Assembly
+              </Button>
+              <AddWarehouseItemDialog />
+              <CreateWarehouseDialog onCreate={createWarehouse} isCreating={isCreatingWarehouse} />
+            </>
+          )}
+          {isOperator && (
+            <AddWarehouseItemDialog />
+          )}
         </div>
       }
     >
@@ -106,7 +119,6 @@ export default function Warehouse() {
           <Badge variant="secondary" className="ml-2 text-xs">{inventory.length}</Badge>
         </button>
 
-        {/* Standard Bodegas */}
         {standardWarehouses.map((wh) => (
           <button
             key={wh.id}
@@ -122,7 +134,6 @@ export default function Warehouse() {
           </button>
         ))}
 
-        {/* Transitional Vehicles */}
         {vehicleWarehouses.map((wh) => (
           <button
             key={wh.id}
@@ -138,8 +149,7 @@ export default function Warehouse() {
           </button>
         ))}
 
-        {/* System Warehouses */}
-        {systemWarehouses.map((wh) => (
+        {canManageFull && systemWarehouses.map((wh) => (
           <button
             key={wh.id}
             onClick={() => setSelectedWarehouse(wh.id)}
@@ -219,29 +229,41 @@ export default function Warehouse() {
                 <TableHead>Category</TableHead>
                 {selectedWarehouse === "all" && <TableHead>Warehouse</TableHead>}
                 <TableHead className="text-right">Quantity</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Last Updated</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredInventory.map((item) => {
-                const isInactive = (item.quantity_on_hand || 0) <= 0;
+                const qty = item.quantity_on_hand || 0;
+                const isLow = qty <= 0;
+                const isInactive = qty <= 0;
                 return (
-                <TableRow
-                  key={item.id}
-                  className={`cursor-pointer hover:bg-muted/50 ${isInactive ? "opacity-40" : ""}`}
-                  onClick={() => item.item_detail?.id && navigate(`/inventory/${item.item_detail.id}`)}
-                >
-                  <TableCell className="font-medium text-foreground">{item.item_detail?.name || "Unknown"}</TableCell>
-                  <TableCell className="font-mono text-sm text-primary">{item.item_detail?.sku || "—"}</TableCell>
-                  <TableCell className="text-muted-foreground">{item.item_detail?.category?.name || "—"}</TableCell>
-                  {selectedWarehouse === "all" && (
-                    <TableCell className="text-muted-foreground">{item.warehouse?.name || "—"}</TableCell>
-                  )}
-                  <TableCell className={`text-right font-medium ${(item.quantity_on_hand || 0) < 0 ? 'text-destructive' : 'text-foreground'}`}>{(item.quantity_on_hand || 0).toLocaleString()}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {item.last_updated ? new Date(item.last_updated).toLocaleDateString() : "—"}
-                  </TableCell>
-                </TableRow>
+                  <TableRow
+                    key={item.id}
+                    className={`cursor-pointer hover:bg-muted/50 ${isInactive ? "opacity-40" : ""}`}
+                    onClick={() => canManageFull && item.item_detail?.id && navigate(`/inventory/${item.item_detail.id}`)}
+                  >
+                    <TableCell className="font-medium text-foreground">{item.item_detail?.name || "Unknown"}</TableCell>
+                    <TableCell className="font-mono text-sm text-primary">{item.item_detail?.sku || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{item.item_detail?.category?.name || "—"}</TableCell>
+                    {selectedWarehouse === "all" && (
+                      <TableCell className="text-muted-foreground">{item.warehouse?.name || "—"}</TableCell>
+                    )}
+                    <TableCell className={`text-right font-medium ${qty < 0 ? 'text-destructive' : 'text-foreground'}`}>
+                      {qty.toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      {isLow ? (
+                        <Badge variant="destructive" className="text-xs">Low Stock</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs">In Stock</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {item.last_updated ? new Date(item.last_updated).toLocaleDateString() : "—"}
+                    </TableCell>
+                  </TableRow>
                 );
               })}
             </TableBody>
