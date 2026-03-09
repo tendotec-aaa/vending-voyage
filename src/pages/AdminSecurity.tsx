@@ -70,7 +70,18 @@ function useUserAssignments() {
         .select('id, name');
       if (lErr) throw lErr;
 
-      return { profiles: profiles || [], assignments: assignments || [], locations: locations || [] };
+      // Fetch user_location_assignments for multi-location support
+      const { data: locationAssignments, error: laErr } = await supabase
+        .from('user_location_assignments')
+        .select('user_id, location_id');
+      if (laErr) throw laErr;
+
+      return { 
+        profiles: profiles || [], 
+        assignments: assignments || [], 
+        locations: locations || [],
+        locationAssignments: locationAssignments || [],
+      };
     },
   });
 }
