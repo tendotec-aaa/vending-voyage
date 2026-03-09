@@ -58,7 +58,7 @@ export function useItemTypes() {
   });
 
   const updateItemType = useMutation({
-    mutationFn: async (params: { id: string; name?: string; is_routable?: boolean; is_sellable?: boolean; is_asset?: boolean; is_supply?: boolean }) => {
+    mutationFn: async (params: { id: string; name?: string; is_routable?: boolean; is_sellable?: boolean; is_asset?: boolean; is_supply?: boolean; is_component?: boolean }) => {
       const { id, ...updates } = params;
       const { error } = await (supabase as any)
         .from("item_types")
