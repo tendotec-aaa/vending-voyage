@@ -66,7 +66,7 @@ export function useOperatorPerformance(userId: string | undefined, locationIds: 
         .from('maintenance_tickets')
         .select('id', { count: 'exact', head: true })
         .eq('reporter_id', userId)
-        .in('status', ['resolved', 'completed'])
+        .eq('status', 'completed')
         .gte('resolved_at', thisWeekStart.toISOString())
         .lte('resolved_at', thisWeekEnd.toISOString());
 
@@ -75,7 +75,7 @@ export function useOperatorPerformance(userId: string | undefined, locationIds: 
         .from('maintenance_tickets')
         .select('id', { count: 'exact', head: true })
         .eq('reporter_id', userId)
-        .in('status', ['resolved', 'completed'])
+        .eq('status', 'completed')
         .gte('resolved_at', lastWeekStart.toISOString())
         .lte('resolved_at', lastWeekEnd.toISOString());
 
