@@ -24,23 +24,28 @@
 
 ---
 
-## ✅ COMPLETED: Fixed Overhead Generation & Historical Rent Ledger
+## ✅ COMPLETED: Route Audit & Refill Reconciliation with Under-fill Warnings
 
 ### What was implemented:
 
-1. **Database Migration** — Added `rent` and `depreciation` values to `expense_category` enum. Created `overhead_postings` tracking table with unique constraints on `(year_month, location_id, posting_type)` and `(year_month, setup_id, posting_type)` to prevent duplicate generation.
+1. **Database Migration** — Added `route_id` (uuid FK→routes) to `spot_visits`, and `completed_at` (timestamptz) + `auto_completed` (boolean) to `routes`.
 
-2. **`useProfitability.tsx` — Overhead Generation** — Added `generateOverhead` mutation that snapshots current `rent_amount` from all locations and machine depreciation from all active setups as permanent `operating_expenses` rows. Added `isOverheadPosted` and `overheadCount` status tracking. Added `rent` and `depreciation` to `ExpenseCategory` type, labels, and colors.
+2. **Visit Submission Tagging** — `OperatorDashboard.tsx` now passes `route_id` as a URL param when navigating to `/visits/new`. `NewVisitReport.tsx` reads `route_id` from search params and includes it in the edge function payload. `submit-visit-report` edge function persists `route_id` on the `spot_visits` insert.
 
-3. **`Profitability.tsx` — Generate Overhead Button** — Admin-only "Generate Monthly Overhead" button with AlertDialog confirmation. Shows "Overhead Posted (N entries)" badge when already generated. Button disabled when overhead already exists.
+3. **Route Interface Update** — `useRoutes.tsx` Route interface now includes `completed_at` and `auto_completed` fields.
 
-4. **`useSpotHealth.tsx` — Posted vs Projected Logic** — Fetches `overhead_postings` joined with `operating_expenses` for the selected month. If posted rent exists for a location, splits it equally among active spots. If posted depreciation exists for a setup, uses the snapshotted amount. Falls back to live calculation with `isProjectedRent`/`isProjectedDepreciation` flags.
+4. **Reconciliation Tab** — New `ReconciliationTab` component (`src/components/routes/ReconciliationTab.tsx`) added as a third tab in `RouteDetail.tsx`, visible only to admin/accountant roles.
 
-5. **`SpotHealth.tsx` — Projected Indicator** — Shows a "Projected" badge with tooltip when any rent/depreciation values are estimated. Individual cells show a `~` marker next to projected values.
+### Reconciliation Tab Features:
+- **Accuracy Score**: `(items where |variance|/suggested < 10%) / total_items × 100`
+- **Status Badges**: Route status, completion time, "System Verified" badge for auto-completed routes
+- **Audit Table per Location**: Item/Slot, System Suggested (velocity model), Actual Refill (visit_line_items), Variance with percentage
+- **Red variance text**: When `|variance| / suggested > 20%`
+- **Amber warning rows**: When `actual < suggested × 0.70` AND no operator notes — flags unexplained under-fills with ⚠️ tooltip
+- **Operator Notes**: Displayed below each location's table
+- **Fallback matching**: For pre-migration routes without `route_id`, matches visits by spot proximity + date ±1 day
 
 ### Architecture:
-- **Snapshot model**: "Generate Monthly Overhead" creates permanent expense rows — changing `rent_amount` later won't affect past months
-- **Location-level rent**: Rent comes from `locations.rent_amount`, split equally among active spots at that location
-- **Bottom-up depreciation**: Summed from `item_details.monthly_depreciation` for each machine in a setup
-- **Dual-source display**: Spot Health prefers posted actuals, falls back to projected from master data
-- **Duplicate prevention**: `overhead_postings` unique constraints prevent re-generation
+- **Forward-looking**: New visits from operator dashboard are tagged with `route_id`
+- **Backward-compatible**: Older routes use date/spot fallback matching
+- **Role-gated**: Reconciliation tab only visible to admin and accountant roles
