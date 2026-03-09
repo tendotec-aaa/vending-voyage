@@ -76,7 +76,7 @@ export default function NewAssembly() {
     queryFn: async () => {
       let query = supabase
         .from("inventory")
-        .select("item_detail_id, quantity_on_hand, item_detail:item_details(id, name, sku, cost_price, category_id)")
+        .select("item_detail_id, quantity_on_hand, item_detail:item_details(id, name, sku, cost_price, category_id, item_type_id)")
         .not("warehouse_id", "is", null)
         .gt("quantity_on_hand", 0);
       if (warehouseId) {
@@ -89,12 +89,19 @@ export default function NewAssembly() {
     enabled: true,
   });
 
+  const componentTypeIds = useMemo(() => {
+    return new Set(itemTypes.filter(t => t.is_component).map(t => t.id));
+  }, [itemTypes]);
+
   const availableComponents = useMemo(() => {
     const selectedIds = new Set(components.map((c) => c.item_detail_id));
     return inventoryItems
       .filter((inv: any) => {
         if (!inv.item_detail || selectedIds.has(inv.item_detail_id)) return false;
-        if (componentCategoryFilter !== "all" && (inv.item_detail as any)?.category_id !== componentCategoryFilter) return false;
+        const detail = inv.item_detail as any;
+        // Only show items whose item_type has is_component = true
+        if (componentTypeIds.size > 0 && detail?.item_type_id && !componentTypeIds.has(detail.item_type_id)) return false;
+        if (componentCategoryFilter !== "all" && detail?.category_id !== componentCategoryFilter) return false;
         return true;
       })
       .map((inv: any) => ({
@@ -104,7 +111,7 @@ export default function NewAssembly() {
         cost_price: (inv.item_detail as any)?.cost_price || 0,
         available_qty: inv.quantity_on_hand || 0,
       }));
-  }, [inventoryItems, components, componentCategoryFilter]);
+  }, [inventoryItems, components, componentCategoryFilter, componentTypeIds]);
 
   const addComponent = (itemId: string) => {
     const inv = inventoryItems.find((i: any) => i.item_detail_id === itemId) as any;

@@ -5,6 +5,7 @@ export interface ItemTypeFlags {
   is_supply: boolean;
   is_routable: boolean;
   is_sellable: boolean;
+  is_component: boolean;
 }
 
 /**

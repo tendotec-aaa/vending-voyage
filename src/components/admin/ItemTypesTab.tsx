@@ -17,6 +17,7 @@ const FLAG_COLUMNS: { key: ItemTypeFlag; label: string }[] = [
   { key: 'is_sellable', label: 'Sellable' },
   { key: 'is_asset', label: 'Asset' },
   { key: 'is_supply', label: 'Supply' },
+  { key: 'is_component', label: 'Component' },
 ];
 
 export function ItemTypesTab() {
@@ -34,9 +35,9 @@ export function ItemTypesTab() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem, setEditItem] = useState<ItemType | null>(null);
   const [newName, setNewName] = useState('');
-  const [newFlags, setNewFlags] = useState({ is_routable: false, is_sellable: false, is_asset: false, is_supply: false });
+  const [newFlags, setNewFlags] = useState({ is_routable: false, is_sellable: false, is_asset: false, is_supply: false, is_component: false });
   const [editName, setEditName] = useState('');
-  const [editFlags, setEditFlags] = useState({ is_routable: false, is_sellable: false, is_asset: false, is_supply: false });
+  const [editFlags, setEditFlags] = useState({ is_routable: false, is_sellable: false, is_asset: false, is_supply: false, is_component: false });
   const [saving, setSaving] = useState(false);
 
   const handleCreate = async () => {
@@ -45,7 +46,7 @@ export function ItemTypesTab() {
     try {
       await createItemType({ name: newName.trim(), ...newFlags });
       setNewName('');
-      setNewFlags({ is_routable: false, is_sellable: false, is_asset: false, is_supply: false });
+      setNewFlags({ is_routable: false, is_sellable: false, is_asset: false, is_supply: false, is_component: false });
       setCreateOpen(false);
     } finally {
       setSaving(false);
@@ -55,7 +56,7 @@ export function ItemTypesTab() {
   const openEdit = (item: ItemType) => {
     setEditItem(item);
     setEditName(item.name);
-    setEditFlags({ is_routable: item.is_routable, is_sellable: item.is_sellable, is_asset: item.is_asset, is_supply: item.is_supply });
+    setEditFlags({ is_routable: item.is_routable, is_sellable: item.is_sellable, is_asset: item.is_asset, is_supply: item.is_supply, is_component: item.is_component });
   };
 
   const handleEdit = async () => {

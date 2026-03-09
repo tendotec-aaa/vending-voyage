@@ -9,10 +9,11 @@ export interface ItemType {
   is_sellable: boolean;
   is_asset: boolean;
   is_supply: boolean;
+  is_component: boolean;
   created_at: string;
 }
 
-export type ItemTypeFlag = "is_routable" | "is_sellable" | "is_asset" | "is_supply";
+export type ItemTypeFlag = "is_routable" | "is_sellable" | "is_asset" | "is_supply" | "is_component";
 
 export function useItemTypes() {
   const { toast } = useToast();
@@ -23,7 +24,7 @@ export function useItemTypes() {
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("item_types")
-        .select("id, name, is_routable, is_sellable, is_asset, is_supply, created_at")
+        .select("id, name, is_routable, is_sellable, is_asset, is_supply, is_component, created_at")
         .order("name");
       if (error) throw error;
       return (data || []) as ItemType[];
@@ -31,7 +32,7 @@ export function useItemTypes() {
   });
 
   const createItemType = useMutation({
-    mutationFn: async (params: { name: string; is_routable?: boolean; is_sellable?: boolean; is_asset?: boolean; is_supply?: boolean }) => {
+    mutationFn: async (params: { name: string; is_routable?: boolean; is_sellable?: boolean; is_asset?: boolean; is_supply?: boolean; is_component?: boolean }) => {
       const { data, error } = await (supabase as any)
         .from("item_types")
         .insert({
@@ -40,6 +41,7 @@ export function useItemTypes() {
           is_sellable: params.is_sellable ?? false,
           is_asset: params.is_asset ?? false,
           is_supply: params.is_supply ?? false,
+          is_component: params.is_component ?? false,
         })
         .select()
         .single();
@@ -56,7 +58,7 @@ export function useItemTypes() {
   });
 
   const updateItemType = useMutation({
-    mutationFn: async (params: { id: string; name?: string; is_routable?: boolean; is_sellable?: boolean; is_asset?: boolean; is_supply?: boolean }) => {
+    mutationFn: async (params: { id: string; name?: string; is_routable?: boolean; is_sellable?: boolean; is_asset?: boolean; is_supply?: boolean; is_component?: boolean }) => {
       const { id, ...updates } = params;
       const { error } = await (supabase as any)
         .from("item_types")
@@ -126,7 +128,7 @@ export function useItemTypes() {
     queryClient.invalidateQueries({ queryKey: ["item_details_with_categories"] });
   };
 
-  const getTypeIdsByFlag = (flag: keyof Pick<ItemType, "is_routable" | "is_sellable" | "is_asset" | "is_supply">): string[] => {
+  const getTypeIdsByFlag = (flag: keyof Pick<ItemType, "is_routable" | "is_sellable" | "is_asset" | "is_supply" | "is_component">): string[] => {
     return (itemTypesQuery.data || []).filter((t) => t[flag]).map((t) => t.id);
   };
 
