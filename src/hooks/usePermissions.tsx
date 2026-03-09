@@ -33,7 +33,7 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
 ];
 
 export const PERMISSION_CATEGORIES: Record<string, { label: string; keys: PermissionKey[] }> = {
-  finance: { label: 'Finance', keys: ['view_costs', 'view_profits'] },
+  finance: { label: 'Finance', keys: ['view_costs', 'view_profits', 'manage_expenses'] },
   inventory: { label: 'Inventory', keys: ['view_stock', 'edit_bodega'] },
   operations: { label: 'Operations', keys: ['view_all_routes', 'manage_own_route'] },
   supply_chain: { label: 'Supply Chain', keys: ['manage_purchases', 'manage_sales'] },
