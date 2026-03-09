@@ -34,13 +34,15 @@ interface ComponentLine {
 
 export default function NewAssembly() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
+  const { isAdmin } = useUserRole();
   const { categories, createCategory, createSubcategory, getSubcategoriesByCategory } = useCategories();
   const { itemTypes, createItemType } = useItemTypes();
   const { createAssembly, isCreating } = useAssemblies();
   const { warehouses } = useWarehouseInventory();
 
-  // Output item state
-  const [isNewItem, setIsNewItem] = useState(true);
+  // Output item state — non-admins forced to "Link Existing"
+  const [isNewItem, setIsNewItem] = useState(isAdmin);
   const [outputItemDetailId, setOutputItemDetailId] = useState<string>();
   const [outputItemName, setOutputItemName] = useState("");
   const [categoryId, setCategoryId] = useState<string>();
