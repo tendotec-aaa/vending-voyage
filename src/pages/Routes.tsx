@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label";
 import { Plus, Calendar, User, Trash2 } from "lucide-react";
 import { format } from "date-fns";
+import { useTranslation } from "react-i18next";
 
 const statusColors: Record<string, string> = {
   planned: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
@@ -31,6 +32,7 @@ function generateRouteName(dateStr: string): string {
 }
 
 export default function Routes() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isAdmin } = useUserRole();
@@ -40,7 +42,6 @@ export default function Routes() {
 
   const handleCreate = () => {
     const name = generateRouteName(date);
-    // Non-admins auto-assign themselves as the driver
     const driverId = !isAdmin && user?.id ? user.id : undefined;
     createRoute.mutate({ name, scheduled_for: date, driver_id: driverId }, {
       onSuccess: (data) => {
@@ -55,40 +56,36 @@ export default function Routes() {
       <div className="p-4 md:p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Routes</h1>
-            <p className="text-muted-foreground text-sm">Plan daily service runs</p>
+            <h1 className="text-2xl font-bold text-foreground">{t('routes.title')}</h1>
+            <p className="text-muted-foreground text-sm">{t('routes.subtitle')}</p>
           </div>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button><Plus className="w-4 h-4 mr-2" />New Route</Button>
+              <Button><Plus className="w-4 h-4 mr-2" />{t('routes.newRoute')}</Button>
             </DialogTrigger>
             <DialogContent>
-              <DialogHeader><DialogTitle>Create Route</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle>{t('routes.createRoute')}</DialogTitle></DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label>Scheduled Date</Label>
+                  <Label>{t('routes.scheduledDate')}</Label>
                   <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Name: <span className="font-medium text-foreground">{generateRouteName(date)}</span>
+                  {t('routes.routeName')}: <span className="font-medium text-foreground">{generateRouteName(date)}</span>
                 </p>
                 <Button onClick={handleCreate} disabled={createRoute.isPending} className="w-full">
-                  {createRoute.isPending ? "Creating..." : "Create Route"}
+                  {createRoute.isPending ? t('routes.creatingRoute') : t('routes.createRoute')}
                 </Button>
               </div>
             </DialogContent>
           </Dialog>
         </div>
 
-        {routesQuery.isLoading && <p className="text-muted-foreground">Loading routes...</p>}
+        {routesQuery.isLoading && <p className="text-muted-foreground">{t('routes.loadingRoutes')}</p>}
 
         <div className="grid gap-3">
           {(routesQuery.data || []).map((route) => (
-            <Card
-              key={route.id}
-              className="cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => navigate(`/routes/${route.id}`)}
-            >
+            <Card key={route.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/routes/${route.id}`)}>
               <CardContent className="p-4 flex items-center justify-between">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -110,21 +107,14 @@ export default function Routes() {
                     )}
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (confirm("Delete this route?")) deleteRoute.mutate(route.id);
-                  }}
-                >
+                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); if (confirm(t('routes.deleteConfirm'))) deleteRoute.mutate(route.id); }}>
                   <Trash2 className="w-4 h-4 text-muted-foreground" />
                 </Button>
               </CardContent>
             </Card>
           ))}
           {routesQuery.data?.length === 0 && !routesQuery.isLoading && (
-            <p className="text-muted-foreground text-center py-12">No routes yet. Create one to get started.</p>
+            <p className="text-muted-foreground text-center py-12">{t('routes.noRoutes')}</p>
           )}
         </div>
       </div>
