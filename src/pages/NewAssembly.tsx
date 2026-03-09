@@ -18,6 +18,8 @@ import { useCategories } from "@/hooks/useCategories";
 import { useItemTypes } from "@/hooks/useItemTypes";
 import { useAssemblies, type AssemblyComponent } from "@/hooks/useAssemblies";
 import { useWarehouseInventory } from "@/hooks/useWarehouseInventory";
+import { useUserRole } from "@/hooks/useUserRole";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { fmt2, fmt3 } from "@/lib/formatters";
