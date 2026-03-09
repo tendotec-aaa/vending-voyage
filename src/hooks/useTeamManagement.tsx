@@ -93,9 +93,38 @@ export function useTeamManagement() {
         .eq("id", userId);
 
       if (error) throw error;
+
+      // Auto-assign Route Operator role with global scope on activation
+      if (active) {
+        // Check if user already has an assignment
+        const { data: existingAssignment } = await supabase
+          .from("user_assignments")
+          .select("id")
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        if (!existingAssignment) {
+          // Get the "Route Operator" app_role ID
+          const { data: routeOperatorRole } = await supabase
+            .from("app_roles")
+            .select("id")
+            .eq("name", "Route Operator")
+            .maybeSingle();
+
+          if (routeOperatorRole) {
+            await supabase.from("user_assignments").insert({
+              user_id: userId,
+              role_id: routeOperatorRole.id,
+              scope_type: "global",
+              scope_id: null,
+            });
+          }
+        }
+      }
     },
     onSuccess: (_, { active }) => {
       queryClient.invalidateQueries({ queryKey: ["team-members"] });
+      queryClient.invalidateQueries({ queryKey: ["user-assignments-all"] });
       toast({
         title: active ? "User Activated" : "User Deactivated",
         description: active 

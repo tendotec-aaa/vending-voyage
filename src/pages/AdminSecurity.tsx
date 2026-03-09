@@ -15,8 +15,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, Plus, Trash2, Users, Lock, Package } from 'lucide-react';
+import { Shield, Plus, Trash2, Users, Lock, Package, MapPin } from 'lucide-react';
 import { PERMISSION_CATEGORIES, PERMISSION_LABELS, ALL_PERMISSION_KEYS, type PermissionKey } from '@/hooks/usePermissions';
 import { ItemTypesTab } from '@/components/admin/ItemTypesTab';
 
@@ -68,7 +70,18 @@ function useUserAssignments() {
         .select('id, name');
       if (lErr) throw lErr;
 
-      return { profiles: profiles || [], assignments: assignments || [], locations: locations || [] };
+      // Fetch user_location_assignments for multi-location support
+      const { data: locationAssignments, error: laErr } = await supabase
+        .from('user_location_assignments')
+        .select('user_id, location_id');
+      if (laErr) throw laErr;
+
+      return { 
+        profiles: profiles || [], 
+        assignments: assignments || [], 
+        locations: locations || [],
+        locationAssignments: locationAssignments || [],
+      };
     },
   });
 }
@@ -302,7 +315,36 @@ function UserAssignmentsTab() {
     onError: (e: any) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
   });
 
+  const toggleLocationAssignment = useMutation({
+    mutationFn: async ({ userId, locationId, assigned }: { userId: string; locationId: string; assigned: boolean }) => {
+      if (assigned) {
+        const { error } = await supabase
+          .from('user_location_assignments')
+          .insert({ user_id: userId, location_id: locationId });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('user_location_assignments')
+          .delete()
+          .eq('user_id', userId)
+          .eq('location_id', locationId);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user-assignments-all'] });
+      toast({ title: 'Location assignment updated' });
+    },
+    onError: (e: any) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+  });
+
   const getAssignment = (userId: string) => data?.assignments.find((a) => a.user_id === userId);
+  
+  const getUserLocations = (userId: string) => {
+    return data?.locationAssignments
+      .filter((la) => la.user_id === userId)
+      .map((la) => la.location_id) || [];
+  };
 
   const handleRoleChange = (userId: string, roleId: string) => {
     const existing = getAssignment(userId);
@@ -325,22 +367,11 @@ function UserAssignmentsTab() {
     });
   };
 
-  const handleLocationChange = (userId: string, locationId: string) => {
-    const existing = getAssignment(userId);
-    if (!existing) return;
-    upsertAssignment.mutate({
-      userId,
-      roleId: existing.role_id,
-      scopeType: existing.scope_type,
-      scopeId: locationId,
-    });
-  };
-
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-lg">User Assignments</CardTitle>
-        <CardDescription>Assign roles and scopes to each user</CardDescription>
+        <CardDescription>Assign roles, scopes, and locations to each user</CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -354,12 +385,13 @@ function UserAssignmentsTab() {
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Scope</TableHead>
-                  <TableHead>Location</TableHead>
+                  <TableHead>Locations</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data?.profiles.map((profile) => {
                   const assignment = getAssignment(profile.id);
+                  const userLocations = getUserLocations(profile.id);
                   return (
                     <TableRow key={profile.id}>
                       <TableCell className="font-medium">
@@ -399,19 +431,69 @@ function UserAssignmentsTab() {
                       </TableCell>
                       <TableCell>
                         {assignment?.scope_type === 'location' ? (
-                          <Select
-                            value={assignment.scope_id || ''}
-                            onValueChange={(val) => handleLocationChange(profile.id, val)}
-                          >
-                            <SelectTrigger className="w-[180px]">
-                              <SelectValue placeholder="Select location" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {data.locations.map((l) => (
-                                <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" size="sm" className="h-auto min-h-[36px] w-[220px] justify-start">
+                                <MapPin className="w-4 h-4 mr-2 shrink-0" />
+                                {userLocations.length === 0 ? (
+                                  <span className="text-muted-foreground">Select locations...</span>
+                                ) : (
+                                  <div className="flex flex-wrap gap-1">
+                                    {userLocations.slice(0, 2).map((locId) => {
+                                      const loc = data.locations.find((l) => l.id === locId);
+                                      return (
+                                        <Badge key={locId} variant="secondary" className="text-xs">
+                                          {loc?.name || 'Unknown'}
+                                        </Badge>
+                                      );
+                                    })}
+                                    {userLocations.length > 2 && (
+                                      <Badge variant="secondary" className="text-xs">
+                                        +{userLocations.length - 2}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                )}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[280px] p-0" align="start">
+                              <div className="p-3 border-b border-border">
+                                <p className="text-sm font-medium">Assigned Locations</p>
+                                <p className="text-xs text-muted-foreground">Select multiple locations</p>
+                              </div>
+                              <div className="max-h-[250px] overflow-y-auto p-2">
+                                {data.locations.map((loc) => {
+                                  const isAssigned = userLocations.includes(loc.id);
+                                  return (
+                                    <div
+                                      key={loc.id}
+                                      className="flex items-center gap-3 p-2 rounded-md hover:bg-accent cursor-pointer"
+                                      onClick={() => toggleLocationAssignment.mutate({
+                                        userId: profile.id,
+                                        locationId: loc.id,
+                                        assigned: !isAssigned,
+                                      })}
+                                    >
+                                      <Checkbox
+                                        checked={isAssigned}
+                                        onCheckedChange={(checked) => {
+                                          toggleLocationAssignment.mutate({
+                                            userId: profile.id,
+                                            locationId: loc.id,
+                                            assigned: !!checked,
+                                          });
+                                        }}
+                                      />
+                                      <span className="text-sm">{loc.name}</span>
+                                    </div>
+                                  );
+                                })}
+                                {data.locations.length === 0 && (
+                                  <p className="text-sm text-muted-foreground p-2">No locations available</p>
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
                         ) : (
                           <Badge variant="secondary" className="text-xs">N/A</Badge>
                         )}

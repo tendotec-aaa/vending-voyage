@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useRoutes } from "@/hooks/useRoutes";
+import { useAuth } from "@/hooks/useAuth";
+import { useUserRole } from "@/hooks/useUserRole";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,13 +32,17 @@ function generateRouteName(dateStr: string): string {
 
 export default function Routes() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { isAdmin } = useUserRole();
   const { routesQuery, createRoute, deleteRoute } = useRoutes();
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
   const handleCreate = () => {
     const name = generateRouteName(date);
-    createRoute.mutate({ name, scheduled_for: date }, {
+    // Non-admins auto-assign themselves as the driver
+    const driverId = !isAdmin && user?.id ? user.id : undefined;
+    createRoute.mutate({ name, scheduled_for: date, driver_id: driverId }, {
       onSuccess: (data) => {
         setOpen(false);
         navigate(`/routes/${data.id}`);
