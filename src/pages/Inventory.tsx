@@ -99,11 +99,8 @@ function useConsolidatedInventory() {
           const deployedQty = itemMachines.filter((m: any) => m.status === "deployed").length;
           const totalQty = itemMachines.filter((m: any) => m.status !== "retired").length;
 
-          const itemBatches = (purchaseBatches || []).filter((b: any) => b.item_detail_id === item.id);
-          const totalInventoryCost = itemBatches.reduce((sum: number, b: any) => {
-            const costPerUnit = b.final_unit_cost || b.landed_unit_cost || 0;
-            return sum + ((b.quantity_remaining || 0) * costPerUnit);
-          }, 0);
+          const wac = wacMap.get(item.id) || 0;
+          const totalInventoryCost = totalQty * wac;
 
           return {
             id: item.id,
