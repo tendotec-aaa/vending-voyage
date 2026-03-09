@@ -187,7 +187,7 @@ const Index = () => {
         </div>
         <div className="space-y-6">
           <QuickActions />
-          <UpcomingRoutes />
+          <LatestRoutes />
         </div>
       </div>
     </AppLayout>

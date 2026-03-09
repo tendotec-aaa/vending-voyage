@@ -185,7 +185,17 @@ const App = () => (
               </ProtectedRoute>
             } />
 
+            {/* Operator Dashboard */}
+            <Route path="/dashboard" element={<ProtectedRoute><OperatorDashboard /></ProtectedRoute>} />
+
             {/* Admin-only routes */}
+            <Route path="/admin/operators" element={
+              <ProtectedRoute>
+                <RequireRole roles={['admin']}>
+                  <AdminOperators />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
             <Route path="/admin/security" element={
               <ProtectedRoute>
                 <RequireRole roles={['admin']}>

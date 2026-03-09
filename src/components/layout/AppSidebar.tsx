@@ -37,6 +37,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 
 const dashboardItem = { title: "Dashboard", icon: LayoutDashboard, url: "/" };
+const operatorDashboardItem = { title: "My Dashboard", icon: LayoutDashboard, url: "/dashboard" };
 
 const operationsItems = [
   { title: "Visit Reports", icon: ClipboardList, url: "/visits" },
