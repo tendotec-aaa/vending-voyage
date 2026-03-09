@@ -365,10 +365,11 @@ export default function NewVisitReport() {
     enabled: !!selectedSpot,
   });
 
-  // Fetch products (routable items) with category_id
-  const { data: products = [] } = useQuery({
-    queryKey: ['products'],
+  // Fetch available routable products with stock > 0 from source warehouse
+  const { data: availableProducts = [] } = useQuery({
+    queryKey: ['available-products', sourceWarehouseId],
     queryFn: async () => {
+      if (!sourceWarehouseId) return [];
       // First get routable item_type IDs
       const { data: routableTypes } = await (supabase as any)
         .from("item_types")
@@ -376,21 +377,28 @@ export default function NewVisitReport() {
         .eq("is_routable", true);
       const routableIds = (routableTypes || []).map((t: any) => t.id);
 
-      let query = supabase
-        .from('item_details')
-        .select('id, name, sku, type, category_id')
-        .order('name');
+      // Query inventory with stock > 0 in selected warehouse, joined with item_details
+      const { data, error } = await supabase
+        .from('inventory')
+        .select('item_detail_id, quantity_on_hand, item_detail:item_details(id, name, sku, type, category_id, item_type_id)')
+        .eq('warehouse_id', sourceWarehouseId)
+        .gt('quantity_on_hand', 0);
 
-      if (routableIds.length > 0) {
-        query = query.in('item_type_id', routableIds);
-      } else {
-        query = query.eq('type', 'merchandise');
-      }
-
-      const { data, error } = await query;
       if (error) throw error;
-      return (data || []) as (ItemDetailBasic & { category_id: string | null })[];
+
+      // Filter by routable type and transform
+      return (data || [])
+        .filter((inv: any) => routableIds.length === 0 || routableIds.includes(inv.item_detail?.item_type_id))
+        .map((inv: any) => ({
+          id: inv.item_detail.id,
+          name: inv.item_detail.name,
+          sku: inv.item_detail.sku,
+          type: inv.item_detail.type,
+          category_id: inv.item_detail.category_id,
+          available: inv.quantity_on_hand,
+        })) as (ItemDetailBasic & { category_id: string | null; available: number })[];
     },
+    enabled: !!sourceWarehouseId,
   });
 
   // Fetch categories for toy picker filter
