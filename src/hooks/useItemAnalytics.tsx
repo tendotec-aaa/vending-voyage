@@ -57,11 +57,10 @@ export function useItemAnalytics(year: number, month: number) {
         machinesRes,
         spotsRes,
       ] = await Promise.all([
-        // 1. Sellable items
+        // 1. Items with their type flags (filter client-side for sellable OR component)
         supabase
           .from('item_details')
-          .select('id, name, sku, item_type_id, item_types!inner(is_sellable)')
-          .eq('item_types.is_sellable', true),
+          .select('id, name, sku, item_type_id, item_types(is_sellable, is_component)'),
 
         // 2. Visits for selected month
         supabase
