@@ -45,6 +45,7 @@ import ItemDetail from "./pages/ItemDetail";
 import AdminSecurity from "./pages/AdminSecurity";
 import Notifications from "./pages/Notifications";
 import Profitability from "./pages/Profitability";
+import ItemAnalytics from "./pages/ItemAnalytics";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
