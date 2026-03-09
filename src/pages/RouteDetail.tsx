@@ -30,6 +30,7 @@ export default function RouteDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { updateRoute } = useRoutes();
+  const { role } = useUserRole();
   const { routeQuery, stopsQuery, slotsQuery, maintenanceQuery, velocityMapQuery, addStop, removeStop, updateStop } = useRouteDetail(id);
   const [addLocationId, setAddLocationId] = useState("");
   const [manifestoOverrides, setManifestoOverrides] = useState<Map<string, number>>(new Map());
