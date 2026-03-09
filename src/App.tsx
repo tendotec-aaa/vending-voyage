@@ -47,6 +47,8 @@ import Notifications from "./pages/Notifications";
 import Profitability from "./pages/Profitability";
 import ItemAnalytics from "./pages/ItemAnalytics";
 import SpotHealth from "./pages/SpotHealth";
+import OperatorDashboard from "./pages/OperatorDashboard";
+import AdminOperators from "./pages/AdminOperators";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -183,7 +185,17 @@ const App = () => (
               </ProtectedRoute>
             } />
 
+            {/* Operator Dashboard */}
+            <Route path="/dashboard" element={<ProtectedRoute><OperatorDashboard /></ProtectedRoute>} />
+
             {/* Admin-only routes */}
+            <Route path="/admin/operators" element={
+              <ProtectedRoute>
+                <RequireRole roles={['admin']}>
+                  <AdminOperators />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
             <Route path="/admin/security" element={
               <ProtectedRoute>
                 <RequireRole roles={['admin']}>

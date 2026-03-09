@@ -37,6 +37,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 
 const dashboardItem = { title: "Dashboard", icon: LayoutDashboard, url: "/" };
+const operatorDashboardItem = { title: "My Dashboard", icon: LayoutDashboard, url: "/dashboard" };
 
 const operationsItems = [
   { title: "Visit Reports", icon: ClipboardList, url: "/visits" },
@@ -75,6 +76,7 @@ const businessItems = [
 ];
 
 const adminItems = [
+  { title: "Operators", icon: Users, url: "/admin/operators" },
   { title: "Security", icon: Shield, url: "/admin/security" },
 ];
 
@@ -132,6 +134,16 @@ export function AppSidebar() {
                   </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              {!isAdmin && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive(operatorDashboardItem.url)} className="w-full">
+                    <NavLink to={operatorDashboardItem.url} className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors">
+                      <operatorDashboardItem.icon className="w-5 h-5" />
+                      <span>{operatorDashboardItem.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
