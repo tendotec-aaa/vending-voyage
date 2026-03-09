@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_roles: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       assemblies: {
         Row: {
           assembly_number: string
@@ -1065,6 +1086,35 @@ export type Database = {
           },
         ]
       }
+      role_permissions: {
+        Row: {
+          id: string
+          is_enabled: boolean
+          permission_key: string
+          role_id: string
+        }
+        Insert: {
+          id?: string
+          is_enabled?: boolean
+          permission_key: string
+          role_id: string
+        }
+        Update: {
+          id?: string
+          is_enabled?: boolean
+          permission_key?: string
+          role_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "role_permissions_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "app_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       route_stops: {
         Row: {
           arrival_status: string | null
@@ -1519,6 +1569,41 @@ export type Database = {
         }
         Relationships: []
       }
+      user_assignments: {
+        Row: {
+          created_at: string | null
+          id: string
+          role_id: string
+          scope_id: string | null
+          scope_type: Database["public"]["Enums"]["assignment_scope"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          role_id: string
+          scope_id?: string | null
+          scope_type?: Database["public"]["Enums"]["assignment_scope"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          role_id?: string
+          scope_id?: string | null
+          scope_type?: Database["public"]["Enums"]["assignment_scope"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_assignments_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "app_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_profiles: {
         Row: {
           active: boolean | null
@@ -1828,6 +1913,17 @@ export type Database = {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["user_role"]
       }
+      get_user_scope: {
+        Args: { _user_id: string }
+        Returns: {
+          scope_id: string
+          scope_type: Database["public"]["Enums"]["assignment_scope"]
+        }[]
+      }
+      has_permission: {
+        Args: { _perm_key: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["user_role"]
@@ -1845,6 +1941,7 @@ export type Database = {
       }
     }
     Enums: {
+      assignment_scope: "global" | "location" | "personal"
       contract_term: "1_year" | "2_years" | "indefinite" | "custom"
       item_type: "machine_model" | "merchandise" | "spare_part" | "supply"
       machine_status: "in_warehouse" | "deployed" | "maintenance" | "retired"
@@ -1997,6 +2094,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      assignment_scope: ["global", "location", "personal"],
       contract_term: ["1_year", "2_years", "indefinite", "custom"],
       item_type: ["machine_model", "merchandise", "spare_part", "supply"],
       machine_status: ["in_warehouse", "deployed", "maintenance", "retired"],

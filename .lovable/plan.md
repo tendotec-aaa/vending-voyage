@@ -1,188 +1,121 @@
+## ✅ COMPLETED: Bulletproof Append-Only Ledger Architecture
 
+### What was implemented:
 
-## Dynamic RBAC & Security Hub
+1. **DB Trigger `sync_inventory_from_ledger`** — Fires after every INSERT on `inventory_ledger`. Automatically recomputes `inventory.quantity_on_hand` via `SUM(quantity)` for the affected `(item_detail_id, warehouse_id)` pair. The `inventory` table is now a materialized cache of the ledger.
 
-### Overview
+2. **Edge Function cleanup** (`submit-visit-report/index.ts`) — Removed `upsertInventory()` and `deductInventory()` helper functions. Only `appendLedger()` calls remain as the sole write path. The trigger handles all inventory sync.
 
-Replace the hardcoded `user_role` enum system with a dynamic, capability-based permission engine. Create 3 new tables, a `has_permission()` Postgres function, a `usePermissions()` hook, and a two-tab admin UI at `/admin/security`.
+3. **useReceiveStock.tsx cleanup** — Removed `upsertInventory` helper. Ledger inserts now drive inventory sync via trigger.
+
+4. **ItemDetail.tsx — Fixed doubling bug** — Removed manual `inventory.update()` call from `handleReportVisualDiscrepancy`. Only the ledger insert remains; trigger does the rest.
+
+5. **Admin "Reverse Entry" button** — Each ledger row (non-reversal) has an undo icon. On click, inserts a compensating `reversal` entry with `-originalQuantity`. Trigger auto-corrects inventory.
+
+6. **Warehouse Sale feature** — New `WarehouseSaleDialog` component. Records wholesale sales as `warehouse_sale` movement type in ledger. Accessible from Stock Discrepancy section.
+
+7. **`warehouse_sale` movement type** — Added to DB constraint and UI color mapping.
+
+### Architecture now:
+- **Single write path**: All inventory changes go through `inventory_ledger` INSERT
+- **Trigger sync**: `trg_sync_inventory_after_ledger` auto-updates `inventory.quantity_on_hand`
+- **Append-only**: No UPDATE/DELETE on ledger. Errors corrected via reversal entries
+- **Audit trail**: Complete history of every stock movement with performer tracking
 
 ---
 
-### 1. Database Migrations
+## ✅ COMPLETED: Category-Based SKU Generation with Uniqueness Guardrails
 
-**Migration 1: Core RBAC tables**
+### Format
+`{CategoryInitials}{SubcategoryInitials}-{6-digit-number}`
+- Category "Maquinas Vending", Subcategory "Juguetes Capsulas" → `MVJC-482910`
+- No category/subcategory → `XX-482910`
 
-```sql
--- App Roles (dynamic, admin-created)
-CREATE TABLE public.app_roles (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE,
-  description text,
-  created_at timestamptz DEFAULT now()
-);
-ALTER TABLE public.app_roles ENABLE ROW LEVEL SECURITY;
+### What was implemented:
 
--- Permissions per role
-CREATE TABLE public.role_permissions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  role_id uuid NOT NULL REFERENCES public.app_roles(id) ON DELETE CASCADE,
-  permission_key text NOT NULL,
-  is_enabled boolean NOT NULL DEFAULT false,
-  UNIQUE(role_id, permission_key)
-);
-ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
+1. **`src/lib/skuGenerator.ts`** — Rewritten with:
+   - `generateCode(name)` — extracts first letter of each word, max 2 chars
+   - `generateSkuCode(categoryName?, subcategoryName?)` — combines initials + random 6-digit number
+   - `insertItemDetailWithRetrySku(insertData, categoryName?, subcategoryName?)` — wraps INSERT with retry loop (max 3 attempts) on unique constraint violation (PostgreSQL error 23505)
 
--- Scope enum
-CREATE TYPE public.assignment_scope AS ENUM ('global', 'location', 'personal');
+2. **`src/hooks/usePurchases.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
--- User assignments
-CREATE TABLE public.user_assignments (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  role_id uuid NOT NULL REFERENCES public.app_roles(id) ON DELETE CASCADE,
-  scope_type assignment_scope NOT NULL DEFAULT 'global',
-  scope_id uuid, -- references locations.id when scope_type = 'location'
-  created_at timestamptz DEFAULT now(),
-  UNIQUE(user_id)
-);
-ALTER TABLE public.user_assignments ENABLE ROW LEVEL SECURITY;
-```
+3. **`src/hooks/useWarehouseInventory.tsx`** — Uses `insertItemDetailWithRetrySku`, accepts `categoryName`/`subcategoryName` params
 
-**RLS Policies** (all 3 tables): Authenticated can SELECT. Only admins (via existing `has_role(auth.uid(), 'admin')`) can INSERT/UPDATE/DELETE.
+4. **`src/hooks/useAssemblies.tsx`** — Uses `insertItemDetailWithRetrySku` with category/subcategory name lookup
 
-**Migration 2: `has_permission()` function**
+5. **`src/pages/NewPurchase.tsx`** — Uses `generateSkuCode()` for preview/placeholder SKUs
 
-```sql
-CREATE OR REPLACE FUNCTION public.has_permission(_user_id uuid, _perm_key text)
-RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.user_assignments ua
-    JOIN public.role_permissions rp ON rp.role_id = ua.role_id
-    WHERE ua.user_id = _user_id
-      AND rp.permission_key = _perm_key
-      AND rp.is_enabled = true
-  )
-$$;
-```
+### Uniqueness guarantees:
+- **DB constraint** `item_definitions_sku_key` (UNIQUE on `sku`) prevents duplicates
+- **Retry loop** regenerates SKU on collision, up to 3 attempts
+- **Single helper function** used by all item creation flows
 
-Also create a helper to get scope:
+---
 
-```sql
-CREATE OR REPLACE FUNCTION public.get_user_scope(_user_id uuid)
-RETURNS TABLE(scope_type assignment_scope, scope_id uuid)
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT ua.scope_type, ua.scope_id
-  FROM public.user_assignments ua
-  WHERE ua.user_id = _user_id
-  LIMIT 1
-$$;
-```
+## ✅ COMPLETED: Sales Order System with Atomic RPC
 
-**Migration 3: Seed default roles**
+### What was implemented:
 
-Insert 3 starter roles with their permission keys:
+1. **BEFORE INSERT trigger `compute_ledger_running_balance`** — Auto-computes `running_balance` on `inventory_ledger` inserts. All callers (existing and new) no longer need to compute it — the trigger overwrites whatever value is passed. Existing code continues working with zero breakage.
 
-- **Administrator**: all permissions enabled
-- **Route Operator**: `view_routes`, `manage_own_route`, `view_stock`
-- **Warehouse Manager**: `view_stock`, `edit_bodega`
+2. **`sales` table** — Header with `sale_number`, `sale_date`, `buyer_name`, `buyer_contact`, `warehouse_id`, `subtotal`, `tax_rate`, `tax_amount`, `total_amount`, `currency`, `paid`, `status`, `notes`, `created_by`. RLS enabled.
 
-Permission keys to seed (all as rows in `role_permissions`):
+3. **`sale_items` table** — Line items with `sale_id`, `item_detail_id`, `quantity`, `unit_price`, `total_price`. Cascading delete on sale. RLS enabled.
+
+4. **`create_sales_order` RPC** — SECURITY DEFINER PostgreSQL function. Accepts single JSON payload. Atomically inserts sale header, all line items, and `inventory_ledger` entries (movement_type: `warehouse_sale`, negative quantity). Running balance = 0 placeholder (trigger computes real value). Full transaction safety.
+
+5. **`useSales.tsx` hook** — Queries sales with nested items, warehouses, item catalog. `createSale` mutation calls RPC. `useStockCheck` for pre-submit validation.
+
+6. **`Sales.tsx` list page** — Searchable table with sale number, buyer, date, items count, total, paid badge.
+
+7. **`NewSale.tsx` form** — Multi-line item entry with warehouse selection, tax rate, buyer info. Soft stock warning via AlertDialog when quantity exceeds `quantity_on_hand` — user can confirm and proceed (allows negative inventory).
+
+8. **`SaleDetail.tsx`** — Read-only detail with header cards, line items table.
+
+9. **Sidebar + routing** — DollarSign icon under Supply Chain. Routes: `/sales`, `/sales/new`, `/sales/:id`.
+
+### Architecture:
+- **Single atomic write path**: All sales go through `create_sales_order` RPC (no multi-step client inserts)
+- **No running_balance in frontend**: RPC passes `0`, BEFORE INSERT trigger computes correct value
+- **Soft stock warnings**: UI warns but allows proceeding — inventory can go negative
+- **Ledger integrity**: Every sale creates `warehouse_sale` ledger entries, existing AFTER INSERT trigger syncs `inventory.quantity_on_hand`
+
+---
+
+## ✅ COMPLETED: Dynamic RBAC & Security Hub
+
+### What was implemented:
+
+1. **`app_roles` table** — Dynamic, admin-created roles with name + description. RLS: authenticated SELECT, admin-only INSERT/UPDATE/DELETE.
+
+2. **`role_permissions` table** — Maps roles to permission keys with `is_enabled` boolean. Cascading delete on role. Same RLS pattern.
+
+3. **`user_assignments` table** — Maps users to roles with `assignment_scope` enum (`global`, `location`, `personal`) and optional `scope_id`. Unique per user.
+
+4. **`has_permission()` SQL function** — SECURITY DEFINER. Joins `user_assignments` → `role_permissions` to check if a user has a specific permission key enabled.
+
+5. **`get_user_scope()` SQL function** — Returns user's scope type and scope_id.
+
+6. **Seed data** — 3 default roles (Administrator, Route Operator, Warehouse Manager) with 11 permission keys each. Existing users backfilled from `user_roles` table.
+
+7. **`usePermissions()` hook** — Fetches user's assignment, role name, enabled permission keys, and scope. Caches via React Query. Exposes `has(key)` function. Admins always pass all checks.
+
+8. **`PermissionGuard` component** — Route guard that shows `AccessDenied` (403 page with Shield icon) if user lacks required permission.
+
+9. **`AdminSecurity` page (`/admin/security`)** — Two-tab interface:
+   - **Tab 1: Roles & Permissions Matrix** — Left sidebar to select/create roles, main panel with categorized permission toggles (Finance, Inventory, Operations, Supply Chain, Admin). Instant mutation on each Switch toggle.
+   - **Tab 2: User Assignments** — DataTable of all users with Role dropdown, Scope dropdown, and Location selector (when scope = location). Instant upsert on change.
+
+10. **Dynamic Sidebar** — Supply Chain, Insights, Business, and Admin sections conditionally rendered based on permission keys. Dashboard, Operations, Assets, Locations, and Personal always visible.
+
+11. **Route Guards in App.tsx** — `/sales/*` → `manage_sales`, `/purchases/*` → `manage_purchases`, `/analytics` → `view_analytics`, `/users/*` + `/company` → `manage_users`, `/admin/security` → `RequireRole(['admin'])`.
+
+### Architecture:
+- **Backward compatible**: Old `user_roles` table and `has_role()` function preserved for existing RLS policies
+- **Data-driven**: Permissions stored in DB, not hardcoded. Admin can create new roles and toggle capabilities on the fly
+- **Instant mutations**: Each Switch/Select change fires immediate DB update via React Query mutation
+- **Scope stored but frontend-only initially**: Scope column assignable in UI, RLS wiring deferred
+
+### Permission Keys:
 `view_costs`, `view_profits`, `view_stock`, `edit_bodega`, `view_all_routes`, `manage_own_route`, `manage_users`, `view_analytics`, `manage_purchases`, `manage_sales`, `manage_maintenance`
-
-**Migration 4: Migrate existing users**
-
-Backfill `user_assignments` from existing `user_roles` table, mapping `admin` -> Administrator role, `route_operator` -> Route Operator role, `warehouse_manager` -> Warehouse Manager role.
-
-> Note: The old `user_roles` table and `has_role()` function are kept for backward compatibility with existing RLS policies. New features use `has_permission()`.
-
----
-
-### 2. New Files
-
-| File | Purpose |
-|------|---------|
-| `src/hooks/usePermissions.tsx` | Fetches user's assignment + all enabled permission_keys. Caches via React Query. Exposes `has(key)`, `scope`, `permissions[]`, `isAdmin` |
-| `src/pages/AdminSecurity.tsx` | Two-tab page: Roles & Permissions Matrix, User Assignments |
-| `src/components/auth/PermissionGuard.tsx` | Route guard component: checks `has(perm)`, shows 403 page if denied |
-| `src/components/auth/AccessDenied.tsx` | Beautiful 403 empty state with Shield icon and "Back to Dashboard" button |
-
----
-
-### 3. `usePermissions()` Hook
-
-```typescript
-// Returns cached permission set for current user
-const { has, permissions, scope, roleId, roleName, isLoading } = usePermissions();
-// has('view_costs') -> boolean
-// scope -> { type: 'global'|'location'|'personal', scopeId?: uuid }
-```
-
-Query joins `user_assignments` -> `app_roles` -> `role_permissions` in a single fetch. Falls back to checking `has_role(admin)` for backward compat (admins always pass).
-
----
-
-### 4. Security Hub Page (`/admin/security`)
-
-**Tab 1: Roles & Permissions Matrix**
-- Left sidebar: list of roles with "Add Role" button (Dialog with name + description)
-- Selecting a role shows the permissions grid in the main panel
-- Permission categories with Switch toggles:
-  - **Finance**: `view_costs`, `view_profits`
-  - **Inventory**: `view_stock`, `edit_bodega`
-  - **Operations**: `view_all_routes`, `manage_own_route`
-  - **Supply Chain**: `manage_purchases`, `manage_sales`
-  - **Admin**: `manage_users`, `view_analytics`, `manage_maintenance`
-- Each Switch fires an instant upsert mutation to `role_permissions` (no Save button)
-- Delete role button (with confirmation dialog)
-
-**Tab 2: User Assignments**
-- Table of all users from `user_profiles`
-- Columns: Name, Email, Role (Select dropdown of `app_roles`), Scope (Select: Global/Location/Personal), Location (Select, visible only when scope = Location)
-- Changing any dropdown fires an instant upsert to `user_assignments`
-
----
-
-### 5. Modified Files
-
-| File | Change |
-|------|--------|
-| `src/App.tsx` | Add `/admin/security` route wrapped in `<RequireRole roles={['admin']}>`. Import `PermissionGuard` for sensitive routes (sales, purchases, analytics) |
-| `src/components/layout/AppSidebar.tsx` | Import `usePermissions`. Add permission-to-link mapping. Conditionally render sidebar sections. Add "Security" link under Business (admin only) |
-| `src/components/auth/PermissionGuard.tsx` | New component wrapping children, shows `<AccessDenied>` if `!has(requiredPerm)` |
-
-**Sidebar permission mapping:**
-```text
-Supply Chain section -> has('view_costs') || has('manage_purchases')
-Analytics -> has('view_analytics')
-Users/Company -> has('manage_users')
-Security -> isAdmin (from old has_role check)
-```
-
-Operations, Assets, Locations, Personal, Dashboard always visible.
-
----
-
-### 6. Route Guards in App.tsx
-
-Wrap sensitive routes with `<PermissionGuard>`:
-- `/sales/*` -> `manage_sales`
-- `/purchases/*` -> `manage_purchases`
-- `/analytics` -> `view_analytics`
-- `/users/*` -> `manage_users`
-- `/admin/security` -> stays with `<RequireRole roles={['admin']}>`
-
----
-
-### Key Design Decisions
-
-- **Backward compatible**: `user_roles` table and `has_role()` stay. Admin check for the security page itself uses the existing enum-based guard
-- **Instant mutations**: No bulk save -- each Switch toggle immediately updates the DB via React Query mutation + `invalidateQueries`
-- **No RLS rewrite yet**: Existing RLS policies stay. `has_permission()` is created and ready for future RLS migration. Rewriting all existing policies is a separate, careful task
-- **Scope stored but frontend-only initially**: The scope column is stored and assignable. Wiring scope into RLS on routes/visits is deferred to avoid breaking existing access
-

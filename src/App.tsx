@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { RequireRole } from "@/components/auth/RequireRole";
+import { PermissionGuard } from "@/components/auth/PermissionGuard";
 import Index from "./pages/Index";
 import Machines from "./pages/Machines";
 import MachineDetail from "./pages/MachineDetail";
@@ -40,6 +42,7 @@ import UserProfile from "./pages/UserProfile";
 import CompanyProfile from "./pages/CompanyProfile";
 import LocationDetail from "./pages/LocationDetail";
 import ItemDetail from "./pages/ItemDetail";
+import AdminSecurity from "./pages/AdminSecurity";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -70,27 +73,97 @@ const App = () => (
             <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
             <Route path="/inventory/:id" element={<ProtectedRoute><ItemDetail /></ProtectedRoute>} />
             <Route path="/locations" element={<ProtectedRoute><Locations /></ProtectedRoute>} />
-            <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/maintenance" element={<ProtectedRoute><Maintenance /></ProtectedRoute>} />
             <Route path="/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
             <Route path="/suppliers/:id" element={<ProtectedRoute><SupplierDetail /></ProtectedRoute>} />
-            <Route path="/purchases" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />
-            <Route path="/purchases/new" element={<ProtectedRoute><NewPurchase /></ProtectedRoute>} />
-            <Route path="/purchases/:id" element={<ProtectedRoute><PurchaseDetail /></ProtectedRoute>} />
             <Route path="/warehouse" element={<ProtectedRoute><Warehouse /></ProtectedRoute>} />
             <Route path="/warehouse/assembly/new" element={<ProtectedRoute><NewAssembly /></ProtectedRoute>} />
-            <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
-            <Route path="/sales/new" element={<ProtectedRoute><NewSale /></ProtectedRoute>} />
-            <Route path="/sales/:id" element={<ProtectedRoute><SaleDetail /></ProtectedRoute>} />
-             <Route path="/spots" element={<ProtectedRoute><Spots /></ProtectedRoute>} />
+            <Route path="/spots" element={<ProtectedRoute><Spots /></ProtectedRoute>} />
             <Route path="/spots/:id" element={<ProtectedRoute><SpotDetail /></ProtectedRoute>} />
-            <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
-            <Route path="/users/:id" element={<ProtectedRoute><UserDetail /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
-            <Route path="/company" element={<ProtectedRoute><CompanyProfile /></ProtectedRoute>} />
             <Route path="/locations/:id" element={<ProtectedRoute><LocationDetail /></ProtectedRoute>} />
-            <Route path="/company" element={<ProtectedRoute><CompanyProfile /></ProtectedRoute>} />
+
+            {/* Permission-gated routes */}
+            <Route path="/analytics" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="view_analytics">
+                  <Analytics />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+            <Route path="/purchases" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="manage_purchases">
+                  <Purchases />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+            <Route path="/purchases/new" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="manage_purchases">
+                  <NewPurchase />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+            <Route path="/purchases/:id" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="manage_purchases">
+                  <PurchaseDetail />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+            <Route path="/sales" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="manage_sales">
+                  <Sales />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+            <Route path="/sales/new" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="manage_sales">
+                  <NewSale />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+            <Route path="/sales/:id" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="manage_sales">
+                  <SaleDetail />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+            <Route path="/users" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="manage_users">
+                  <Users />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+            <Route path="/users/:id" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="manage_users">
+                  <UserDetail />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+            <Route path="/company" element={
+              <ProtectedRoute>
+                <PermissionGuard requiredPerm="manage_users">
+                  <CompanyProfile />
+                </PermissionGuard>
+              </ProtectedRoute>
+            } />
+
+            {/* Admin-only routes */}
+            <Route path="/admin/security" element={
+              <ProtectedRoute>
+                <RequireRole roles={['admin']}>
+                  <AdminSecurity />
+                </RequireRole>
+              </ProtectedRoute>
+            } />
             
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />
