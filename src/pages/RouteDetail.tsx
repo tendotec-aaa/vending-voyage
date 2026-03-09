@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RouteStopCard } from "@/components/routes/RouteStopCard";
 import { PickList } from "@/components/routes/PickList";
+import { ReconciliationTab } from "@/components/routes/ReconciliationTab";
 import { ArrowLeft, Plus, Copy } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
