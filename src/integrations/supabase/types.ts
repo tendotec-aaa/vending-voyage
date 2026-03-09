@@ -1584,6 +1584,39 @@ export type Database = {
         }
         Relationships: []
       }
+      system_notifications: {
+        Row: {
+          created_at: string
+          id: string
+          is_read: boolean
+          link_url: string | null
+          message: string
+          title: string
+          type: Database["public"]["Enums"]["notification_type"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          link_url?: string | null
+          message: string
+          title: string
+          type?: Database["public"]["Enums"]["notification_type"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          link_url?: string | null
+          message?: string
+          title?: string
+          type?: Database["public"]["Enums"]["notification_type"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_assignments: {
         Row: {
           created_at: string | null
@@ -1895,7 +1928,27 @@ export type Database = {
       }
     }
     Functions: {
+      create_role_notification: {
+        Args: {
+          p_link_url?: string
+          p_message: string
+          p_role_name: string
+          p_title: string
+          p_type?: Database["public"]["Enums"]["notification_type"]
+        }
+        Returns: undefined
+      }
       create_sales_order: { Args: { payload: Json }; Returns: string }
+      create_user_notification: {
+        Args: {
+          p_link_url?: string
+          p_message: string
+          p_title: string
+          p_type?: Database["public"]["Enums"]["notification_type"]
+          p_user_id: string
+        }
+        Returns: string
+      }
       get_top_items_volume: {
         Args: {
           p_end: string
@@ -1961,6 +2014,7 @@ export type Database = {
       item_type: "machine_model" | "merchandise" | "spare_part" | "supply"
       machine_status: "in_warehouse" | "deployed" | "maintenance" | "retired"
       negotiation_type: "fixed_rent" | "commission" | "hybrid"
+      notification_type: "alert" | "operation" | "system"
       purchase_status:
         | "draft"
         | "pending"
@@ -2114,6 +2168,7 @@ export const Constants = {
       item_type: ["machine_model", "merchandise", "spare_part", "supply"],
       machine_status: ["in_warehouse", "deployed", "maintenance", "retired"],
       negotiation_type: ["fixed_rent", "commission", "hybrid"],
+      notification_type: ["alert", "operation", "system"],
       purchase_status: [
         "draft",
         "pending",
