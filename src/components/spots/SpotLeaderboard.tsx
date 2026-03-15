@@ -18,6 +18,7 @@ import { TopPerformerCard } from "./TopPerformerCard";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useTranslation } from "react-i18next";
 
 type SortKey = "totalSales" | "netProfit" | "roi" | "stockPercentage" | "totalAccruedRent" | "daysActive" | "visitCount";
 type SortDir = "asc" | "desc";
@@ -27,6 +28,7 @@ interface SpotLeaderboardProps {
 }
 
 export function SpotLeaderboard({ spots }: SpotLeaderboardProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [sortKey, setSortKey] = useState<SortKey>("netProfit");
@@ -93,7 +95,7 @@ export function SpotLeaderboard({ spots }: SpotLeaderboardProps) {
         <div className="space-y-3">
           {/* Mobile sort selector */}
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Sort by:</span>
+            <span className="text-xs text-muted-foreground">{t('spots.sortBy')}</span>
             <select
               className="text-xs bg-card border border-border rounded px-2 py-1 text-foreground"
               value={sortKey}
@@ -102,13 +104,13 @@ export function SpotLeaderboard({ spots }: SpotLeaderboardProps) {
                 setSortDir("desc");
               }}
             >
-              <option value="netProfit">Profit</option>
-              <option value="totalSales">Sales</option>
-              <option value="totalAccruedRent">Rent</option>
-              <option value="roi">ROI</option>
-              <option value="daysActive">Days Open</option>
-              <option value="visitCount">Visits</option>
-              <option value="stockPercentage">Stock</option>
+              <option value="netProfit">{t('spots.profit')}</option>
+              <option value="totalSales">{t('spots.sales')}</option>
+              <option value="totalAccruedRent">{t('spots.rent')}</option>
+              <option value="roi">{t('spots.roi')}</option>
+              <option value="daysActive">{t('spots.daysOpen')}</option>
+              <option value="visitCount">{t('spots.visits')}</option>
+              <option value="stockPercentage">{t('spots.stock')}</option>
             </select>
             <Button
               variant="ghost"
@@ -145,15 +147,15 @@ export function SpotLeaderboard({ spots }: SpotLeaderboardProps) {
 
                 <div className="grid grid-cols-3 gap-3 mb-3">
                   <div>
-                    <p className="text-xs text-muted-foreground">Sales</p>
+                    <p className="text-xs text-muted-foreground">{t('spots.sales')}</p>
                     <p className="text-sm font-semibold text-foreground">${fmt2(spot.totalSales)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Rent</p>
+                    <p className="text-xs text-muted-foreground">{t('spots.rent')}</p>
                     <p className="text-sm font-medium text-muted-foreground">${fmt2(spot.totalAccruedRent)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Profit</p>
+                    <p className="text-xs text-muted-foreground">{t('spots.profit')}</p>
                     <p className={`text-sm font-semibold ${isProfitable ? "text-green-500" : "text-destructive"}`}>
                       ${fmt2(spot.netProfit)}
                     </p>
@@ -162,21 +164,21 @@ export function SpotLeaderboard({ spots }: SpotLeaderboardProps) {
 
                 <div className="grid grid-cols-4 gap-2">
                   <div>
-                    <p className="text-[10px] text-muted-foreground">ROI</p>
+                    <p className="text-[10px] text-muted-foreground">{t('spots.roi')}</p>
                     <p className={`text-xs font-medium ${spot.roi >= 0 ? "text-green-500" : "text-destructive"}`}>
                       {fmtPct(spot.roi)}%
                     </p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Days</p>
+                    <p className="text-[10px] text-muted-foreground">{t('spots.days')}</p>
                     <p className="text-xs font-medium text-foreground">{spot.daysActive}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Visits</p>
+                    <p className="text-[10px] text-muted-foreground">{t('spots.visits')}</p>
                     <p className="text-xs font-medium text-foreground">{spot.visitCount}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Stock</p>
+                    <p className="text-[10px] text-muted-foreground">{t('spots.stock')}</p>
                     <div className="flex items-center gap-1">
                       <Progress value={spot.stockPercentage} className="flex-1 h-1.5" />
                       <span className="text-[10px] text-muted-foreground">{fmtPct0(spot.stockPercentage)}%</span>
@@ -193,32 +195,32 @@ export function SpotLeaderboard({ spots }: SpotLeaderboardProps) {
           <Table>
             <TableHeader>
               <TableRow className="border-border">
-                <TableHead className="text-muted-foreground w-14">Rank</TableHead>
-                <TableHead className="text-muted-foreground">Spot</TableHead>
-                <TableHead className="text-muted-foreground">Location</TableHead>
+                <TableHead className="text-muted-foreground w-14">{t('spots.rank')}</TableHead>
+                <TableHead className="text-muted-foreground">{t('spots.spot')}</TableHead>
+                <TableHead className="text-muted-foreground">{t('spots.location')}</TableHead>
                 <TableHead className="text-muted-foreground text-right">
-                  <SortButton column="totalSales" label="Sales" />
+                  <SortButton column="totalSales" label={t('spots.sales')} />
                 </TableHead>
                 <TableHead className="text-muted-foreground text-right">
-                  <SortButton column="totalAccruedRent" label="Rent" />
+                  <SortButton column="totalAccruedRent" label={t('spots.rent')} />
                 </TableHead>
                 <TableHead className="text-muted-foreground text-right">
-                  <SortButton column="netProfit" label="Profit" />
+                  <SortButton column="netProfit" label={t('spots.profit')} />
                 </TableHead>
                 <TableHead className="text-muted-foreground text-right">
-                  <SortButton column="roi" label="ROI" />
+                  <SortButton column="roi" label={t('spots.roi')} />
                 </TableHead>
                 <TableHead className="text-muted-foreground text-center">
-                  <SortButton column="daysActive" label="Days" />
+                  <SortButton column="daysActive" label={t('spots.days')} />
                 </TableHead>
                 <TableHead className="text-muted-foreground text-center">
-                  <SortButton column="visitCount" label="Visits" />
+                  <SortButton column="visitCount" label={t('spots.visits')} />
                 </TableHead>
                 <TableHead className="text-muted-foreground">
-                  <SortButton column="stockPercentage" label="Stock" />
+                  <SortButton column="stockPercentage" label={t('spots.stock')} />
                 </TableHead>
-                <TableHead className="text-muted-foreground w-20">Last Visit</TableHead>
-                <TableHead className="text-muted-foreground w-12">Trend</TableHead>
+                <TableHead className="text-muted-foreground w-20">{t('spots.lastVisit')}</TableHead>
+                <TableHead className="text-muted-foreground w-12">{t('spots.trend')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useCategories } from "@/hooks/useCategories";
 import type { Database } from "@/integrations/supabase/types";
 import { format } from "date-fns";
+import { useTranslation } from "react-i18next";
 
 type Machine = Database["public"]["Tables"]["machines"]["Row"];
 type MachineStatus = Database["public"]["Enums"]["machine_status"];
@@ -38,6 +39,7 @@ interface ItemDetailBasic {
 }
 
 export default function MachinesPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -220,50 +222,50 @@ export default function MachinesPage() {
   }, [machines, searchQuery, filterStatus, filterAssignment, setups]);
 
   const getAssignmentBadge = (machine: Machine) => {
-    if (machine.status === "retired") return { label: "Retired", variant: "outline" as const, link: null };
-    if (machine.setup_id) return { label: "Assigned", variant: "default" as const, link: "/setups" };
-    return { label: "Unassigned", variant: "secondary" as const, link: null };
+    if (machine.status === "retired") return { label: t('machines.retired'), variant: "outline" as const, link: null };
+    if (machine.setup_id) return { label: t('machines.assigned'), variant: "default" as const, link: "/setups" };
+    return { label: t('machines.unassigned'), variant: "secondary" as const, link: null };
   };
 
   const getLocationBadge = (machine: Machine) => {
-    if (machine.status === "retired") return { label: "Discarded", variant: "outline" as const, link: null };
+    if (machine.status === "retired") return { label: t('machines.discarded'), variant: "outline" as const, link: null };
     const setup = setups.find((s) => s.id === machine.setup_id);
     if (setup?.spot_id) {
       const spot = spots.find((s) => s.id === setup.spot_id);
-      return { label: "Deployed", variant: "default" as const, link: spot ? `/spots/${spot.id}` : null };
+      return { label: t('machines.deployed'), variant: "default" as const, link: spot ? `/spots/${spot.id}` : null };
     }
-    return { label: "In Warehouse", variant: "secondary" as const, link: "/warehouse" };
+    return { label: t('machines.inWarehouse'), variant: "secondary" as const, link: "/warehouse" };
   };
 
   return (
     <AppLayout
-      title="Machines"
-      subtitle="Manage your vending machine fleet"
+      title={t('machines.title')}
+      subtitle={t('machines.subtitle')}
       actions={
         <Dialog open={isCreateOpen} onOpenChange={handleDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="gap-2"><Plus className="w-4 h-4" /> Register Machines</Button>
+            <Button className="gap-2"><Plus className="w-4 h-4" /> {t('machines.registerMachines')}</Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>Register Machines</DialogTitle>
-              <DialogDescription>Bulk register machines. Serial numbers will be auto-generated.</DialogDescription>
+              <DialogTitle>{t('machines.registerTitle')}</DialogTitle>
+              <DialogDescription>{t('machines.registerDesc')}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="serial_generation">Serial Generation *</Label>
+                  <Label htmlFor="serial_generation">{t('machines.serialGeneration')}</Label>
                   <Input id="serial_generation" placeholder="e.g., AA" value={serialGeneration} onChange={(e) => setSerialGeneration(e.target.value.toUpperCase())} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="number_of_units">Number of Units *</Label>
+                  <Label htmlFor="number_of_units">{t('machines.numberOfUnits')}</Label>
                   <Input id="number_of_units" type="number" min="1" placeholder="10" value={numberOfUnits} onChange={(e) => setNumberOfUnits(e.target.value)} />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
+                <Label htmlFor="category">{t('machines.category')}</Label>
                 <Select value={selectedCategoryId} onValueChange={(val) => { setSelectedCategoryId(val); setSelectedModelId(""); }}>
-                  <SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('machines.selectCategory')} /></SelectTrigger>
                   <SelectContent>
                     {categories.map((category) => (
                       <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
@@ -272,12 +274,12 @@ export default function MachinesPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="model">Item Name</Label>
+                <Label htmlFor="model">{t('machines.itemName')}</Label>
                 <Select value={selectedModelId} onValueChange={setSelectedModelId} disabled={!selectedCategoryId}>
-                  <SelectTrigger><SelectValue placeholder={selectedCategoryId ? "Select an item" : "Select category first"} /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={selectedCategoryId ? t('machines.selectItem') : t('machines.selectCategoryFirst')} /></SelectTrigger>
                   <SelectContent>
                     {models.length === 0 && selectedCategoryId ? (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">No items found in this category. Create items first via a Purchase Order.</div>
+                      <div className="px-3 py-2 text-sm text-muted-foreground">{t('machines.noItemsInCategory')}</div>
                     ) : (
                       models.map((model) => (<SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>))
                     )}
@@ -285,22 +287,22 @@ export default function MachinesPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="number_of_slots">Number of Slots (per machine)</Label>
+                <Label htmlFor="number_of_slots">{t('machines.numberOfSlots')}</Label>
                 <Input id="number_of_slots" type="number" min="1" value={numberOfSlots} onChange={(e) => setNumberOfSlots(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="cash_key">Cash Key</Label>
-                  <Input id="cash_key" placeholder="Optional" value={cashKey} onChange={(e) => setCashKey(e.target.value)} />
+                  <Label htmlFor="cash_key">{t('machines.cashKey')}</Label>
+                  <Input id="cash_key" placeholder={t('common.optional')} value={cashKey} onChange={(e) => setCashKey(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="toy_key">Toy Key</Label>
-                  <Input id="toy_key" placeholder="Optional" value={toyKey} onChange={(e) => setToyKey(e.target.value)} />
+                  <Label htmlFor="toy_key">{t('machines.toyKey')}</Label>
+                  <Input id="toy_key" placeholder={t('common.optional')} value={toyKey} onChange={(e) => setToyKey(e.target.value)} />
                 </div>
               </div>
               {serialGeneration && parseInt(numberOfUnits) > 0 && (
                 <div className="p-3 bg-muted rounded-md">
-                  <Label className="text-xs text-muted-foreground">Serial Numbers Preview</Label>
+                  <Label className="text-xs text-muted-foreground">{t('machines.serialPreview')}</Label>
                   <div className="flex flex-wrap gap-2 mt-2">
                     {previewSerials().map((serial) => (<Badge key={serial} variant="secondary">{serial}</Badge>))}
                     {parseInt(numberOfUnits) > 5 && (<Badge variant="outline">+{parseInt(numberOfUnits) - 5} more</Badge>)}
@@ -309,9 +311,9 @@ export default function MachinesPage() {
               )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => { setIsCreateOpen(false); resetForm(); }}>Cancel</Button>
+              <Button variant="outline" onClick={() => { setIsCreateOpen(false); resetForm(); }}>{t('common.cancel')}</Button>
               <Button onClick={() => createMachines.mutate()} disabled={!serialGeneration.trim() || !numberOfUnits || parseInt(numberOfUnits) < 1 || createMachines.isPending}>
-                {createMachines.isPending ? "Registering..." : `Register ${numberOfUnits || 0} Machine(s)`}
+                {createMachines.isPending ? t('common.creating') : t('machines.registerCount', { count: parseInt(numberOfUnits) || 0 })}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -322,25 +324,25 @@ export default function MachinesPage() {
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search by serial number..." className="pl-10 bg-background" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            <Input placeholder={t('machines.searchBySerial')} className="pl-10 bg-background" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           </div>
           <Select value={filterAssignment} onValueChange={setFilterAssignment}>
-            <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Assignment" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder={t('machines.allAssignment')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Assignment</SelectItem>
-              <SelectItem value="assigned">Assigned</SelectItem>
-              <SelectItem value="unassigned">Unassigned</SelectItem>
-              <SelectItem value="retired">Retired</SelectItem>
+              <SelectItem value="all">{t('machines.allAssignment')}</SelectItem>
+              <SelectItem value="assigned">{t('machines.assigned')}</SelectItem>
+              <SelectItem value="unassigned">{t('machines.unassigned')}</SelectItem>
+              <SelectItem value="retired">{t('machines.retired')}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder={t('machines.allStatus')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="in_warehouse">In Warehouse</SelectItem>
-              <SelectItem value="deployed">Deployed</SelectItem>
-              <SelectItem value="maintenance">Maintenance</SelectItem>
-              <SelectItem value="retired">Retired</SelectItem>
+              <SelectItem value="all">{t('machines.allStatus')}</SelectItem>
+              <SelectItem value="in_warehouse">{t('machines.inWarehouse')}</SelectItem>
+              <SelectItem value="deployed">{t('machines.deployed')}</SelectItem>
+              <SelectItem value="maintenance">{t('machines.maintenanceStatus')}</SelectItem>
+              <SelectItem value="retired">{t('machines.retired')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -348,21 +350,21 @@ export default function MachinesPage() {
 
       <Card className="bg-card border-border">
         {isLoading ? (
-          <div className="p-8 text-center text-muted-foreground">Loading machines...</div>
+          <div className="p-8 text-center text-muted-foreground">{t('machines.loadingMachines')}</div>
         ) : sortedMachines.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">
-            {searchQuery ? "No machines match your search" : "No machines found. Register your first machines!"}
+            {searchQuery ? t('machines.noMatch') : t('machines.noMachines')}
           </div>
         ) : (
           <Table>
             <TableHeader>
               <TableRow className="border-border">
-                <TableHead className="text-muted-foreground">Serial Number</TableHead>
-                <TableHead className="text-muted-foreground">Item Name</TableHead>
-                <TableHead className="text-muted-foreground">Slots</TableHead>
-                <TableHead className="text-muted-foreground">Assignment</TableHead>
-                <TableHead className="text-muted-foreground">Location</TableHead>
-                <TableHead className="text-muted-foreground">Start Work</TableHead>
+                <TableHead className="text-muted-foreground">{t('machines.serialNumber')}</TableHead>
+                <TableHead className="text-muted-foreground">{t('machines.itemName')}</TableHead>
+                <TableHead className="text-muted-foreground">{t('machines.slots')}</TableHead>
+                <TableHead className="text-muted-foreground">{t('machines.assignment')}</TableHead>
+                <TableHead className="text-muted-foreground">{t('machines.locationCol')}</TableHead>
+                <TableHead className="text-muted-foreground">{t('machines.startWork')}</TableHead>
                 <TableHead className="text-muted-foreground w-10"></TableHead>
               </TableRow>
             </TableHeader>
@@ -412,12 +414,12 @@ export default function MachinesPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/machines/${machine.id}`); }}>View Details</DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/machines/${machine.id}`); }}>{t('machines.viewDetails')}</DropdownMenuItem>
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); updateMachineStatus.mutate({ machineId: machine.id, status: 'maintenance' }); }}>
-                            <Wrench className="w-4 h-4 mr-2" /> Set to Maintenance
+                            <Wrench className="w-4 h-4 mr-2" /> {t('machines.setMaintenance')}
                           </DropdownMenuItem>
                           <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); updateMachineStatus.mutate({ machineId: machine.id, status: 'retired' }); }}>
-                            Retire Machine
+                            {t('machines.retireMachine')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

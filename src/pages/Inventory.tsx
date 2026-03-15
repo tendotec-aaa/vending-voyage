@@ -14,6 +14,7 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { ReceiveStockDialog } from "@/components/inventory/ReceiveStockDialog";
 import { Badge } from "@/components/ui/badge";
+import { useTranslation } from "react-i18next";
 
 interface InventoryItem {
   id: string;
@@ -146,6 +147,7 @@ function useConsolidatedInventory() {
 }
 
 export default function InventoryPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: inventory, isLoading } = useConsolidatedInventory();
   const [searchQuery, setSearchQuery] = useState("");
@@ -179,31 +181,30 @@ export default function InventoryPage() {
 
   return (
     <AppLayout
-      title="Inventory"
-      subtitle="Track product stock across warehouses and machines"
+      title={t('machines.title') === 'Machines' ? 'Inventario' : t('sidebar.inventoryValuation')}
+      subtitle={t('warehouse.subtitle')}
       actions={
         <div className="flex gap-3">
           <ReceiveStockDialog />
-          <Button className="gap-2">Transfer Stock</Button>
         </div>
       }
     >
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <Card className="p-4">
-          <p className="text-sm text-muted-foreground">Active SKUs / Total SKUs</p>
+          <p className="text-sm text-muted-foreground">{t('warehouse.activeSKUs')}</p>
           <p className="text-2xl font-bold text-foreground">{stats.activeSKUs} <span className="text-muted-foreground font-normal text-lg">/ {stats.totalSKUs}</span></p>
         </Card>
         <Card className="p-4">
-          <p className="text-sm text-muted-foreground">Warehouse Stock</p>
+          <p className="text-sm text-muted-foreground">{t('machines.inWarehouse')}</p>
           <p className="text-2xl font-bold text-foreground">{stats.warehouseStock.toLocaleString()}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-sm text-muted-foreground">Deployed</p>
+          <p className="text-sm text-muted-foreground">{t('machines.deployed')}</p>
           <p className="text-2xl font-bold text-foreground">{stats.deployed.toLocaleString()}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-sm text-muted-foreground">Total Inventory Cost</p>
+          <p className="text-sm text-muted-foreground">{t('profitability.grossRevenue')}</p>
           <p className="text-2xl font-bold text-foreground">${stats.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </Card>
       </div>
@@ -214,7 +215,7 @@ export default function InventoryPage() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input 
-              placeholder="Search products..." 
+              placeholder={t('warehouse.searchBySKU')} 
               className="pl-10 bg-background"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -222,7 +223,7 @@ export default function InventoryPage() {
           </div>
           <div className="flex items-center gap-2">
             <Switch id="show-zero" checked={showZeroStock} onCheckedChange={setShowZeroStock} />
-            <Label htmlFor="show-zero" className="text-sm text-muted-foreground whitespace-nowrap">Show zero/negative stock</Label>
+            <Label htmlFor="show-zero" className="text-sm text-muted-foreground whitespace-nowrap">{t('warehouse.showZeroStock')}</Label>
           </div>
         </div>
       </Card>
@@ -237,13 +238,13 @@ export default function InventoryPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>SKU</TableHead>
-                <TableHead>Product Name</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead className="text-right">Warehouse</TableHead>
-                <TableHead className="text-right">Deployed</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead className="text-right">Inventory Cost</TableHead>
+                <TableHead>{t('warehouse.sku')}</TableHead>
+                <TableHead>{t('warehouse.itemName')}</TableHead>
+                <TableHead>{t('common.category')}</TableHead>
+                <TableHead className="text-right">{t('sidebar.warehouse')}</TableHead>
+                <TableHead className="text-right">{t('machines.deployed')}</TableHead>
+                <TableHead className="text-right">{t('common.total')}</TableHead>
+                <TableHead className="text-right">{t('profitability.grossRevenue')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -260,7 +261,7 @@ export default function InventoryPage() {
                     <div className="flex items-center gap-2">
                       {item.name}
                       {item.type === "machine_model" && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">Machine</Badge>
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">{t('maintenance.machine')}</Badge>
                       )}
                     </div>
                   </TableCell>
@@ -279,7 +280,7 @@ export default function InventoryPage() {
               {filteredInventory.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    {searchQuery ? "No items match your search" : "No inventory items found"}
+                    {searchQuery ? t('warehouse.adjustFilters') : t('warehouse.noItemsFound')}
                   </TableCell>
                 </TableRow>
               )}

@@ -15,12 +15,14 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { ArrowLeft, Pencil, Save, X, MapPin, ChevronDown, Truck, Unlink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
+import { useTranslation } from "react-i18next";
 import type { Database } from "@/integrations/supabase/types";
 
 type NegotiationType = Database["public"]["Enums"]["negotiation_type"];
 type ContractTerm = Database["public"]["Enums"]["contract_term"];
 
 export default function LocationDetail() {
+  const { t, i18n } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -138,10 +140,10 @@ export default function LocationDetail() {
       queryClient.invalidateQueries({ queryKey: ["location", id] });
       queryClient.invalidateQueries({ queryKey: ["locations"] });
       setIsEditing(false);
-      toast({ title: "Location updated successfully" });
+      toast({ title: t("locations.toastLocationUpdated", { defaultValue: "Location updated successfully" }) });
     },
     onError: (error) => {
-      toast({ title: "Error updating location", description: error.message, variant: "destructive" });
+      toast({ title: t("locations.toastErrorUpdating", { defaultValue: "Error updating location" }), description: error.message, variant: "destructive" });
     },
   });
 
@@ -166,15 +168,15 @@ export default function LocationDetail() {
       queryClient.invalidateQueries({ queryKey: ["location-machines", id] });
       queryClient.invalidateQueries({ queryKey: ["setups"] });
       queryClient.invalidateQueries({ queryKey: ["machines"] });
-      toast({ title: "Setup removed from spot" });
+      toast({ title: t("locations.toastSetupRemoved", { defaultValue: "Setup removed from spot" }) });
     },
     onError: (error) => {
-      toast({ title: "Error removing setup", description: error.message, variant: "destructive" });
+      toast({ title: t("locations.toastErrorRemoving", { defaultValue: "Error removing setup" }), description: error.message, variant: "destructive" });
     },
   });
 
-  if (isLoading) return <AppLayout><div className="text-muted-foreground">Loading...</div></AppLayout>;
-  if (!location) return <AppLayout><div className="text-muted-foreground">Location not found</div></AppLayout>;
+  if (isLoading) return <AppLayout><div className="text-muted-foreground">{t("common.loading")}</div></AppLayout>;
+  if (!location) return <AppLayout><div className="text-muted-foreground">{t("locations.notfound")}</div></AppLayout>;
 
   const getSetupForSpot = (spotId: string) => setups.find((s) => s.spot_id === spotId);
   const getMachinesForSetup = (setupId: string) => machines.filter((m: any) => m.setup_id === setupId);
@@ -200,35 +202,35 @@ export default function LocationDetail() {
               <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                 <MapPin className="h-5 w-5 text-primary" /> {location.name}
               </h1>
-              <p className="text-muted-foreground">{location.address || "No address"}</p>
+              <p className="text-muted-foreground">{location.address || t("locations.noAddress")}</p>
             </div>
           </div>
           {isAdmin && (
             <div className="flex gap-2">
               {isEditing ? (
                 <>
-                  <Button variant="outline" onClick={() => setIsEditing(false)}><X className="mr-2 h-4 w-4" /> Cancel</Button>
+                  <Button variant="outline" onClick={() => setIsEditing(false)}><X className="mr-2 h-4 w-4" /> {t("common.cancel")}</Button>
                   <Button onClick={() => updateLocation.mutate()} disabled={!form.name.trim() || updateLocation.isPending}>
-                    <Save className="mr-2 h-4 w-4" /> Save
+                    <Save className="mr-2 h-4 w-4" /> {t("common.save")}
                   </Button>
                 </>
               ) : (
-                <Button variant="outline" onClick={() => setIsEditing(true)}><Pencil className="mr-2 h-4 w-4" /> Edit</Button>
+                <Button variant="outline" onClick={() => setIsEditing(true)}><Pencil className="mr-2 h-4 w-4" /> {t("common.edit")}</Button>
               )}
             </div>
           )}
         </div>
 
         <Card>
-          <CardHeader><CardTitle>General Information</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("locations.generalInfo")}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Name</Label>
+                <Label>{t("common.name")}</Label>
                 {isEditing ? <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /> : <p className="text-foreground">{location.name}</p>}
               </div>
               <div className="space-y-2">
-                <Label>Address</Label>
+                <Label>{t("common.address")}</Label>
                 {isEditing ? <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /> : <p className="text-foreground">{location.address || "—"}</p>}
               </div>
             </div>
@@ -236,19 +238,19 @@ export default function LocationDetail() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Contact Information</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("locations.contactInfo")}</CardTitle></CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Contact Name</Label>
+                <Label>{t("locations.contactName")}</Label>
                 {isEditing ? <Input value={form.contact_person_name} onChange={(e) => setForm({ ...form, contact_person_name: e.target.value })} /> : <p className="text-foreground">{location.contact_person_name || "—"}</p>}
               </div>
               <div className="space-y-2">
-                <Label>Phone</Label>
+                <Label>{t("common.phone")}</Label>
                 {isEditing ? <Input value={form.contact_person_number} onChange={(e) => setForm({ ...form, contact_person_number: e.target.value })} /> : <p className="text-foreground">{location.contact_person_number || "—"}</p>}
               </div>
               <div className="space-y-2">
-                <Label>Email</Label>
+                <Label>{t("common.email")}</Label>
                 {isEditing ? <Input value={form.contact_person_email} onChange={(e) => setForm({ ...form, contact_person_email: e.target.value })} /> : <p className="text-foreground">{location.contact_person_email || "—"}</p>}
               </div>
             </div>
@@ -256,55 +258,55 @@ export default function LocationDetail() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Contract & Rent</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("locations.contractAndRent")}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Negotiation Type</Label>
+                <Label>{t("locations.negotiationType")}</Label>
                 {isEditing ? (
                   <Select value={form.negotiation_type} onValueChange={(v) => setForm({ ...form, negotiation_type: v as NegotiationType })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="fixed_rent">Fixed Rent</SelectItem>
-                      <SelectItem value="commission">Commission</SelectItem>
-                      <SelectItem value="hybrid">Hybrid</SelectItem>
+                      <SelectItem value="fixed_rent">{t("locations.fixedRent")}</SelectItem>
+                      <SelectItem value="commission">{t("locations.commission")}</SelectItem>
+                      <SelectItem value="hybrid">{t("locations.hybrid")}</SelectItem>
                     </SelectContent>
                   </Select>
-                ) : <p className="text-foreground capitalize">{location.negotiation_type?.replace("_", " ") || "—"}</p>}
+                ) : <p className="text-foreground capitalize">{location.negotiation_type === "fixed_rent" ? t("locations.fixedRent") : location.negotiation_type === "commission" ? t("locations.commission") : t("locations.hybrid")}</p>}
               </div>
               <div className="space-y-2">
-                <Label>Rent Amount</Label>
+                <Label>{t("locations.rentAmount")}</Label>
                 {isEditing ? <Input type="number" min={0} step={0.01} value={form.rent_amount} onChange={(e) => setForm({ ...form, rent_amount: parseFloat(e.target.value) || 0 })} /> : <p className="text-foreground">${location.rent_amount || 0}</p>}
               </div>
               <div className="space-y-2">
-                <Label>Commission %</Label>
+                <Label>{t("locations.commissionPercentage")}</Label>
                 {isEditing ? <Input type="number" min={0} max={100} step={0.01} value={form.commission_percentage} onChange={(e) => setForm({ ...form, commission_percentage: parseFloat(e.target.value) || 0 })} /> : <p className="text-foreground">{location.commission_percentage || 0}%</p>}
               </div>
               <div className="space-y-2">
-                <Label>Total Spots</Label>
+                <Label>{t("locations.numberOfSpots")}</Label>
                 {isEditing ? <Input type="number" min={0} value={form.total_spots} onChange={(e) => setForm({ ...form, total_spots: parseInt(e.target.value) || 0 })} /> : <p className="text-foreground">{location.total_spots || 0}</p>}
               </div>
               <div className="space-y-2">
-                <Label>Contract Term</Label>
+                <Label>{t("locations.contractTerm")}</Label>
                 {isEditing ? (
                   <Select value={form.contract_term} onValueChange={(v) => setForm({ ...form, contract_term: v as ContractTerm })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1_year">1 Year</SelectItem>
-                      <SelectItem value="2_years">2 Years</SelectItem>
-                      <SelectItem value="indefinite">Indefinite</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
+                      <SelectItem value="1_year">{t("locations.oneYear")}</SelectItem>
+                      <SelectItem value="2_years">{t("locations.twoYears")}</SelectItem>
+                      <SelectItem value="indefinite">{t("locations.indefinite")}</SelectItem>
+                      <SelectItem value="custom">{t("locations.custom")}</SelectItem>
                     </SelectContent>
                   </Select>
                 ) : <p className="text-foreground capitalize">{location.contract_term?.replace("_", " ") || "—"}</p>}
               </div>
               <div className="space-y-2">
-                <Label>Contract Start Date</Label>
-                {isEditing ? <Input type="date" value={form.contract_start_date} onChange={(e) => setForm({ ...form, contract_start_date: e.target.value })} /> : <p className="text-foreground">{location.contract_start_date || "—"}</p>}
+                <Label>{t("locations.contractStart")}</Label>
+                {isEditing ? <Input type="date" value={form.contract_start_date} onChange={(e) => setForm({ ...form, contract_start_date: e.target.value })} /> : <p className="text-foreground">{location.contract_start_date ? new Date(location.contract_start_date).toLocaleDateString(i18n.language, { month: 'short', day: 'numeric', year: 'numeric' }) : "—"}</p>}
               </div>
               <div className="space-y-2">
-                <Label>Contract End Date</Label>
-                {isEditing ? <Input type="date" value={form.contract_end_date} onChange={(e) => setForm({ ...form, contract_end_date: e.target.value })} /> : <p className="text-foreground">{location.contract_end_date || "—"}</p>}
+                <Label>{t("locations.contractEnd")}</Label>
+                {isEditing ? <Input type="date" value={form.contract_end_date} onChange={(e) => setForm({ ...form, contract_end_date: e.target.value })} /> : <p className="text-foreground">{location.contract_end_date ? new Date(location.contract_end_date).toLocaleDateString(i18n.language, { month: 'short', day: 'numeric', year: 'numeric' }) : "—"}</p>}
               </div>
             </div>
           </CardContent>
@@ -312,10 +314,10 @@ export default function LocationDetail() {
 
         {/* Spots with Setups, Machines, and Slots */}
         <Card>
-          <CardHeader><CardTitle>Spots ({spots.length})</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("locations.spotsTitle")} ({spots.length})</CardTitle></CardHeader>
           <CardContent>
             {spots.length === 0 ? (
-              <p className="text-muted-foreground">No spots assigned to this location.</p>
+              <p className="text-muted-foreground">{t("locations.noSpotsAssigned")}</p>
             ) : (
               <div className="space-y-2">
                 {spots.map((spot) => {
@@ -351,7 +353,7 @@ export default function LocationDetail() {
                                     spotName: spot.name,
                                   });
                                 }}
-                                title="Remove setup from spot"
+                                title={t("locations.removeSetupFromSpot")}
                               >
                                 <Unlink className="h-3.5 w-3.5" />
                               </Button>
@@ -365,7 +367,7 @@ export default function LocationDetail() {
                         </div>
                         <CollapsibleContent>
                           {spotMachines.length === 0 ? (
-                            <div className="p-3 text-sm text-muted-foreground">No machines at this spot.</div>
+                            <div className="p-3 text-sm text-muted-foreground">{t("locations.noMachinesAtSpot")}</div>
                           ) : (
                             <div className="p-3 space-y-3">
                               {spotMachines.map((machine: any) => {
@@ -383,23 +385,23 @@ export default function LocationDetail() {
                                           <span className="text-xs text-muted-foreground">({machine.item_details.name})</span>
                                         )}
                                       </div>
-                                      {machine.position_on_setup && <Badge variant="outline" className="text-xs">Pos {machine.position_on_setup}</Badge>}
+                                      {machine.position_on_setup && <Badge variant="outline" className="text-xs">{t("locations.pos")} {machine.position_on_setup}</Badge>}
                                     </div>
                                     {slots.length > 0 && (
                                       <Table>
                                         <TableHeader>
                                           <TableRow>
-                                            <TableHead className="text-xs py-1">Slot</TableHead>
-                                            <TableHead className="text-xs py-1">Product</TableHead>
-                                            <TableHead className="text-xs py-1 text-right">Stock</TableHead>
-                                            <TableHead className="text-xs py-1 text-right">Capacity</TableHead>
+                                            <TableHead className="text-xs py-1">{t("machines.slot")}</TableHead>
+                                            <TableHead className="text-xs py-1">{t("common.product")}</TableHead>
+                                            <TableHead className="text-xs py-1 text-right">{t("common.stock")}</TableHead>
+                                            <TableHead className="text-xs py-1 text-right">{t("machines.capacity")}</TableHead>
                                           </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                           {slots.map((slot: any) => (
                                             <TableRow key={slot.id}>
-                                              <TableCell className="text-xs py-1">Slot {slot.slot_number}</TableCell>
-                                              <TableCell className="text-xs py-1">{slot.item_details?.name || "Empty"}</TableCell>
+                                              <TableCell className="text-xs py-1">{t("machines.slot")} {slot.slot_number}</TableCell>
+                                              <TableCell className="text-xs py-1">{slot.item_details?.name || t("common.empty")}</TableCell>
                                               <TableCell className="text-xs py-1 text-right">{slot.current_stock ?? 0}</TableCell>
                                               <TableCell className="text-xs py-1 text-right">{slot.capacity ?? 150}</TableCell>
                                             </TableRow>
@@ -427,13 +429,13 @@ export default function LocationDetail() {
       <AlertDialog open={!!unassignConfirm} onOpenChange={(open) => { if (!open) setUnassignConfirm(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove Setup from Spot</AlertDialogTitle>
+            <AlertDialogTitle>{t("locations.removeSetupFromSpot")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to remove setup <strong>{unassignConfirm?.setupName}</strong> from <strong>{unassignConfirm?.spotName}</strong>? The machines will be returned to warehouse status.
+              {t("locations.removeSetupFromSpotDesc", { setup: unassignConfirm?.setupName, spot: unassignConfirm?.spotName })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
@@ -443,7 +445,7 @@ export default function LocationDetail() {
                 }
               }}
             >
-              Yes, Remove Setup
+              {t("locations.yesRemove")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

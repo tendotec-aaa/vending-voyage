@@ -65,6 +65,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import type { Database } from "@/integrations/supabase/types";
+import { useTranslation } from "react-i18next";
 
 type Location = Database["public"]["Tables"]["locations"]["Row"];
 type Spot = Database["public"]["Tables"]["spots"]["Row"];
@@ -81,45 +82,28 @@ type VisitActionType = Database["public"]["Enums"]["visit_action_type"];
 
 // Visit types - maps to visit_action_type enum where applicable
 const visitTypes = [
-  { id: "installation", name: "Installation", actionType: "restock" as VisitActionType },
-  { id: "routine_service", name: "Routine Service", actionType: "collection" as VisitActionType },
-  { id: "inventory_audit", name: "Inventory Audit", actionType: "collection" as VisitActionType },
-  { id: "maintenance", name: "Maintenance", actionType: "service" as VisitActionType },
-  { id: "emergency", name: "Emergency", actionType: "service" as VisitActionType },
+  { id: "installation", name: "installation", actionType: "restock" as VisitActionType },
+  { id: "routine_service", name: "routine_service", actionType: "collection" as VisitActionType },
+  { id: "inventory_audit", name: "inventory_audit", actionType: "collection" as VisitActionType },
+  { id: "maintenance", name: "maintenance", actionType: "service" as VisitActionType },
+  { id: "emergency", name: "emergency", actionType: "service" as VisitActionType },
 ];
 
 // Jam status options
 const jamStatusOptions = [
-  { id: "no_jam", name: "No Jam" },
-  { id: "with_coins", name: "With Coins" },
-  { id: "without_coins", name: "Without Coins" },
-  { id: "by_coin", name: "By Coin (+1)" },
+  { id: "no_jam", name: "no_jam" },
+  { id: "with_coins", name: "with_coins" },
+  { id: "without_coins", name: "without_coins" },
+  { id: "by_coin", name: "by_coin" },
 ];
 
 // Severity options
 const severityOptions = [
-  { id: "low", name: "Low" },
-  { id: "medium", name: "Medium" },
-  { id: "high", name: "High" },
+  { id: "low", name: "low" },
+  { id: "medium", name: "medium" },
+  { id: "high", name: "high" },
 ];
 
-// Position labels for setup types
-const getPositionLabel = (position: number, setupType: string | null, totalMachines: number): string => {
-  if (totalMachines === 1) return "";
-  if (setupType === "double") return position === 1 ? "Left" : "Right";
-  if (setupType === "triple") {
-    if (position === 1) return "Left";
-    if (position === 2) return "Center";
-    return "Right";
-  }
-  if (setupType === "quad") {
-    if (position === 1) return "Top-Left";
-    if (position === 2) return "Top-Right";
-    if (position === 3) return "Bottom-Left";
-    return "Bottom-Right";
-  }
-  return `Position ${position}`;
-};
 
 interface SlotEntry {
   id: string;
@@ -200,10 +184,29 @@ function clearFormCache() {
 }
 
 export default function NewVisitReport() {
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+
+  // Position labels for setup types
+  const getPositionLabel = (position: number, setupType: string | null, totalMachines: number): string => {
+    if (totalMachines === 1) return "";
+    if (setupType === "double") return position === 1 ? t("visitReport.positionLeft") : t("visitReport.positionRight");
+    if (setupType === "triple") {
+      if (position === 1) return t("visitReport.positionLeft");
+      if (position === 2) return t("visitReport.positionCenter");
+      return t("visitReport.positionRight");
+    }
+    if (setupType === "quad") {
+      if (position === 1) return t("visitReport.positionTopLeft");
+      if (position === 2) return t("visitReport.positionTopRight");
+      if (position === 3) return t("visitReport.positionBottomLeft");
+      return t("visitReport.positionBottomRight");
+    }
+    return t("visitReport.position", { num: position });
+  };
 
   const paramLocationId = searchParams.get('location_id');
   const paramSpotId = searchParams.get('spot_id');
@@ -1182,12 +1185,12 @@ export default function NewVisitReport() {
                 categories={toyCategories}
                 value={slot.toyId}
                 onSelect={(id, name) => updateSlot(slot.id, { toyId: id, toyName: name })}
-                label="Assign Toy"
-                placeholder="Search toy..."
+                label={t("visitReport.assignToy")}
+                placeholder={t("visitReport.searchToy")}
                 showCategoryFilter={false}
               />
               <div className="space-y-2">
-                <Label>Toy Capacity</Label>
+                <Label>{t("visitReport.toyCapacity")}</Label>
                 <Input
                   type="number"
                   min="0"
@@ -1200,7 +1203,7 @@ export default function NewVisitReport() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Units Refilled</Label>
+                <Label>{t("visitReport.unitsRefilled")}</Label>
                 <Input
                   type="number"
                   min="0"
@@ -1210,7 +1213,7 @@ export default function NewVisitReport() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Price/Unit ($)</Label>
+                <Label>{t("visitReport.pricePerUnit")}</Label>
                 <Input
                   type="number"
                   min="0"
@@ -1221,13 +1224,13 @@ export default function NewVisitReport() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Current Stock</Label>
+                <Label>{t("visitReport.currentStock")}</Label>
                 <div className="p-2 bg-muted rounded-md text-foreground font-medium">
                   {slot.currentStock}
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Capacity</Label>
+                <Label>{t("visitReport.capacity")}</Label>
                 {renderCapacityIndicator(slot)}
               </div>
             </div>
@@ -1244,59 +1247,59 @@ export default function NewVisitReport() {
                     updateSlot(slot.id, { replaceAllToys: !!checked });
                   }}
                 />
-                <Label htmlFor={`replace-${slot.id}`}>Replace all toys in this slot</Label>
+                <Label htmlFor={`replace-${slot.id}`}>{t("visitReport.replaceAllToys")}</Label>
               </div>
 
               {slot.replaceAllToys ? (
                 <>
                   {/* Phase 1: Closing Out Old Product */}
                   <div className="p-3 rounded-md border border-border bg-muted/30 space-y-4 mb-4">
-                    <p className="text-sm font-semibold text-muted-foreground">Closing Out: {slot.toyName}</p>
+                    <p className="text-sm font-semibold text-muted-foreground">{t("visitReport.closingOut", { name: slot.toyName })}</p>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="space-y-2">
-                        <Label>Last Stock</Label>
+                        <Label>{t("visitReport.lastStock")}</Label>
                         <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.lastStock}</div>
                       </div>
                       <div className="space-y-2">
-                        <Label>Units Sold</Label>
+                        <Label>{t("visitReport.unitsSold")}</Label>
                         <Input type="number" min="0" value={slot.unitsSold || ""} onChange={(e) => updateSlot(slot.id, { unitsSold: parseInt(e.target.value) || 0 })} className="bg-card" />
                       </div>
                       <div className="space-y-2">
-                        <Label>Units Removed</Label>
+                        <Label>{t("visitReport.unitsRemoved")}</Label>
                         <Input type="number" min="0" value={slot.unitsRemoved || ""} onChange={(e) => updateSlot(slot.id, { unitsRemoved: parseInt(e.target.value) || 0 })} className="bg-card" />
                       </div>
                       <div className="space-y-2">
-                        <Label>False Coins</Label>
+                        <Label>{t("visitReport.falseCoins")}</Label>
                         <Input type="number" min="0" value={slot.falseCoins || ""} onChange={(e) => updateSlot(slot.id, { falseCoins: parseInt(e.target.value) || 0 })} className="bg-card" />
                       </div>
                       <div className="space-y-2">
-                        <Label>Price/Unit</Label>
+                        <Label>{t("visitReport.pricePerUnit")}</Label>
                         <div className="p-2 bg-muted rounded-md text-foreground font-medium">${fmt2(slot.pricePerUnit)}</div>
                       </div>
                       <div className="space-y-2">
-                        <Label>Jam Status</Label>
+                        <Label>{t("visitReport.jamStatus")}</Label>
                         <Select value={slot.jamStatus} onValueChange={(value) => updateSlot(slot.id, { jamStatus: value })}>
                           <SelectTrigger className="bg-card"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {jamStatusOptions.map((option) => (
-                              <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                              <SelectItem key={option.id} value={option.id}>{t(`visitReport.${option.id === 'by_coin' ? 'byCoin' : option.id.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())}`)}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label>Current Stock</Label>
+                        <Label>{t("visitReport.currentStock")}</Label>
                         <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.currentStock}</div>
                       </div>
                       <div className="space-y-2">
-                        <Label>Surplus / Shortage</Label>
+                        <Label>{t("visitReport.surplusShortage")}</Label>
                         <div className={cn(
                           "p-2 rounded-md font-medium",
                           slot.swapSurplusShortage > 0 ? "bg-green-500/20 text-green-700 dark:text-green-400" :
                           slot.swapSurplusShortage < 0 ? "bg-red-500/20 text-red-700 dark:text-red-400" :
                           "bg-muted text-foreground"
                         )}>
-                          {slot.swapSurplusShortage > 0 ? `+${slot.swapSurplusShortage} surplus` : slot.swapSurplusShortage < 0 ? `${slot.swapSurplusShortage} shortage` : "0"}
+                          {slot.swapSurplusShortage > 0 ? `+${slot.swapSurplusShortage} ${t("visitReport.surplus")}` : slot.swapSurplusShortage < 0 ? `${slot.swapSurplusShortage} ${t("visitReport.shortage")}` : "0"}
                         </div>
                       </div>
                     </div>
@@ -1304,35 +1307,35 @@ export default function NewVisitReport() {
 
                   {/* Phase 2: New Product Setup */}
                   <div className="p-3 rounded-md border-2 border-primary/30 bg-primary/5 space-y-4">
-                    <p className="text-sm font-semibold text-primary">New Product Setup</p>
+                    <p className="text-sm font-semibold text-primary">{t("visitReport.newProductSetup")}</p>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <ToyPicker
                         products={filteredProducts}
                         categories={toyCategories}
                         value={slot.newToyId}
                         onSelect={(id, name) => updateSlot(slot.id, { newToyId: id, newToyName: name })}
-                        label="Assign Toy"
-                        placeholder="Search toy..."
+                        label={t("visitReport.assignToy")}
+                        placeholder={t("visitReport.searchToy")}
                         showCategoryFilter={false}
                       />
                       <div className="space-y-2">
-                        <Label>Toy Capacity</Label>
+                        <Label>{t("visitReport.toyCapacity")}</Label>
                         <Input type="number" min="0" value={slot.newToyCapacity || ""} onChange={(e) => updateSlot(slot.id, { newToyCapacity: parseInt(e.target.value) || 0 })} className="bg-card" />
                       </div>
                       <div className="space-y-2">
-                        <Label>Units Refilled</Label>
+                        <Label>{t("visitReport.unitsRefilled")}</Label>
                         <Input type="number" min="0" value={slot.newUnitsRefilled || ""} onChange={(e) => updateSlot(slot.id, { newUnitsRefilled: parseInt(e.target.value) || 0 })} className="bg-card" />
                       </div>
                       <div className="space-y-2">
-                        <Label>Price/Unit ($)</Label>
+                        <Label>{t("visitReport.pricePerUnit")}</Label>
                         <Input type="number" min="0" step="0.01" value={slot.newPricePerUnit || ""} onChange={(e) => updateSlot(slot.id, { newPricePerUnit: parseFloat(e.target.value) || 0 })} className="bg-card" />
                       </div>
                       <div className="space-y-2">
-                        <Label>Current Stock</Label>
+                        <Label>{t("visitReport.currentStock")}</Label>
                         <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.newCurrentStock}</div>
                       </div>
                       <div className="space-y-2">
-                        <Label>Capacity</Label>
+                        <Label>{t("visitReport.capacity")}</Label>
                         {(() => {
                           const pct = slot.newToyCapacity > 0 ? Math.round((slot.newCurrentStock / slot.newToyCapacity) * 100) : 0;
                           const colorClass = pct <= 25 ? "bg-red-500" : pct <= 50 ? "bg-yellow-500" : pct <= 75 ? "bg-blue-500" : "bg-green-500";
@@ -1360,41 +1363,41 @@ export default function NewVisitReport() {
                 <>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="space-y-2">
-                      <Label>Last Stock</Label>
+                      <Label>{t("visitReport.lastStock")}</Label>
                       <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.lastStock}</div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Units Sold</Label>
+                      <Label>{t("visitReport.unitsSold")}</Label>
                       <Input type="number" min="0" value={slot.unitsSold || ""} onChange={(e) => updateSlot(slot.id, { unitsSold: parseInt(e.target.value) || 0 })} className="bg-card" />
                     </div>
                     <div className="space-y-2">
-                      <Label>Units Refilled</Label>
+                      <Label>{t("visitReport.unitsRefilled")}</Label>
                       <Input type="number" min="0" value={slot.unitsRefilled || ""} onChange={(e) => updateSlot(slot.id, { unitsRefilled: parseInt(e.target.value) || 0 })} className="bg-card" />
                       {renderRestockSuggestion(slot)}
                     </div>
                     <div className="space-y-2">
-                      <Label>Units Removed</Label>
+                      <Label>{t("visitReport.unitsRemoved")}</Label>
                       <Input type="number" min="0" value={slot.unitsRemoved || ""} onChange={(e) => updateSlot(slot.id, { unitsRemoved: parseInt(e.target.value) || 0 })} className="bg-card" />
                     </div>
                     <div className="space-y-2">
-                      <Label>False Coins</Label>
+                      <Label>{t("visitReport.falseCoins")}</Label>
                       <Input type="number" min="0" value={slot.falseCoins || ""} onChange={(e) => updateSlot(slot.id, { falseCoins: parseInt(e.target.value) || 0 })} className="bg-card" />
                     </div>
                     <div className="space-y-2">
-                      <Label>Current Stock</Label>
+                      <Label>{t("visitReport.currentStock")}</Label>
                       <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.currentStock}</div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Price/Unit</Label>
+                      <Label>{t("visitReport.pricePerUnit")}</Label>
                       <div className="p-2 bg-muted rounded-md text-foreground font-medium">${fmt2(slot.pricePerUnit)}</div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Jam Status</Label>
+                      <Label>{t("visitReport.jamStatus")}</Label>
                       <Select value={slot.jamStatus} onValueChange={(value) => updateSlot(slot.id, { jamStatus: value })}>
                         <SelectTrigger className="bg-card"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {jamStatusOptions.map((option) => (
-                            <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                            <SelectItem key={option.id} value={option.id}>{t(`visitReport.${option.id}`)}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -1402,7 +1405,7 @@ export default function NewVisitReport() {
                   </div>
                   
                   <div className="mt-2 space-y-2">
-                    <Label>Capacity</Label>
+                    <Label>{t("visitReport.capacity")}</Label>
                     {renderCapacityIndicator(slot)}
                   </div>
                 </>
@@ -1416,33 +1419,33 @@ export default function NewVisitReport() {
                     checked={slot.reportIssue}
                     onCheckedChange={(checked) => updateSlot(slot.id, { reportIssue: !!checked })}
                   />
-                  <Label htmlFor={`issue-${slot.id}`}>Report Issue</Label>
+                  <Label htmlFor={`issue-${slot.id}`}>{t("visitReport.reportIssue")}</Label>
                 </div>
                 
                 {slot.reportIssue && (
                   <div className="mt-3 space-y-3 pl-6">
                     <div className="space-y-2">
-                      <Label>Describe the issue...</Label>
+                      <Label>{t("visitReport.describeIssue")}</Label>
                       <Textarea
-                        placeholder="Enter issue description..."
+                        placeholder={t("visitReport.enterIssueDesc")}
                         value={slot.issueDescription}
                         onChange={(e) => updateSlot(slot.id, { issueDescription: e.target.value })}
                         className="bg-card"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Severity</Label>
+                      <Label>{t("visitReport.severity")}</Label>
                       <Select
                         value={slot.severity}
                         onValueChange={(value) => updateSlot(slot.id, { severity: value })}
                       >
                         <SelectTrigger className="bg-card w-48">
-                          <SelectValue placeholder="Select severity" />
+                          <SelectValue placeholder={t("visitReport.selectSeverity")} />
                         </SelectTrigger>
                         <SelectContent>
                           {severityOptions.map((option) => (
                             <SelectItem key={option.id} value={option.id}>
-                              {option.name}
+                              {t(`visitReport.${option.id}`)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1463,59 +1466,59 @@ export default function NewVisitReport() {
                   checked={slot.replaceAllToys}
                   onCheckedChange={(checked) => updateSlot(slot.id, { replaceAllToys: !!checked })}
                 />
-                <Label htmlFor={`replace-${slot.id}`}>Replace all toys in this slot</Label>
+                <Label htmlFor={`replace-${slot.id}`}>{t("visitReport.replaceAllToys")}</Label>
               </div>
 
               {slot.replaceAllToys ? (
                 <>
                   {/* Phase 1: Closing Out Old Product */}
                   <div className="p-3 rounded-md border border-border bg-muted/30 space-y-4 mb-4">
-                    <p className="text-sm font-semibold text-muted-foreground">Closing Out: {slot.toyName}</p>
+                    <p className="text-sm font-semibold text-muted-foreground">{t("visitReport.closingOut", { name: slot.toyName })}</p>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="space-y-2">
-                        <Label>Last Stock</Label>
+                        <Label>{t("visitReport.lastStock")}</Label>
                         <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.lastStock}</div>
                       </div>
                       <div className="space-y-2">
-                        <Label>Units Sold</Label>
+                        <Label>{t("visitReport.unitsSold")}</Label>
                         <Input type="number" min="0" value={slot.unitsSold || ""} onChange={(e) => updateSlot(slot.id, { unitsSold: parseInt(e.target.value) || 0 })} className="bg-card" />
                       </div>
                       <div className="space-y-2">
-                        <Label>Units Removed</Label>
+                        <Label>{t("visitReport.unitsRemoved")}</Label>
                         <Input type="number" min="0" value={slot.unitsRemoved || ""} onChange={(e) => updateSlot(slot.id, { unitsRemoved: parseInt(e.target.value) || 0 })} className="bg-card" />
                       </div>
                       <div className="space-y-2">
-                        <Label>False Coins</Label>
+                        <Label>{t("visitReport.falseCoins")}</Label>
                         <Input type="number" min="0" value={slot.falseCoins || ""} onChange={(e) => updateSlot(slot.id, { falseCoins: parseInt(e.target.value) || 0 })} className="bg-card" />
                       </div>
                       <div className="space-y-2">
-                        <Label>Price/Unit</Label>
+                        <Label>{t("visitReport.pricePerUnit")}</Label>
                         <div className="p-2 bg-muted rounded-md text-foreground font-medium">${fmt2(slot.pricePerUnit)}</div>
                       </div>
                       <div className="space-y-2">
-                        <Label>Jam Status</Label>
+                        <Label>{t("visitReport.jamStatus")}</Label>
                         <Select value={slot.jamStatus} onValueChange={(value) => updateSlot(slot.id, { jamStatus: value })}>
                           <SelectTrigger className="bg-card"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {jamStatusOptions.map((option) => (
-                              <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                              <SelectItem key={option.id} value={option.id}>{t(`visitReport.${option.id === 'by_coin' ? 'byCoin' : option.id.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())}`)}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label>Current Stock</Label>
+                        <Label>{t("visitReport.currentStock")}</Label>
                         <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.currentStock}</div>
                       </div>
                       <div className="space-y-2">
-                        <Label>Surplus / Shortage</Label>
+                        <Label>{t("visitReport.surplusShortage")}</Label>
                         <div className={cn(
                           "p-2 rounded-md font-medium",
                           slot.swapSurplusShortage > 0 ? "bg-green-500/20 text-green-700 dark:text-green-400" :
                           slot.swapSurplusShortage < 0 ? "bg-red-500/20 text-red-700 dark:text-red-400" :
                           "bg-muted text-foreground"
                         )}>
-                          {slot.swapSurplusShortage > 0 ? `+${slot.swapSurplusShortage} surplus` : slot.swapSurplusShortage < 0 ? `${slot.swapSurplusShortage} shortage` : "0"}
+                          {slot.swapSurplusShortage > 0 ? `+${slot.swapSurplusShortage} ${t("visitReport.surplus")}` : slot.swapSurplusShortage < 0 ? `${slot.swapSurplusShortage} ${t("visitReport.shortage")}` : "0"}
                         </div>
                       </div>
                     </div>
@@ -1523,7 +1526,7 @@ export default function NewVisitReport() {
 
                   {/* Phase 2: New Product Setup */}
                   <div className="p-3 rounded-md border-2 border-primary/30 bg-primary/5 space-y-4">
-                    <p className="text-sm font-semibold text-primary">New Product Setup</p>
+                    <p className="text-sm font-semibold text-primary">{t("visitReport.newProductSetup")}</p>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <ToyPicker
                         products={filteredProducts}
@@ -1535,23 +1538,23 @@ export default function NewVisitReport() {
                         showCategoryFilter={false}
                       />
                       <div className="space-y-2">
-                        <Label>Toy Capacity</Label>
+                        <Label>{t("visitReport.toyCapacity")}</Label>
                         <Input type="number" min="0" value={slot.newToyCapacity || ""} onChange={(e) => updateSlot(slot.id, { newToyCapacity: parseInt(e.target.value) || 0 })} className="bg-card" />
                       </div>
                       <div className="space-y-2">
-                        <Label>Units Refilled</Label>
+                        <Label>{t("visitReport.unitsRefilled")}</Label>
                         <Input type="number" min="0" value={slot.newUnitsRefilled || ""} onChange={(e) => updateSlot(slot.id, { newUnitsRefilled: parseInt(e.target.value) || 0 })} className="bg-card" />
                       </div>
                       <div className="space-y-2">
-                        <Label>Price/Unit ($)</Label>
+                        <Label>{t("visitReport.pricePerUnit")}</Label>
                         <Input type="number" min="0" step="0.01" value={slot.newPricePerUnit || ""} onChange={(e) => updateSlot(slot.id, { newPricePerUnit: parseFloat(e.target.value) || 0 })} className="bg-card" />
                       </div>
                       <div className="space-y-2">
-                        <Label>Current Stock</Label>
+                        <Label>{t("visitReport.currentStock")}</Label>
                         <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.newCurrentStock}</div>
                       </div>
                       <div className="space-y-2">
-                        <Label>Capacity</Label>
+                        <Label>{t("visitReport.capacity")}</Label>
                         {(() => {
                           const pct = slot.newToyCapacity > 0 ? Math.round((slot.newCurrentStock / slot.newToyCapacity) * 100) : 0;
                           const colorClass = pct <= 25 ? "bg-red-500" : pct <= 50 ? "bg-yellow-500" : pct <= 75 ? "bg-blue-500" : "bg-green-500";
@@ -1579,11 +1582,11 @@ export default function NewVisitReport() {
                 <>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="space-y-2">
-                      <Label>Last Stock</Label>
+                      <Label>{t("visitReport.lastStock")}</Label>
                       <div className="p-2 bg-muted rounded-md text-foreground font-medium">{slot.lastStock}</div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Units Sold</Label>
+                      <Label>{t("visitReport.unitsSold")}</Label>
                       <Input type="number" min="0" value={slot.unitsSold || ""} onChange={(e) => updateSlot(slot.id, { unitsSold: parseInt(e.target.value) || 0 })} className="bg-card" />
                     </div>
                     <div className="space-y-2">
@@ -1592,19 +1595,19 @@ export default function NewVisitReport() {
                       {renderRestockSuggestion(slot)}
                     </div>
                     <div className="space-y-2">
-                      <Label>Units Removed</Label>
+                      <Label>{t("visitReport.unitsRemoved")}</Label>
                       <Input type="number" min="0" value={slot.unitsRemoved || ""} onChange={(e) => updateSlot(slot.id, { unitsRemoved: parseInt(e.target.value) || 0 })} className="bg-card" />
                     </div>
                     <div className="space-y-2">
-                      <Label>False Coins</Label>
+                      <Label>{t("visitReport.falseCoins")}</Label>
                       <Input type="number" min="0" value={slot.falseCoins || ""} onChange={(e) => updateSlot(slot.id, { falseCoins: parseInt(e.target.value) || 0 })} className="bg-card" />
                     </div>
                     <div className="space-y-2">
-                      <Label>Audited Count (Physical)</Label>
-                      <Input type="number" min="0" placeholder="Enter count" value={slot.auditedCount ?? ""} onChange={(e) => updateSlot(slot.id, { auditedCount: e.target.value ? parseInt(e.target.value) : null })} className="bg-card" />
+                      <Label>{t("visitReport.auditedCount")}</Label>
+                      <Input type="number" min="0" placeholder={t("visitReport.enterCount")} value={slot.auditedCount ?? ""} onChange={(e) => updateSlot(slot.id, { auditedCount: e.target.value ? parseInt(e.target.value) : null })} className="bg-card" />
                     </div>
                     <div className="space-y-2">
-                      <Label>Current Stock</Label>
+                      <Label>{t("visitReport.currentStock")}</Label>
                       <div className={cn(
                         "p-2 rounded-md font-medium",
                         slot.auditedCount !== null && slot.auditedCount !== (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)
@@ -1614,14 +1617,14 @@ export default function NewVisitReport() {
                         {slot.auditedCount !== null ? (
                           <>
                             {slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved} / AC: {slot.auditedCount}
-                            {slot.auditedCount !== (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved) && (
-                              <span className="text-xs block">
-                                {slot.auditedCount > (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved) 
-                                  ? `+${slot.auditedCount - (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)} surplus`
-                                  : `${slot.auditedCount - (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)} shortage`
-                                }
-                              </span>
-                            )}
+                          {slot.auditedCount !== (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved) && (
+                            <span className="text-xs block">
+                              {slot.auditedCount > (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved) 
+                                ? `+${slot.auditedCount - (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)} ${t("visitReport.surplus")}`
+                                : `${slot.auditedCount - (slot.lastStock - slot.unitsSold + slot.unitsRefilled - slot.unitsRemoved)} ${t("visitReport.shortage")}`
+                              }
+                            </span>
+                          )}
                           </>
                         ) : (
                           slot.currentStock
@@ -1629,25 +1632,25 @@ export default function NewVisitReport() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Price/Unit</Label>
+                      <Label>{t("visitReport.pricePerUnit")}</Label>
                       <div className="p-2 bg-muted rounded-md text-foreground font-medium">${fmt2(slot.pricePerUnit)}</div>
                     </div>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-4 mt-4">
                     <div className="space-y-2">
-                      <Label>Jam Status</Label>
+                      <Label>{t("visitReport.jamStatus")}</Label>
                       <Select value={slot.jamStatus} onValueChange={(value) => updateSlot(slot.id, { jamStatus: value })}>
                         <SelectTrigger className="bg-card"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {jamStatusOptions.map((option) => (
-                            <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                            <SelectItem key={option.id} value={option.id}>{t(`visitReport.${option.id}`)}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>Capacity</Label>
+                      <Label>{t("visitReport.capacity")}</Label>
                       {renderCapacityIndicator(slot)}
                     </div>
                   </div>
@@ -1662,33 +1665,33 @@ export default function NewVisitReport() {
                     checked={slot.reportIssue}
                     onCheckedChange={(checked) => updateSlot(slot.id, { reportIssue: !!checked })}
                   />
-                  <Label htmlFor={`issue-${slot.id}`}>Report Issue</Label>
+                  <Label htmlFor={`issue-${slot.id}`}>{t("visitReport.reportIssue")}</Label>
                 </div>
                 
                 {slot.reportIssue && (
                   <div className="mt-3 space-y-3 pl-6">
                     <div className="space-y-2">
-                      <Label>Describe the issue...</Label>
+                      <Label>{t("visitReport.describeIssue")}</Label>
                       <Textarea
-                        placeholder="Enter issue description..."
+                        placeholder={t("visitReport.enterIssueDesc")}
                         value={slot.issueDescription}
                         onChange={(e) => updateSlot(slot.id, { issueDescription: e.target.value })}
                         className="bg-card"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Severity</Label>
+                      <Label>{t("visitReport.severity")}</Label>
                       <Select
                         value={slot.severity}
                         onValueChange={(value) => updateSlot(slot.id, { severity: value })}
                       >
                         <SelectTrigger className="bg-card w-48">
-                          <SelectValue placeholder="Select severity" />
+                          <SelectValue placeholder={t("visitReport.selectSeverity")} />
                         </SelectTrigger>
                         <SelectContent>
                           {severityOptions.map((option) => (
                             <SelectItem key={option.id} value={option.id}>
-                              {option.name}
+                              {t(`visitReport.${option.id}`)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1717,21 +1720,21 @@ export default function NewVisitReport() {
   };
 
   const getGradeLabel = (grade: string) => {
-    if (grade === "above") return "Above Average";
-    if (grade === "below") return "Below Average";
-    return "Average";
+    if (grade === "above") return t("visitReport.aboveAverage");
+    if (grade === "below") return t("visitReport.belowAverage");
+    return t("visitReport.average");
   };
 
   return (
     <AppLayout
-      title="New Visit Report"
-      subtitle="Record a field service visit"
+      title={t("visitReport.title")}
+      subtitle={t("visitReport.subtitle")}
       actions={
         <div className="flex items-center gap-2">
           <VisitDraftsDropdown onLoadDraft={handleLoadDraft} />
           <Button variant="outline" onClick={() => navigate("/visits")} className="gap-2">
             <ArrowLeft className="w-4 h-4" />
-            Back to Visits
+            {t("visitReport.backToVisits")}
           </Button>
         </div>
       }
@@ -1739,10 +1742,10 @@ export default function NewVisitReport() {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Location Details */}
         <Card className="p-6 bg-card border-border">
-          <h3 className="text-lg font-semibold text-foreground mb-4">Location Details</h3>
+          <h3 className="text-lg font-semibold text-foreground mb-4">{t("visitReport.locationDetails")}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="location">Location</Label>
+              <Label htmlFor="location">{t("visitReport.location")}</Label>
               <Select 
                 value={selectedLocation} 
                 onValueChange={(value) => {
@@ -1751,7 +1754,7 @@ export default function NewVisitReport() {
                 }}
               >
                 <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Select a location..." />
+                  <SelectValue placeholder={t("visitReport.selectLocation")} />
                 </SelectTrigger>
                 <SelectContent>
                   {locations.map((location) => (
@@ -1763,14 +1766,14 @@ export default function NewVisitReport() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="spot">Spot</Label>
+              <Label htmlFor="spot">{t("visitReport.spot")}</Label>
               <Select 
                 value={selectedSpot} 
                 onValueChange={setSelectedSpot}
                 disabled={!selectedLocation}
               >
                 <SelectTrigger className="bg-background">
-                  <SelectValue placeholder={selectedLocation ? "Select a spot..." : "Select location first"} />
+                  <SelectValue placeholder={selectedLocation ? t("visitReport.selectSpot") : t("visitReport.selectLocationFirst")} />
                 </SelectTrigger>
                 <SelectContent>
                   {[...spots]
@@ -1794,21 +1797,21 @@ export default function NewVisitReport() {
                         <span>{spot.name} {spot.description ? `- ${spot.description}` : ""}</span>
                         {spot.hasSetup ? (
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-green-500/20 text-green-700 dark:text-green-400 border-0">
-                            <CheckCircle className="w-3 h-3 mr-0.5" /> Operational
+                            <CheckCircle className="w-3 h-3 mr-0.5" /> {t("visitReport.operational")}
                           </Badge>
                         ) : (
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-destructive/20 text-destructive border-0">
-                            No Setup
+                            {t("visitReport.noSetup")}
                           </Badge>
                         )}
                         {spot.daysSinceLastVisit !== null && spot.hasSetup && (
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-0 text-muted-foreground">
-                            <Clock className="w-3 h-3 mr-0.5" /> {spot.daysSinceLastVisit}d ago
+                            <Clock className="w-3 h-3 mr-0.5" /> {t("visitReport.daysAgo", { days: spot.daysSinceLastVisit })}
                           </Badge>
                         )}
                         {spot.daysSinceLastVisit === null && spot.hasSetup && (
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-0 text-muted-foreground">
-                            Never visited
+                            {t("visitReport.neverVisited")}
                           </Badge>
                         )}
                       </div>
@@ -1823,7 +1826,7 @@ export default function NewVisitReport() {
           {selectedSpot && spotSetup && (
             <div className="mt-4 p-4 bg-muted/50 rounded-lg border border-border">
               <div className="flex items-center gap-3 mb-3">
-                <h4 className="font-medium text-foreground">Setup: {spotSetup.name || "Unnamed"}</h4>
+                <h4 className="font-medium text-foreground">{t("visitReport.setup")}: {spotSetup.name || t("visitReport.unnamed")}</h4>
                 <Badge variant="secondary" className="capitalize">
                   {spotSetup.type || "single"}
                 </Badge>
@@ -1850,34 +1853,34 @@ export default function NewVisitReport() {
 
         {/* Visit Details */}
         <Card className="p-6 bg-card border-border">
-          <h3 className="text-lg font-semibold text-foreground mb-4">Visit Details</h3>
+          <h3 className="text-lg font-semibold text-foreground mb-4">{t("visitReport.visitDetails")}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="visitType">Visit Type</Label>
+              <Label htmlFor="visitType">{t("visitReport.visitType")}</Label>
               <Select value={visitType} onValueChange={setVisitType}>
                 <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Select visit type..." />
+                  <SelectValue placeholder={t("visitReport.selectType")} />
                 </SelectTrigger>
                 <SelectContent>
                   {visitTypes.map((type) => (
                     <SelectItem key={type.id} value={type.id}>
-                      {type.name}
+                      {t(`visitReport.${type.id}`)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Product Category</Label>
+              <Label>{t("visitReport.categoryFilter")}</Label>
               <Select value={toyCategoryFilter} onValueChange={(val) => {
                 setToyCategoryFilter(val);
                 try { localStorage.setItem(CATEGORY_CACHE_KEY, val); } catch {}
               }}>
                 <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="All Categories" />
+                  <SelectValue placeholder={t("visitReport.allCategories")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
+                  <SelectItem value="all">{t("visitReport.allCategories")}</SelectItem>
                   {toyCategories.map((cat) => (
                     <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                   ))}
@@ -1885,7 +1888,7 @@ export default function NewVisitReport() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Visit Date</Label>
+              <Label>{t("visitReport.visitDate")}</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -1896,7 +1899,7 @@ export default function NewVisitReport() {
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {visitDate ? format(visitDate, "PPP") : "Select date"}
+                    {visitDate ? visitDate.toLocaleDateString(i18n.language, { month: 'short', day: '2-digit', year: 'numeric' }) : t("visitReport.pickDate")}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -1915,7 +1918,7 @@ export default function NewVisitReport() {
               <div className="space-y-2">
                 <Label className="flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5" />
-                  Days Since Last Visit
+                  {t("visitReport.daysSinceLastVisit")}
                 </Label>
                 <div className={cn(
                   "p-3 rounded-md font-semibold text-lg flex items-center gap-2",
@@ -1923,36 +1926,36 @@ export default function NewVisitReport() {
                 )}>
                   {daysSinceLastVisit !== null ? daysSinceLastVisit : "—"}
                   <span className="text-sm font-normal">
-                    {daysSinceLastVisit === 0 ? "days (first visit)" : daysSinceLastVisit !== null ? "days" : "No data"}
+                    {daysSinceLastVisit === 0 ? t("visitReport.daysAgo", { days: 0 }) : daysSinceLastVisit !== null ? "days" : t("common.noData")}
                   </span>
                 </div>
                 {referenceDate && (
                   <p className="text-xs text-muted-foreground">
-                    {referenceDate.label}: {format(referenceDate.date, "PPP")}
+                    {referenceDate.label}: {referenceDate.date.toLocaleDateString(i18n.language, { month: 'short', day: '2-digit', year: 'numeric' })}
                   </p>
                 )}
               </div>
             )}
 
             <div className="space-y-2">
-              <Label>Total Cash Collected</Label>
+              <Label>{t("visitReport.cashCollected")}</Label>
               <div className="p-3 bg-muted rounded-md text-foreground font-semibold text-lg">
                 ${fmt2(totals.totalCashCollected)}
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Total Toys Refilled</Label>
+              <Label>{t("visitReport.totalToysRefilled")}</Label>
               <div className="p-3 bg-muted rounded-md text-foreground font-semibold text-lg">
-                {totals.totalRefilled} units
+                {totals.totalRefilled} {t("visitReport.units")}
               </div>
             </div>
 
             {/* Refill Source Bodega */}
             <div className="space-y-2">
-              <Label>Refill Source (Bodega)</Label>
+              <Label>{t("visitReport.refillSource")}</Label>
               <Select value={sourceWarehouseId} onValueChange={setSourceWarehouseId}>
                 <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Select bodega..." />
+                  <SelectValue placeholder={t("visitReport.selectRefillSource")} />
                 </SelectTrigger>
                 <SelectContent>
                   {refillSourceWarehouses.map((wh) => (
@@ -1965,10 +1968,10 @@ export default function NewVisitReport() {
             {/* Return Vehicle */}
             {requiresReturnVehicle && (
               <div className="space-y-2">
-                <Label>Return Vehicle {requiresReturnVehicle && <span className="text-destructive">*</span>}</Label>
+                <Label>{t("visitReport.returnVehicle")} {requiresReturnVehicle && <span className="text-destructive">*</span>}</Label>
                 <Select value={returnWarehouseId} onValueChange={setReturnWarehouseId}>
                   <SelectTrigger className="bg-background">
-                    <SelectValue placeholder="Select vehicle..." />
+                    <SelectValue placeholder={t("visitReport.selectReturnVehicle")} />
                   </SelectTrigger>
                   <SelectContent>
                     {returnVehicleWarehouses.map((wh) => (
@@ -1985,7 +1988,7 @@ export default function NewVisitReport() {
         {selectedSpot && visitType && (
           <Card className="p-6 bg-card border-border">
             <h3 className="text-lg font-semibold text-foreground mb-4">
-              Slot Inventory
+              {t("visitReport.slotInventory")}
               {slots.length > 0 && (
                 <span className="ml-2 text-sm font-normal text-muted-foreground">
                   ({slots.length} slots)
@@ -1995,8 +1998,8 @@ export default function NewVisitReport() {
             
             {slots.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                <p>No machine slots found for this spot.</p>
-                <p className="text-sm">Please ensure machines with slots are assigned to this spot's setup.</p>
+                <p>{t("visitReport.noSlotsFound")}</p>
+                <p className="text-sm">{t("visitReport.ensureMachinesAssigned")}</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -2008,7 +2011,7 @@ export default function NewVisitReport() {
 
         {/* Observations */}
         <Card className="p-6 bg-card border-border">
-          <h3 className="text-lg font-semibold text-foreground mb-4">Observations</h3>
+          <h3 className="text-lg font-semibold text-foreground mb-4">{t("visitReport.observations")}</h3>
           
           <div className="flex items-center space-x-2 mb-4">
             <Checkbox
@@ -2016,15 +2019,15 @@ export default function NewVisitReport() {
               checked={hasObservationIssue}
               onCheckedChange={(checked) => setHasObservationIssue(!!checked)}
             />
-            <Label htmlFor="observation-issue">Log an issue about this visit</Label>
+            <Label htmlFor="observation-issue">{t("visitReport.logIssue")}</Label>
           </div>
           
           {hasObservationIssue && (
             <div className="space-y-4 pl-6 border-l-2 border-warning">
               <div className="space-y-2">
-                <Label>Issue Log</Label>
+                <Label>{t("visitReport.issueLog")}</Label>
                 <Textarea
-                  placeholder="Describe any issues about the setup or machines..."
+                  placeholder={t("visitReport.issueLogPlaceholder")}
                   value={observationIssueLog}
                   onChange={(e) => setObservationIssueLog(e.target.value)}
                   className="bg-background"
@@ -2032,22 +2035,22 @@ export default function NewVisitReport() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Severity</Label>
+                <Label>{t("visitReport.severity")}</Label>
                 <Select value={observationSeverity} onValueChange={setObservationSeverity}>
                   <SelectTrigger className="bg-background w-48">
-                    <SelectValue placeholder="Select severity" />
+                    <SelectValue placeholder={t("visitReport.selectSeverity")} />
                   </SelectTrigger>
                   <SelectContent>
                     {severityOptions.map((option) => (
                       <SelectItem key={option.id} value={option.id}>
-                        {option.name}
+                        {t(`visitReport.${option.id}`)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Attach Image (Optional)</Label>
+                <Label>{t("visitReport.attachImage")}</Label>
                 {observationPhotoUrl ? (
                   <div className="relative w-32 h-32">
                     <img src={observationPhotoUrl} alt="Observation" className="w-full h-full object-cover rounded-md border" />
@@ -2072,7 +2075,7 @@ export default function NewVisitReport() {
                     />
                     <Button variant="outline" className="gap-2" onClick={() => document.getElementById('observation-photo-upload')?.click()}>
                       <ImagePlus className="w-4 h-4" />
-                      Upload Image
+                      {t("visitReport.uploadImage")}
                     </Button>
                   </>
                 )}
@@ -2083,11 +2086,11 @@ export default function NewVisitReport() {
 
         {/* Photo & Sign Off */}
         <Card className="p-6 bg-card border-border">
-          <h3 className="text-lg font-semibold text-foreground mb-4">Photo & Sign Off</h3>
+          <h3 className="text-lg font-semibold text-foreground mb-4">{t("visitReport.photoSignOff")}</h3>
           
           <div className="space-y-6">
             <div className="space-y-2">
-              <Label>Visit Photo</Label>
+              <Label>{t("visitReport.visitPhoto")}</Label>
               {visitPhotoUrl ? (
                 <div className="relative w-32 h-32">
                   <img src={visitPhotoUrl} alt="Visit" className="w-full h-full object-cover rounded-md border" />
@@ -2113,7 +2116,7 @@ export default function NewVisitReport() {
                   />
                   <Button variant="outline" className="gap-2" onClick={() => document.getElementById('visit-photo-camera')?.click()}>
                     <Camera className="w-4 h-4" />
-                    Take Photo
+                    {t("visitReport.takePhoto")}
                   </Button>
                   <input
                     type="file"
@@ -2127,7 +2130,7 @@ export default function NewVisitReport() {
                   />
                   <Button variant="outline" className="gap-2" onClick={() => document.getElementById('visit-photo-upload')?.click()}>
                     <Upload className="w-4 h-4" />
-                    Upload
+                    {t("visitReport.upload")}
                   </Button>
                 </div>
               )}
@@ -2141,10 +2144,10 @@ export default function NewVisitReport() {
               />
               <div className="space-y-1">
                 <Label htmlFor="confirm-accurate" className="text-base font-medium cursor-pointer">
-                  I confirm that this report is accurate
+                  {t("visitReport.confirmAccurate")}
                 </Label>
                 <p className="text-sm text-muted-foreground">
-                  By checking this box, I attest that all information entered in this report is accurate to the best of my knowledge.
+                  {t("visitReport.confirmAccurateDesc")}
                 </p>
               </div>
             </div>
@@ -2155,7 +2158,7 @@ export default function NewVisitReport() {
         {hasMissingSwapPhotos && (
           <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-md text-sm text-destructive">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>Please upload a photo for each product swap before submitting.</span>
+            <span>{t("visitReport.swapPhotoWarning")}</span>
           </div>
         )}
 
@@ -2163,14 +2166,14 @@ export default function NewVisitReport() {
         <div className="flex justify-end gap-4">
           <Button variant="outline" onClick={handleSaveDraft} className="gap-2">
             <Save className="w-4 h-4" />
-            Save Draft
+            {t("visitReport.saveDraft")}
           </Button>
           <Button 
             onClick={handleSubmit} 
             disabled={submitVisitReport.isPending || hasMissingSwapPhotos}
             className="gap-2"
           >
-            {submitVisitReport.isPending ? "Submitting..." : "Submit Report"}
+            {submitVisitReport.isPending ? t("visitReport.submitting") : t("visitReport.submitReport")}
           </Button>
         </div>
       </div>
@@ -2181,16 +2184,16 @@ export default function NewVisitReport() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-destructive" />
-              Over 30 Days Since Last Visit
+              {t("visitReport.over30DaysTitle")}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              It has been over 30 days since the last visit to this spot. Are you sure the selected date is correct, or do you need to change it?
+              {t("visitReport.over30DaysDesc")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Change Date</AlertDialogCancel>
+            <AlertDialogCancel>{t("visitReport.changeDate")}</AlertDialogCancel>
             <AlertDialogAction onClick={() => submitVisitReport.mutate()}>
-              Continue
+              {t("visitReport.continue")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2202,10 +2205,10 @@ export default function NewVisitReport() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CheckCircle className="w-5 h-5 text-green-500" />
-              Visit Report Submitted
+              {t("visitReport.visitSubmitted")}
             </DialogTitle>
             <DialogDescription>
-              Here's a summary of this visit's performance.
+              {t("visitReport.performanceSummary")}
             </DialogDescription>
           </DialogHeader>
           
@@ -2219,7 +2222,7 @@ export default function NewVisitReport() {
                     {getGradeLabel(performanceGrade.grade)}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    vs. ${fmt2(performanceGrade.avgCash)} avg
+                    {t("visitReport.vsAvg", { avg: fmt2(performanceGrade.avgCash) })}
                   </p>
                 </div>
               </div>
@@ -2228,19 +2231,19 @@ export default function NewVisitReport() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 bg-muted/50 rounded-md text-center">
                   <p className="text-lg font-bold text-foreground">${fmt2(performanceGrade.totalCash)}</p>
-                  <p className="text-xs text-muted-foreground">Cash Collected</p>
+                  <p className="text-xs text-muted-foreground">{t("visitReport.cashCollected")}</p>
                 </div>
                 <div className="p-3 bg-muted/50 rounded-md text-center">
                   <p className="text-lg font-bold text-foreground">{performanceGrade.slotsServiced}</p>
-                  <p className="text-xs text-muted-foreground">Slots Serviced</p>
+                  <p className="text-xs text-muted-foreground">{t("visitReport.slotsServiced")}</p>
                 </div>
                 <div className="p-3 bg-muted/50 rounded-md text-center">
                   <p className="text-lg font-bold text-foreground">{performanceGrade.issuesFlagged}</p>
-                  <p className="text-xs text-muted-foreground">Issues Flagged</p>
+                  <p className="text-xs text-muted-foreground">{t("visitReport.issuesFlagged")}</p>
                 </div>
                 <div className="p-3 bg-muted/50 rounded-md text-center">
                   <p className="text-lg font-bold text-foreground">{performanceGrade.ticketsCreated}</p>
-                  <p className="text-xs text-muted-foreground">Tickets Created</p>
+                  <p className="text-xs text-muted-foreground">{t("visitReport.ticketsCreated")}</p>
                 </div>
               </div>
 
@@ -2263,7 +2266,7 @@ export default function NewVisitReport() {
               setShowPerformanceGrade(false);
               navigate("/visits");
             }} className="w-full">
-              Done
+              {t("visitReport.done")}
             </Button>
           </DialogFooter>
         </DialogContent>

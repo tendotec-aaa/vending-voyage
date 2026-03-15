@@ -34,8 +34,10 @@ import { cn } from "@/lib/utils";
 import { useWarehouseInventory, ItemDetail } from "@/hooks/useWarehouseInventory";
 import { useCategories } from "@/hooks/useCategories";
 import { usePurchases } from "@/hooks/usePurchases";
+import { useTranslation } from "react-i18next";
 
 export function AddWarehouseItemDialog() {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [comboboxOpen, setComboboxOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
@@ -149,23 +151,23 @@ export function AddWarehouseItemDialog() {
       <DialogTrigger asChild>
         <Button>
           <Plus className="w-4 h-4 mr-2" />
-          Add Items
+          {t('warehouse.addItems')}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Item to Inventory</DialogTitle>
+          <DialogTitle>{t('warehouse.addItemTitle')}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Item Name Combobox */}
           <div className="space-y-2">
-            <Label>Item Name *</Label>
+            <Label>{t('warehouse.itemNameLabel')} *</Label>
             {isNewItem ? (
               <div className="flex gap-2">
                 <Input
                   value={newItemName}
                   onChange={(e) => setNewItemName(e.target.value)}
-                  placeholder="New item name"
+                  placeholder={t('warehouse.itemNameLabel')}
                   className="flex-1"
                 />
                 <Button
@@ -177,7 +179,7 @@ export function AddWarehouseItemDialog() {
                     setNewItemName("");
                   }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
               </div>
             ) : (
@@ -189,14 +191,14 @@ export function AddWarehouseItemDialog() {
                     aria-expanded={comboboxOpen}
                     className="w-full justify-between font-normal"
                   >
-                    {selectedItem ? selectedItem.name : "Search or create item..."}
+                    {selectedItem ? selectedItem.name : t('warehouse.searchOrCreate')}
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-full p-0" align="start">
                   <Command shouldFilter={false}>
                     <CommandInput
-                      placeholder="Search items..."
+                      placeholder={t('warehouse.searchItems')}
                       value={searchValue}
                       onValueChange={setSearchValue}
                     />
@@ -204,9 +206,9 @@ export function AddWarehouseItemDialog() {
                       <CommandEmpty>
                         <div className="p-2">
                           <p className="text-sm text-muted-foreground mb-2">
-                            No items found
+                            {t('warehouse.noItemsFoundCreate')}
                           </p>
-                          <Button
+                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
@@ -214,7 +216,7 @@ export function AddWarehouseItemDialog() {
                             className="w-full"
                           >
                             <Plus className="w-4 h-4 mr-2" />
-                            Create "{searchValue}"
+                            {t('warehouse.createItem', { name: searchValue })}  
                           </Button>
                         </div>
                       </CommandEmpty>
@@ -243,7 +245,7 @@ export function AddWarehouseItemDialog() {
                         {searchValue && filteredItems.length > 0 && (
                           <CommandItem onSelect={handleCreateNew}>
                             <Plus className="mr-2 h-4 w-4" />
-                            Create "{searchValue}"
+                            {t('warehouse.createItem', { name: searchValue })}
                           </CommandItem>
                         )}
                       </CommandGroup>
@@ -256,10 +258,10 @@ export function AddWarehouseItemDialog() {
 
           {/* Warehouse Selection */}
           <div className="space-y-2">
-            <Label>Warehouse *</Label>
+            <Label>{t('sidebar.warehouse')} *</Label>
             <Select value={warehouseId} onValueChange={setWarehouseId}>
               <SelectTrigger>
-                <SelectValue placeholder="Select warehouse" />
+                <SelectValue placeholder={t('warehouse.selectWarehouse')} />
               </SelectTrigger>
               <SelectContent>
                 {warehouses.map((warehouse) => (
@@ -273,27 +275,27 @@ export function AddWarehouseItemDialog() {
 
           {/* Quantity */}
           <div className="space-y-2">
-            <Label htmlFor="quantity">Quantity *</Label>
+            <Label htmlFor="quantity">{t('common.quantity')} *</Label>
             <Input
               id="quantity"
               type="number"
               min="1"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-              placeholder="Enter quantity"
+              placeholder={t('warehouse.enterQuantity')}
             />
           </div>
 
           {/* Category */}
           <div className="space-y-2">
-            <Label>Category</Label>
+            <Label>{t('common.category')}</Label>
             <Select
               value={categoryId}
               onValueChange={setCategoryId}
               disabled={!!selectedItem}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select category" />
+                <SelectValue placeholder={t('warehouse.selectCategory')} />
               </SelectTrigger>
               <SelectContent>
                 {categories.map((cat) => (
@@ -307,14 +309,14 @@ export function AddWarehouseItemDialog() {
 
           {/* Sub-Category */}
           <div className="space-y-2">
-            <Label>Sub-Category</Label>
+            <Label>{t('warehouse.subCategory')}</Label>
             <Select
               value={subcategoryId}
               onValueChange={setSubcategoryId}
               disabled={!!selectedItem || !categoryId}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select sub-category" />
+                <SelectValue placeholder={t('warehouse.selectSubCategory')} />
               </SelectTrigger>
               <SelectContent>
                 {filteredSubcategories.map((sub) => (
@@ -332,13 +334,13 @@ export function AddWarehouseItemDialog() {
               variant="outline"
               onClick={() => setOpen(false)}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
               disabled={!isFormValid || !warehouseId || isAdding || isCreatingItem}
             >
-              {isAdding || isCreatingItem ? "Adding..." : "Add Item"}
+              {isAdding || isCreatingItem ? t('warehouse.adding') : t('warehouse.addItem')}
             </Button>
           </div>
         </form>

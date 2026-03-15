@@ -43,8 +43,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUserRole } from "@/hooks/useUserRole";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 
 export default function VisitsPage() {
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { isAdmin } = useUserRole();
@@ -293,11 +295,11 @@ export default function VisitsPage() {
       queryClient.invalidateQueries({ queryKey: ['item-machine-stock'] });
       queryClient.invalidateQueries({ queryKey: ['item-logistics-history'] });
       queryClient.invalidateQueries({ queryKey: ['item-inventory-ledger'] });
-      toast.success("Visit reversed successfully. Machine slots and warehouse inventory restored.");
+      toast.success(t("visits.reverseSuccess"));
       setReverseVisitId(null);
     },
     onError: (error) => {
-      toast.error(`Reversal failed: ${error.message}`);
+      toast.error(`${t("common.error")}: ${error.message}`);
       setReverseVisitId(null);
     },
   });
@@ -314,19 +316,19 @@ export default function VisitsPage() {
   });
 
   const getStatusBadge = (status: string) => {
-    if (status === 'reversed') return <Badge variant="destructive">Reversed</Badge>;
-    if (status === 'flagged') return <Badge variant="outline" className="border-yellow-500 text-yellow-600">Flagged</Badge>;
-    return <Badge variant="secondary">Completed</Badge>;
+    if (status === 'reversed') return <Badge variant="destructive">{t("visits.reversed")}</Badge>;
+    if (status === 'flagged') return <Badge variant="outline" className="border-yellow-500 text-yellow-600">{t("visits.flagged")}</Badge>;
+    return <Badge variant="secondary">{t("visits.completed")}</Badge>;
   };
 
   return (
     <AppLayout
-      title="Visit Reports"
-      subtitle="Track and manage field service visits"
+      title={t("visits.title")}
+      subtitle={t("visits.subtitle")}
       actions={
         <Button className="gap-2" onClick={() => navigate("/visits/new")}>
           <Plus className="w-4 h-4" />
-          New Visit Report
+          {t("visits.newVisitReport")}
         </Button>
       }
     >
@@ -346,14 +348,14 @@ export default function VisitsPage() {
                 {dateRange?.from ? (
                   dateRange.to ? (
                     <>
-                      {format(dateRange.from, "LLL dd, y")} -{" "}
-                      {format(dateRange.to, "LLL dd, y")}
+                      {dateRange.from.toLocaleDateString(i18n.language, { month: 'short', day: '2-digit', year: 'numeric' })} -{" "}
+                      {dateRange.to.toLocaleDateString(i18n.language, { month: 'short', day: '2-digit', year: 'numeric' })}
                     </>
                   ) : (
-                    format(dateRange.from, "LLL dd, y")
+                    dateRange.from.toLocaleDateString(i18n.language, { month: 'short', day: '2-digit', year: 'numeric' })
                   )
                 ) : (
-                  <span>Select date range</span>
+                  <span>{t("common.selectDateRange")}</span>
                 )}
               </Button>
             </PopoverTrigger>
@@ -371,10 +373,10 @@ export default function VisitsPage() {
 
           <Select value={selectedLocation} onValueChange={setSelectedLocation}>
             <SelectTrigger className="min-w-[200px]">
-              <SelectValue placeholder="All Locations" />
+              <SelectValue placeholder={t("common.allLocations")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Locations</SelectItem>
+              <SelectItem value="all">{t("common.allLocations")}</SelectItem>
               {locations.map((location) => (
                 <SelectItem key={location} value={location}>
                   {location}
@@ -385,10 +387,10 @@ export default function VisitsPage() {
 
           <Select value={selectedSpot} onValueChange={setSelectedSpot}>
             <SelectTrigger className="min-w-[140px]">
-              <SelectValue placeholder="All Spots" />
+              <SelectValue placeholder={t("common.allSpots")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Spots</SelectItem>
+              <SelectItem value="all">{t("common.allSpots")}</SelectItem>
               {spots.map((spot) => (
                 <SelectItem key={spot} value={spot}>
                   {spot}
@@ -406,7 +408,7 @@ export default function VisitsPage() {
                 setSelectedSpot("all");
               }}
             >
-              Clear filters
+              {t("common.clearFilters")}
             </Button>
           )}
         </div>
@@ -422,28 +424,28 @@ export default function VisitsPage() {
           <Table>
             <TableHeader>
               <TableRow className="border-border">
-                <TableHead className="text-muted-foreground">Date</TableHead>
-                <TableHead className="text-muted-foreground">Location</TableHead>
-                <TableHead className="text-muted-foreground">Spot</TableHead>
-                <TableHead className="text-muted-foreground">Operator</TableHead>
-                <TableHead className="text-muted-foreground">Type</TableHead>
-                <TableHead className="text-muted-foreground text-right">Cash Collected</TableHead>
-                <TableHead className="text-muted-foreground">Status</TableHead>
-                <TableHead className="text-muted-foreground w-24">Actions</TableHead>
+                <TableHead className="text-muted-foreground">{t("visits.date")}</TableHead>
+                <TableHead className="text-muted-foreground">{t("visits.location")}</TableHead>
+                <TableHead className="text-muted-foreground">{t("visits.spot")}</TableHead>
+                <TableHead className="text-muted-foreground">{t("visits.operator")}</TableHead>
+                <TableHead className="text-muted-foreground">{t("visits.type")}</TableHead>
+                <TableHead className="text-muted-foreground text-right">{t("visits.cashCollected")}</TableHead>
+                <TableHead className="text-muted-foreground">{t("visits.status")}</TableHead>
+                <TableHead className="text-muted-foreground w-24">{t("visits.actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredVisits.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                    No visit reports found
+                    {t("visits.noVisits")}
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredVisits.map((visit: any) => (
                   <TableRow key={visit.id} className="border-border hover:bg-muted/50">
                     <TableCell className="text-muted-foreground">
-                      {visit.visit_date ? format(new Date(visit.visit_date), "MMM dd, yyyy") : "—"}
+                      {visit.visit_date ? new Date(visit.visit_date).toLocaleDateString(i18n.language, { month: 'short', day: '2-digit', year: 'numeric' }) : "—"}
                     </TableCell>
                     <TableCell className="text-foreground truncate max-w-[180px]">
                       {visit.spot?.location?.name || "—"}
@@ -455,7 +457,7 @@ export default function VisitsPage() {
                         : "—"}
                     </TableCell>
                     <TableCell className="text-foreground capitalize">
-                      {visit.visit_type?.replace(/_/g, " ") || "—"}
+                      {visit.visit_type ? t(`visitReport.${visit.visit_type}`) : "—"}
                     </TableCell>
                     <TableCell className="text-right font-medium text-foreground">
                       ${(visit.total_cash_collected || 0).toFixed(2)}
@@ -490,24 +492,22 @@ export default function VisitsPage() {
       <AlertDialog open={!!reverseVisitId} onOpenChange={(open) => !open && setReverseVisitId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Reverse This Visit?</AlertDialogTitle>
+            <AlertDialogTitle>{t("visits.reverseTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will restore all machine slots to their pre-visit state and mark this visit as "reversed."
-              The visit record will be kept for audit purposes but all inventory changes will be undone.
-              This action cannot be undone.
+              {t("visits.reverseDesc")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={reverseVisit.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={reverseVisit.isPending}>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={reverseVisit.isPending}
               onClick={() => reverseVisitId && reverseVisit.mutate(reverseVisitId)}
             >
               {reverseVisit.isPending ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Reversing...</>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t("visits.reversing")}</>
               ) : (
-                "Yes, Reverse Visit"
+                t("visits.yesReverse")
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

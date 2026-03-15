@@ -15,15 +15,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
 import { Plus, MapPin, Search, Layers, ChevronDown, Truck, Calendar, DollarSign, Percent, Unlink } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 import type { Database } from "@/integrations/supabase/types";
 
 export default function Locations() {
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -140,10 +139,10 @@ export default function Locations() {
       queryClient.invalidateQueries({ queryKey: ["setups"] });
       queryClient.invalidateQueries({ queryKey: ["machines"] });
       queryClient.invalidateQueries({ queryKey: ["all-machines-for-locations"] });
-      toast({ title: "Setup assigned to spot" });
+      toast({ title: t("locations.toastSetupAssigned", { defaultValue: "Setup assigned to spot" }) });
     },
     onError: (error) => {
-      toast({ title: "Error assigning setup", description: error.message, variant: "destructive" });
+      toast({ title: t("locations.toastErrorAssigning", { defaultValue: "Error assigning setup" }), description: error.message, variant: "destructive" });
     },
   });
 
@@ -167,10 +166,10 @@ export default function Locations() {
       queryClient.invalidateQueries({ queryKey: ["setups"] });
       queryClient.invalidateQueries({ queryKey: ["machines"] });
       queryClient.invalidateQueries({ queryKey: ["all-machines-for-locations"] });
-      toast({ title: "Setup removed from spot" });
+      toast({ title: t("locations.toastSetupRemoved", { defaultValue: "Setup removed from spot" }) });
     },
     onError: (error) => {
-      toast({ title: "Error removing setup", description: error.message, variant: "destructive" });
+      toast({ title: t("locations.toastErrorRemoving", { defaultValue: "Error removing setup" }), description: error.message, variant: "destructive" });
     },
   });
 
@@ -203,10 +202,10 @@ export default function Locations() {
       queryClient.invalidateQueries({ queryKey: ["locations"] });
       queryClient.invalidateQueries({ queryKey: ["spots"] });
       resetForm(); setIsCreateOpen(false);
-      toast({ title: "Location created successfully" });
+      toast({ title: t("locations.toastLocationCreated", { defaultValue: "Location created successfully" }) });
     },
     onError: (error) => {
-      toast({ title: "Error creating location", description: error.message, variant: "destructive" });
+      toast({ title: t("locations.toastErrorCreating", { defaultValue: "Error creating location" }), description: error.message, variant: "destructive" });
     },
   });
 
@@ -253,94 +252,94 @@ export default function Locations() {
       <div className="space-y-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Locations</h1>
-            <p className="text-muted-foreground">Manage venues and assign setups to spots</p>
+            <h1 className="text-2xl font-bold text-foreground">{t("locations.title")}</h1>
+            <p className="text-muted-foreground">{t("locations.subtitle")}</p>
           </div>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
-              <Button><Plus className="mr-2 h-4 w-4" /> New Location</Button>
+              <Button><Plus className="mr-2 h-4 w-4" /> {t("locations.newLocation")}</Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle>Create New Location</DialogTitle>
-                <DialogDescription>Add a new venue with available spots for setups.</DialogDescription>
+                <DialogTitle>{t("locations.createLocation")}</DialogTitle>
+                <DialogDescription>{t("locations.addVenueDesc")}</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
                 <div className="space-y-2">
-                  <Label>Name *</Label>
-                  <Input placeholder="e.g., Mall Plaza Downtown" value={newName} onChange={(e) => setNewName(e.target.value)} />
+                  <Label>{t("common.name")} *</Label>
+                  <Input placeholder={t("locations.egMall")} value={newName} onChange={(e) => setNewName(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Address</Label>
-                  <Input placeholder="123 Main Street" value={newAddress} onChange={(e) => setNewAddress(e.target.value)} />
+                  <Label>{t("common.address")}</Label>
+                  <Input placeholder={t("locations.egMainStreet")} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Contact Name</Label>
+                    <Label>{t("locations.contactName")}</Label>
                     <Input value={newContactPersonName} onChange={(e) => setNewContactPersonName(e.target.value)} />
                   </div>
                   <div className="space-y-2">
-                    <Label>Contact Phone</Label>
+                    <Label>{t("locations.contactPhone")}</Label>
                     <Input value={newContactPersonNumber} onChange={(e) => setNewContactPersonNumber(e.target.value)} />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Contact Email</Label>
+                  <Label>{t("locations.contactEmail")}</Label>
                   <Input type="email" value={newContactPersonEmail} onChange={(e) => setNewContactPersonEmail(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Negotiation Type</Label>
+                  <Label>{t("locations.negotiationType")}</Label>
                   <Select value={newNegotiationType} onValueChange={(v) => setNewNegotiationType(v as typeof newNegotiationType)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="fixed_rent">Fixed Rent</SelectItem>
-                      <SelectItem value="commission">Commission</SelectItem>
-                      <SelectItem value="hybrid">Hybrid</SelectItem>
+                      <SelectItem value="fixed_rent">{t("locations.fixedRent")}</SelectItem>
+                      <SelectItem value="commission">{t("locations.commission")}</SelectItem>
+                      <SelectItem value="hybrid">{t("locations.hybrid")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 {(newNegotiationType === "fixed_rent" || newNegotiationType === "hybrid") && (
                   <div className="space-y-2">
-                    <Label>Rent Amount</Label>
+                    <Label>{t("locations.rentAmount")}</Label>
                     <Input type="number" min="0" step="0.01" value={newRentAmount} onChange={(e) => setNewRentAmount(e.target.value)} />
                   </div>
                 )}
                 {(newNegotiationType === "commission" || newNegotiationType === "hybrid") && (
                   <div className="space-y-2">
-                    <Label>Commission %</Label>
+                    <Label>{t("locations.commissionPercentage")}</Label>
                     <Input type="number" min="0" max="100" step="0.01" value={newCommissionPercentage} onChange={(e) => setNewCommissionPercentage(e.target.value)} />
                   </div>
                 )}
                 <div className="space-y-2">
-                  <Label>Number of Spots *</Label>
+                  <Label>{t("locations.numberOfSpots")} *</Label>
                   <Input type="number" min="0" value={newTotalSpots} onChange={(e) => setNewTotalSpots(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Contract Term</Label>
+                  <Label>{t("locations.contractTerm")}</Label>
                   <Select value={newContractTerm} onValueChange={(v) => setNewContractTerm(v as typeof newContractTerm)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1_year">1 Year</SelectItem>
-                      <SelectItem value="2_years">2 Years</SelectItem>
-                      <SelectItem value="indefinite">Indefinite</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
+                      <SelectItem value="1_year">{t("locations.oneYear")}</SelectItem>
+                      <SelectItem value="2_years">{t("locations.twoYears")}</SelectItem>
+                      <SelectItem value="indefinite">{t("locations.indefinite")}</SelectItem>
+                      <SelectItem value="custom">{t("locations.custom")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Contract Start</Label>
+                    <Label>{t("locations.contractStart")}</Label>
                     <Input type="date" value={newContractStartDate} onChange={(e) => setNewContractStartDate(e.target.value)} />
                   </div>
                   <div className="space-y-2">
-                    <Label>Contract End</Label>
+                    <Label>{t("locations.contractEnd")}</Label>
                     <Input type="date" value={newContractEndDate} onChange={(e) => setNewContractEndDate(e.target.value)} />
                   </div>
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => { setIsCreateOpen(false); resetForm(); }}>Cancel</Button>
-                <Button onClick={() => createLocation.mutate()} disabled={!newName.trim() || createLocation.isPending}>Create Location</Button>
+                <Button variant="outline" onClick={() => { setIsCreateOpen(false); resetForm(); }}>{t("common.cancel")}</Button>
+                <Button onClick={() => createLocation.mutate()} disabled={!newName.trim() || createLocation.isPending}>{t("locations.createLocation")}</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -348,17 +347,17 @@ export default function Locations() {
 
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search locations..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
+          <Input placeholder={t("locations.searchLocations")} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
         </div>
 
         {isLoading ? (
-          <div className="text-muted-foreground">Loading locations...</div>
+          <div className="text-muted-foreground">{t("locations.loadingLocations")}</div>
         ) : filteredLocations.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <MapPin className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No locations found</p>
-              <Button variant="outline" className="mt-4" onClick={() => setIsCreateOpen(true)}>Create your first location</Button>
+              <p className="text-muted-foreground">{t("locations.noLocationsFound")}</p>
+              <Button variant="outline" className="mt-4" onClick={() => setIsCreateOpen(true)}>{t("locations.createFirstLocation")}</Button>
             </CardContent>
           </Card>
         ) : (
@@ -397,17 +396,17 @@ export default function Locations() {
                           >
                             {location.name}
                           </button>
-                          <p className="text-sm text-muted-foreground">{location.address || "No address"}</p>
+                          <p className="text-sm text-muted-foreground">{location.address || t("locations.noAddress")}</p>
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
                             {location.contract_start_date && (
                               <span className="flex items-center gap-1">
                                 <Calendar className="h-3 w-3" />
-                                Since {format(new Date(location.contract_start_date), "MMM d, yyyy")}
+                                {t("locations.since")} {location.contract_start_date ? new Date(location.contract_start_date).toLocaleDateString(i18n.language, { month: 'short', day: 'numeric', year: 'numeric' }) : ""}
                               </span>
                             )}
                             {location.negotiation_type && (
                               <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 capitalize">
-                                {location.negotiation_type === "fixed_rent" ? "Fixed Rent" : location.negotiation_type === "commission" ? "Commission" : "Hybrid"}
+                                {location.negotiation_type === "fixed_rent" ? t("locations.fixedRent") : location.negotiation_type === "commission" ? t("locations.commission") : t("locations.hybrid")}
                               </Badge>
                             )}
                             {(location.negotiation_type === "commission" || location.negotiation_type === "hybrid") && location.commission_percentage ? (
@@ -427,13 +426,13 @@ export default function Locations() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <Badge variant="secondary">{locationSpots.length}/{totalSpots} spots</Badge>
+                          <Badge variant="secondary">{locationSpots.length}/{totalSpots} {t("locations.spot")}</Badge>
                           {locationRent > 0 && (
-                            <span className="text-sm text-foreground font-medium">${fmt2(locationRent)}/mo</span>
+                            <span className="text-sm text-foreground font-medium">${fmt2(locationRent)}{t("common.perMonth")}</span>
                           )}
                           {locationAccruedRent > 0 && (
                             <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto">
-                              Accrued: ${fmt2(locationAccruedRent)}
+                              {t("locations.accrued")}: ${fmt2(locationAccruedRent)}
                             </Badge>
                           )}
                           {locationSpots.length > 0 && (
@@ -489,16 +488,16 @@ export default function Locations() {
                                       {assignedSetup ? (
                                         <Badge variant="outline" className="text-xs">{assignedSetup.name}</Badge>
                                       ) : (
-                                        <Badge variant="secondary" className="text-xs">No setup</Badge>
+                                        <Badge variant="secondary" className="text-xs">{t("locations.noSetup")}</Badge>
                                       )}
                                       {spotMonthlyRent > 0 && (
                                         <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
-                                          <DollarSign className="h-2.5 w-2.5 mr-0.5" />{fmt2(spotMonthlyRent)}/mo
+                                          <DollarSign className="h-2.5 w-2.5 mr-0.5" />{fmt2(spotMonthlyRent)}{t("common.perMonth")}
                                         </Badge>
                                       )}
                                       {spotAccruedRent > 0 && (
                                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
-                                          Accrued: ${fmt2(spotAccruedRent)}
+                                          {t("locations.accrued")}: ${fmt2(spotAccruedRent)}
                                         </Badge>
                                       )}
                                       {assignedSetup && spotTotalCapacity > 0 && (
@@ -517,7 +516,7 @@ export default function Locations() {
                                   <AccordionContent className="px-3 pb-3">
                                     {!assignedSetup ? (
                                       <div className="space-y-2">
-                                        <p className="text-sm text-muted-foreground">No setup assigned to this spot.</p>
+                                        <p className="text-sm text-muted-foreground">{t("locations.noSetupAssigned", { defaultValue: "No setup assigned to this spot." })}</p>
                                         {unassignedSetups.length > 0 ? (
                                           <Select onValueChange={(setupId) => {
                                             const setup = unassignedSetups.find(s => s.id === setupId);
@@ -540,14 +539,14 @@ export default function Locations() {
                                             </SelectContent>
                                           </Select>
                                         ) : (
-                                          <p className="text-xs text-muted-foreground">No unassigned setups available. Create one in the Setups page.</p>
+                                          <p className="text-xs text-muted-foreground">{t("locations.noUnassignedSetups")}</p>
                                         )}
                                       </div>
                                     ) : (
                                       <div className="space-y-3">
                                         <div className="flex items-center justify-between">
                                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                            <span>Setup: <strong className="text-foreground">{assignedSetup.name}</strong></span>
+                                            <span>{t("visitReport.setup")}: <strong className="text-foreground">{assignedSetup.name}</strong></span>
                                             <Badge variant="outline" className="text-xs capitalize">{assignedSetup.type}</Badge>
                                           </div>
                                           <Button
@@ -564,7 +563,7 @@ export default function Locations() {
                                             }}
                                           >
                                             <Unlink className="h-3 w-3" />
-                                            Remove
+                                            {t("locations.remove")}
                                           </Button>
                                         </div>
                                         {setupMachines.map((machine) => {
@@ -630,20 +629,20 @@ export default function Locations() {
       <AlertDialog open={!!assignConfirm} onOpenChange={(open) => { if (!open) setAssignConfirm(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Setup Assignment</AlertDialogTitle>
+            <AlertDialogTitle>{t("locations.confirmSetupAssignment")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to assign setup <strong>{assignConfirm?.setupName}</strong> to <strong>{assignConfirm?.spotName}</strong>? The machines in this setup will be marked as deployed.
+              {t("locations.confirmSetupAssignmentDesc", { setup: assignConfirm?.setupName, spot: assignConfirm?.spotName })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={() => {
               if (assignConfirm) {
                 assignSetupToSpot.mutate({ setupId: assignConfirm.setupId, spotId: assignConfirm.spotId });
                 setAssignConfirm(null);
               }
             }}>
-              Yes, Assign Setup
+              {t("locations.yesAssign")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -653,13 +652,13 @@ export default function Locations() {
       <AlertDialog open={!!unassignConfirm} onOpenChange={(open) => { if (!open) setUnassignConfirm(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove Setup from Spot</AlertDialogTitle>
+            <AlertDialogTitle>{t("locations.removeSetupFromSpot")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to remove setup <strong>{unassignConfirm?.setupName}</strong> from <strong>{unassignConfirm?.spotName}</strong>? The machines will be returned to warehouse status.
+              {t("locations.removeSetupFromSpotDesc", { setup: unassignConfirm?.setupName, spot: unassignConfirm?.spotName })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
@@ -669,7 +668,7 @@ export default function Locations() {
                 }
               }}
             >
-              Yes, Remove Setup
+              {t("locations.yesRemove")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

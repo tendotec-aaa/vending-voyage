@@ -2,6 +2,7 @@
  import { Card, CardContent } from "@/components/ui/card";
  import { TrendingUp, TrendingDown, Minus } from "lucide-react";
  import { SpotAnalytics } from "@/hooks/useSpotAnalytics";
+ import { useTranslation } from "react-i18next";
  
  interface TopPerformerCardProps {
    spot: SpotAnalytics;
@@ -21,6 +22,7 @@
  };
  
  export function TopPerformerCard({ spot, rank }: TopPerformerCardProps) {
+   const { t } = useTranslation();
    const TrendIcon = spot.trend === "up" ? TrendingUp : spot.trend === "down" ? TrendingDown : Minus;
    const trendColor = spot.trend === "up" ? "text-green-500" : spot.trend === "down" ? "text-destructive" : "text-muted-foreground";
  
@@ -43,19 +45,19 @@
              <p className="text-lg font-bold text-foreground">
                ${fmt2(spot.totalSales)}
              </p>
-             <p className="text-xs text-muted-foreground">Total Sales</p>
+             <p className="text-xs text-muted-foreground">{t('spots.totalSales')}</p>
            </div>
            <div>
              <p className={`text-lg font-bold ${spot.netProfit >= 0 ? "text-green-500" : "text-destructive"}`}>
                ${fmt2(spot.netProfit)}
              </p>
-             <p className="text-xs text-muted-foreground">Sales - Rent</p>
+             <p className="text-xs text-muted-foreground">{t('spots.salesMinusRent')}</p>
            </div>
            <div>
              <p className={`text-lg font-bold ${spot.roi >= 0 ? "text-green-500" : "text-destructive"}`}>
                {fmtPct(spot.roi)}%
              </p>
-             <p className="text-xs text-muted-foreground">ROI</p>
+             <p className="text-xs text-muted-foreground">{t('spots.roi')}</p>
            </div>
          </div>
        </CardContent>

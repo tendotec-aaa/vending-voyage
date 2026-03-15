@@ -75,7 +75,7 @@ export default function Warehouse() {
 
   const destinationBodegas = standardWarehouses.filter((w) => w.id !== selectedWarehouse);
 
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   return (
     <AppLayout
@@ -117,7 +117,7 @@ export default function Warehouse() {
               : "bg-card text-foreground border-border hover:bg-muted"
           }`}
         >
-          All Warehouses
+          {t('common.allWarehouses')}
           <Badge variant="secondary" className="ml-2 text-xs">{inventory.length}</Badge>
         </button>
 
@@ -169,11 +169,11 @@ export default function Warehouse() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <Card className="p-4">
-          <p className="text-sm text-muted-foreground">Active SKUs / Total SKUs</p>
+          <p className="text-sm text-muted-foreground">{t('warehouse.activeSKUs')}</p>
           <p className="text-2xl font-bold text-foreground">{activeSKUs} <span className="text-muted-foreground font-normal text-lg">/ {filteredInventory.length}</span></p>
         </Card>
         <Card className="p-4">
-          <p className="text-sm text-muted-foreground">Total Items</p>
+          <p className="text-sm text-muted-foreground">{t('warehouse.totalItems')}</p>
           <p className="text-2xl font-bold text-foreground">{totalItems.toLocaleString()}</p>
         </Card>
       </div>
@@ -184,7 +184,7 @@ export default function Warehouse() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search by name or SKU..."
+              placeholder={t('warehouse.searchBySKU')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -192,10 +192,10 @@ export default function Warehouse() {
           </div>
           <Select value={categoryFilter} onValueChange={handleCategoryChange}>
             <SelectTrigger className="w-full sm:w-48">
-              <SelectValue placeholder="All Categories" />
+              <SelectValue placeholder={t('common.allCategories')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
+              <SelectItem value="all">{t('common.allCategories')}</SelectItem>
               {categories.map((cat) => (
                 <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
               ))}
@@ -203,7 +203,7 @@ export default function Warehouse() {
           </Select>
           <div className="flex items-center gap-2">
             <Switch id="wh-show-zero" checked={showZeroStock} onCheckedChange={setShowZeroStock} />
-            <Label htmlFor="wh-show-zero" className="text-sm text-muted-foreground whitespace-nowrap">Show zero/negative stock</Label>
+            <Label htmlFor="wh-show-zero" className="text-sm text-muted-foreground whitespace-nowrap">{t('warehouse.showZeroStock')}</Label>
           </div>
         </div>
       </Card>
@@ -217,22 +217,22 @@ export default function Warehouse() {
         ) : filteredInventory.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Package className="w-12 h-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium text-foreground">No items found</h3>
+            <h3 className="text-lg font-medium text-foreground">{t('warehouse.noItemsFound')}</h3>
             <p className="text-muted-foreground mt-1">
-              {inventory.length === 0 ? "Add your first item or receive a purchase order" : "Try adjusting your search or filters"}
+              {inventory.length === 0 ? t('warehouse.addFirstItem') : t('warehouse.adjustFilters')}
             </p>
           </div>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Item Name</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead>Category</TableHead>
-                {selectedWarehouse === "all" && <TableHead>Warehouse</TableHead>}
-                <TableHead className="text-right">Quantity</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Last Updated</TableHead>
+                <TableHead>{t('warehouse.itemName')}</TableHead>
+                <TableHead>{t('warehouse.sku')}</TableHead>
+                <TableHead>{t('common.category')}</TableHead>
+                {selectedWarehouse === "all" && <TableHead>{t('sidebar.warehouse')}</TableHead>}
+                <TableHead className="text-right">{t('common.quantity')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead>
+                <TableHead>{t('warehouse.lastUpdated')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -246,7 +246,7 @@ export default function Warehouse() {
                     className={`cursor-pointer hover:bg-muted/50 ${isInactive ? "opacity-40" : ""}`}
                     onClick={() => canManageFull && item.item_detail?.id && navigate(`/inventory/${item.item_detail.id}`)}
                   >
-                    <TableCell className="font-medium text-foreground">{item.item_detail?.name || "Unknown"}</TableCell>
+                    <TableCell className="font-medium text-foreground">{item.item_detail?.name || t('common.unknown')}</TableCell>
                     <TableCell className="font-mono text-sm text-primary">{item.item_detail?.sku || "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{item.item_detail?.category?.name || "—"}</TableCell>
                     {selectedWarehouse === "all" && (
@@ -257,13 +257,13 @@ export default function Warehouse() {
                     </TableCell>
                     <TableCell>
                       {isLow ? (
-                        <Badge variant="destructive" className="text-xs">Low Stock</Badge>
+                        <Badge variant="destructive" className="text-xs">{t('common.lowStock')}</Badge>
                       ) : (
-                        <Badge variant="secondary" className="text-xs">In Stock</Badge>
+                        <Badge variant="secondary" className="text-xs">{t('common.inStock')}</Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">
-                      {item.last_updated ? new Date(item.last_updated).toLocaleDateString() : "—"}
+                      {item.last_updated ? new Date(item.last_updated).toLocaleDateString(i18n.language) : "—"}
                     </TableCell>
                   </TableRow>
                 );

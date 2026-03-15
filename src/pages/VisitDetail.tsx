@@ -26,9 +26,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import { format, differenceInDays } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { fmt2 } from "@/lib/formatters";
 
 export default function VisitDetail() {
+  const { t, i18n } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
@@ -175,10 +177,10 @@ export default function VisitDetail() {
   // --- Derived data ---
   const getStatusBadge = (status: string) => {
     if (status === "reversed")
-      return <Badge className="bg-destructive/20 text-destructive border-destructive/30">Reversed</Badge>;
+      return <Badge className="bg-destructive/20 text-destructive border-destructive/30">{t("visitReport.reversed")}</Badge>;
     if (status === "flagged")
-      return <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border-yellow-500/30">Flagged</Badge>;
-    return <Badge className="bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30">Completed</Badge>;
+      return <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border-yellow-500/30">{t("visitReport.flagged")}</Badge>;
+    return <Badge className="bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30">{t("visitReport.completed")}</Badge>;
   };
 
   const getPriorityBadge = (priority: string) => {
@@ -188,23 +190,22 @@ export default function VisitDetail() {
       high: "bg-orange-500/20 text-orange-700 dark:text-orange-400 border-orange-500/30",
       urgent: "bg-destructive/20 text-destructive border-destructive/30",
     };
-    return <Badge className={map[priority] || ""} variant="outline">{priority}</Badge>;
+    return <Badge className={map[priority] || ""} variant="outline">{t(`visitReport.${priority}`)}</Badge>;
   };
 
   const formatVisitType = (type: string | null) => {
     if (!type) return "—";
-    return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    return t(`visitReport.${type}`);
   };
 
   const formatJamStatus = (s: string | null | undefined) => {
-    if (!s || s === "no_jam") return "No Jam";
-    if (s === "by_coin") return "Jam (+1 coin)";
-    return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    if (!s) return t("visitReport.no_jam");
+    return t(`visitReport.${s}`);
   };
 
   if (isLoading) {
     return (
-      <AppLayout title="Visit Report">
+      <AppLayout title={t("visitReport.title")}>
         <div className="flex items-center justify-center p-12">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -214,12 +215,12 @@ export default function VisitDetail() {
 
   if (!visit) {
     return (
-      <AppLayout title="Visit Report">
+      <AppLayout title={t("visitReport.title")}>
         <div className="text-center py-12 text-muted-foreground">
-          Visit not found.
+          {t("visitReport.visitNotFound")}
           <div className="mt-4">
             <Button variant="outline" onClick={() => navigate("/visits")}>
-              <ArrowLeft className="w-4 h-4 mr-2" /> Back to Visits
+              <ArrowLeft className="w-4 h-4 mr-2" /> {t("visitReport.backToVisits")}
             </Button>
           </div>
         </div>
@@ -229,7 +230,7 @@ export default function VisitDetail() {
 
   const operatorName = visit.operator
     ? `${visit.operator.first_names || ""} ${visit.operator.last_names || ""}`.trim()
-    : "Unknown";
+    : t("profile.notSet");
   const totalCash = visit.total_cash_collected || 0;
   const totalRefilled = lineItems.reduce((s: number, li: any) => s + (li.quantity_added || 0), 0);
   const totalRemoved = lineItems.reduce((s: number, li: any) => s + (li.quantity_removed || 0), 0);
@@ -332,11 +333,11 @@ export default function VisitDetail() {
 
   return (
     <AppLayout
-      title="Visit Report"
+      title={t("visitReport.title")}
       subtitle={`${location?.name || ""} — ${(visit as any).spot?.name || ""}`}
       actions={
         <Button variant="outline" onClick={() => navigate("/visits")}>
-          <ArrowLeft className="w-4 h-4 mr-2" /> Back
+          <ArrowLeft className="w-4 h-4 mr-2" /> {t("visitReport.back")}
         </Button>
       }
     >
@@ -346,10 +347,10 @@ export default function VisitDetail() {
           <Card>
             <CardContent className="p-4 flex flex-col gap-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <CalendarIcon className="w-3 h-3" /> Date
+                <CalendarIcon className="w-3 h-3" /> {t("visitReport.date")}
               </span>
               <span className="text-sm font-medium text-foreground">
-                {visit.visit_date ? format(new Date(visit.visit_date), "MMM dd, yyyy") : "—"}
+                {visit.visit_date ? new Date(visit.visit_date).toLocaleDateString(i18n.language, { month: 'short', day: '2-digit', year: 'numeric' }) : "—"}
               </span>
               <span className="text-xs text-muted-foreground">{formatVisitType(visit.visit_type)}</span>
             </CardContent>
@@ -357,7 +358,7 @@ export default function VisitDetail() {
           <Card>
             <CardContent className="p-4 flex flex-col gap-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <User className="w-3 h-3" /> Operator
+                <User className="w-3 h-3" /> {t("visitReport.operator")}
               </span>
               <span className="text-sm font-medium text-foreground">{operatorName}</span>
             </CardContent>
@@ -365,14 +366,14 @@ export default function VisitDetail() {
           <Card>
             <CardContent className="p-4 flex flex-col gap-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <DollarSign className="w-3 h-3" /> Cash Collected
+                <DollarSign className="w-3 h-3" /> {t("visitReport.cashCollectedLong")}
               </span>
               <span className="text-sm font-semibold text-foreground">${fmt2(totalCash)}</span>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Status</span>
+              <span className="text-xs text-muted-foreground">{t("common.status")}</span>
               <div>{getStatusBadge(visit.status || "completed")}</div>
             </CardContent>
           </Card>
@@ -383,17 +384,17 @@ export default function VisitDetail() {
           <Card>
             <CardContent className="p-4 flex flex-col gap-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Clock className="w-3 h-3" /> Days Since Last Visit
+                <Clock className="w-3 h-3" /> {t("visitReport.daysSinceLastVisitLong")}
               </span>
               <span className={`text-sm font-semibold ${getDaysColor(daysSinceLastVisit)}`}>
-                {daysSinceLastVisit !== null ? `${daysSinceLastVisit} days` : "First visit"}
+                {daysSinceLastVisit !== null ? `${daysSinceLastVisit} ${t("visitReport.days")}` : t("visitReport.firstVisit")}
               </span>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 flex flex-col gap-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Building className="w-3 h-3" /> Monthly Rent (per spot)
+                <Building className="w-3 h-3" /> {t("visitReport.monthlyRentShort")}
               </span>
               <span className="text-sm font-medium text-foreground">${fmt2(monthlyRent)}</span>
             </CardContent>
@@ -401,7 +402,7 @@ export default function VisitDetail() {
           <Card>
             <CardContent className="p-4 flex flex-col gap-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <DollarSign className="w-3 h-3" /> Rent Since Last Visit
+                <DollarSign className="w-3 h-3" /> {t("visitReport.rentSinceLastVisitLong")}
               </span>
               <span className="text-sm font-medium text-foreground">
                 {rentSinceLastVisit !== null ? `$${fmt2(rentSinceLastVisit)}` : "—"}
@@ -412,7 +413,7 @@ export default function VisitDetail() {
             <CardContent className="p-4 flex flex-col gap-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
                 {netProfit !== null && netProfit >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                Net Profit
+                {t("visitReport.netProfit")}
               </span>
               <span className={`text-sm font-semibold ${netProfit !== null ? (netProfit >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive") : "text-muted-foreground"}`}>
                 {netProfit !== null ? `$${fmt2(netProfit)}` : "—"}
@@ -426,27 +427,27 @@ export default function VisitDetail() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
-                <TrendingUp className="w-4 h-4" /> Profitability Analysis
+                <TrendingUp className="w-4 h-4" /> {t("visitReport.profitabilityAnalysis")}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
                 <div>
-                  <span className="text-muted-foreground text-xs">Revenue</span>
+                  <span className="text-muted-foreground text-xs">{t("visitReport.revenue")}</span>
                   <p className="font-semibold text-foreground">${fmt2(totalCash)}</p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground text-xs">Rent Accrued</span>
+                  <span className="text-muted-foreground text-xs">{t("visitReport.rentAccrued")}</span>
                   <p className="font-semibold text-foreground">${fmt2(rentSinceLastVisit)}</p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground text-xs">Gross Profit</span>
+                  <span className="text-muted-foreground text-xs">{t("visitReport.grossProfit")}</span>
                   <p className={`font-semibold ${netProfit! >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
                     ${fmt2(netProfit!)}
                   </p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground text-xs">Units Added / Removed</span>
+                  <span className="text-muted-foreground text-xs">{t("visitReport.unitsAddedRemoved")}</span>
                   <p className="font-semibold text-foreground">{totalRefilled} / {totalRemoved}</p>
                 </div>
               </div>
@@ -458,25 +459,25 @@ export default function VisitDetail() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <MapPin className="w-4 h-4" /> Visit Details
+              <MapPin className="w-4 h-4" /> {t("visitReport.visitDetails")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="text-muted-foreground">Location</span>
+                <span className="text-muted-foreground">{t("visitReport.location")}</span>
                 <p className="font-medium text-foreground">{location?.name || "—"}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Spot</span>
+                <span className="text-muted-foreground">{t("visitReport.spot")}</span>
                 <p className="font-medium text-foreground">{(visit as any).spot?.name || "—"}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Visit Type</span>
+                <span className="text-muted-foreground">{t("visitReport.visitType")}</span>
                 <p className="font-medium text-foreground">{formatVisitType(visit.visit_type)}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Address</span>
+                <span className="text-muted-foreground">{t("profile.address")}</span>
                 <p className="font-medium text-foreground">{location?.address || "—"}</p>
               </div>
             </div>
@@ -484,7 +485,7 @@ export default function VisitDetail() {
               <>
                 <Separator />
                 <div>
-                  <span className="text-sm text-muted-foreground">Notes</span>
+                  <span className="text-sm text-muted-foreground">{t("visitReport.notes")}</span>
                   <p className="text-sm text-foreground mt-1">{visit.notes}</p>
                 </div>
               </>
@@ -494,7 +495,7 @@ export default function VisitDetail() {
                 <Separator />
                 <div>
                   <span className="text-sm text-muted-foreground flex items-center gap-1">
-                    <ImageIcon className="w-3 h-3" /> Verification Photo
+                    <ImageIcon className="w-3 h-3" /> {t("visitReport.verificationPhoto")}
                   </span>
                   <img
                     src={visit.verification_photo_url}
@@ -512,9 +513,9 @@ export default function VisitDetail() {
           <div>
             <div className="flex items-center gap-2 mb-3">
               <Package className="w-4 h-4 text-foreground" />
-              <h3 className="text-base font-semibold text-foreground">Slot Activity</h3>
+              <h3 className="text-base font-semibold text-foreground">{t("visitReport.slotActivity")}</h3>
               <Badge variant="secondary" className="ml-auto text-xs">
-                {enrichedSlots.length} slot{enrichedSlots.length !== 1 ? "s" : ""}
+                {enrichedSlots.length} {t("machines.slots")}
               </Badge>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -526,19 +527,19 @@ export default function VisitDetail() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-mono text-muted-foreground">{slot.serialNumber}</span>
-                          <span className="text-xs text-muted-foreground">Slot #{slot.slotNumber ?? "?"}</span>
+                          <span className="text-xs text-muted-foreground">{t("visitReport.machineSlot", { num: slot.slotNumber ?? "?" })}</span>
                         </div>
                         <p className="text-sm font-semibold text-foreground truncate mt-0.5">{slot.productName}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         {slot.isSwapOut && (
                           <Badge className="bg-destructive/20 text-destructive border-destructive/30 text-xs">
-                            Swap: Outgoing
+                            {t("visitReport.swapOutgoing")}
                           </Badge>
                         )}
                         {slot.isSwapIn && (
                           <Badge className="bg-chart-2 text-primary-foreground border-chart-2 text-xs">
-                            Swap: Incoming
+                            {t("visitReport.swapIncoming")}
                           </Badge>
                         )}
                         {!slot.isSwapOut && !slot.isSwapIn && (
@@ -549,7 +550,7 @@ export default function VisitDetail() {
                         {slot.isSwapped && (
                           <Badge className="bg-purple-500/20 text-purple-700 dark:text-purple-400 border-purple-500/30 text-xs">
                             <ArrowRightLeft className="w-3 h-3 mr-1" />
-                            Swapped (legacy)
+                            {t("visitReport.swappedLegacy")}
                           </Badge>
                         )}
                       </div>
@@ -557,7 +558,7 @@ export default function VisitDetail() {
 
                     {slot.isSwapped && slot.previousProductName && (
                       <p className="text-xs text-muted-foreground">
-                        Previously: <span className="font-medium">{slot.previousProductName}</span>
+                        {t("visitReport.previously")}: <span className="font-medium">{slot.previousProductName}</span>
                       </p>
                     )}
 
@@ -568,34 +569,34 @@ export default function VisitDetail() {
                       <>
                         <div className="grid grid-cols-3 gap-2 text-center">
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Last Stock</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.lastStock")}</span>
                             <span className="text-sm font-medium text-foreground">{slot.lastStock ?? "—"}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Units Sold</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.unitsSold")}</span>
                             <span className="text-sm font-medium text-foreground">{slot.unitsSold}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Removed</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.unitsRemoved")}</span>
                             <span className="text-sm font-medium text-destructive">{slot.removed > 0 ? `-${slot.removed}` : "0"}</span>
                           </div>
                         </div>
                         <Separator />
                         <div className="grid grid-cols-4 gap-2 text-center">
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Cash</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.cash")}</span>
                             <span className="text-sm font-medium text-foreground">${fmt2(slot.cashCollected)}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">False Coins</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.falseCoins")}</span>
                             <span className="text-sm font-medium text-foreground">{slot.falseCoins}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Jam</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.jamShort")}</span>
                             <span className="text-xs font-medium text-foreground">{formatJamStatus(slot.jamStatus)}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Audited</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.auditedShort")}</span>
                             <span className="text-sm font-medium text-foreground">{slot.auditedCount ?? "—"}</span>
                           </div>
                         </div>
@@ -607,15 +608,15 @@ export default function VisitDetail() {
                       <>
                         <div className="grid grid-cols-3 gap-2 text-center">
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Units Refilled</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.unitsRefilled")}</span>
                             <span className="text-sm font-medium text-chart-2">{slot.added > 0 ? `+${slot.added}` : "0"}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Current Stock</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.currentStock")}</span>
                             <span className="text-sm font-medium text-foreground">{slot.currentStock ?? "—"}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Fill %</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.capacity")}</span>
                             {slot.fillPct !== null ? (
                               <div className="flex flex-col items-center gap-0.5">
                                 <span className="text-sm font-medium text-foreground">{slot.fillPct}%</span>
@@ -631,7 +632,7 @@ export default function VisitDetail() {
                             <Separator />
                             <div>
                               <span className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
-                                <ImageIcon className="w-3 h-3" /> Swap Photo
+                                <ImageIcon className="w-3 h-3" /> {t("visitReport.swapEvidencePhoto")}
                               </span>
                               <img src={slot.photoUrl} alt="Swap" className="rounded-md max-h-40 object-contain border border-border" />
                             </div>
@@ -646,19 +647,19 @@ export default function VisitDetail() {
                         {/* Stock row */}
                         <div className="grid grid-cols-4 gap-2 text-center">
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Last Stock</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.lastStock")}</span>
                             <span className="text-sm font-medium text-foreground">{slot.lastStock ?? "—"}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Current</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.currentStock")}</span>
                             <span className="text-sm font-medium text-foreground">{slot.currentStock ?? "—"}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Audited</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.auditedShort")}</span>
                             <span className="text-sm font-medium text-foreground">{slot.auditedCount ?? "—"}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Fill %</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.capacity")}</span>
                             {slot.fillPct !== null ? (
                               <div className="flex flex-col items-center gap-0.5">
                                 <span className="text-sm font-medium text-foreground">{slot.fillPct}%</span>
@@ -675,23 +676,23 @@ export default function VisitDetail() {
                         {/* Movement row */}
                         <div className="grid grid-cols-5 gap-2 text-center">
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Sold</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("spots.sales")}</span>
                             <span className="text-sm font-medium text-foreground">{slot.unitsSold}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Added</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.added")}</span>
                             <span className="text-sm font-medium text-chart-2">{slot.added > 0 ? `+${slot.added}` : "0"}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Removed</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.unitsRemoved")}</span>
                             <span className="text-sm font-medium text-destructive">{slot.removed > 0 ? `-${slot.removed}` : "0"}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">False Coins</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.falseCoins")}</span>
                             <span className="text-sm font-medium text-foreground">{slot.falseCoins}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-muted-foreground block">Jam</span>
+                            <span className="text-[10px] text-muted-foreground block">{t("visitReport.jamShort")}</span>
                             <span className="text-xs font-medium text-foreground">{formatJamStatus(slot.jamStatus)}</span>
                           </div>
                         </div>
@@ -702,11 +703,11 @@ export default function VisitDetail() {
                         <div className="flex items-center justify-between text-sm">
                           <div className="flex items-center gap-4">
                             <span className="text-muted-foreground text-xs">
-                              Cash: <span className="font-semibold text-foreground">${fmt2(slot.cashCollected)}</span>
+                              {t("visitReport.cash")}: <span className="font-semibold text-foreground">${fmt2(slot.cashCollected)}</span>
                             </span>
                             {slot.surplusShortage !== null && (
                               <span className={`text-xs font-medium ${slot.surplusShortage > 0 ? "text-chart-2" : slot.surplusShortage < 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                                {slot.surplusShortage > 0 ? "+" : ""}{slot.surplusShortage} {slot.surplusShortage > 0 ? "surplus" : slot.surplusShortage < 0 ? "shortage" : "exact"}
+                                {slot.surplusShortage > 0 ? "+" : ""}{slot.surplusShortage} {slot.surplusShortage > 0 ? t("visitReport.surplus") : slot.surplusShortage < 0 ? t("visitReport.shortage") : t("visitReport.exact")}
                               </span>
                             )}
                           </div>
@@ -721,11 +722,11 @@ export default function VisitDetail() {
             {/* Totals bar */}
             <Card className="mt-3">
               <CardContent className="p-3 flex flex-wrap items-center justify-between gap-3 text-sm">
-                <span className="font-semibold text-foreground">Totals</span>
+                <span className="font-semibold text-foreground">{t("visitReport.totals")}</span>
                 <div className="flex flex-wrap gap-4">
-                  <span className="text-muted-foreground">Added: <span className="font-medium text-foreground">{totalRefilled}</span></span>
-                  <span className="text-muted-foreground">Removed: <span className="font-medium text-foreground">{totalRemoved}</span></span>
-                  <span className="text-muted-foreground">Cash: <span className="font-semibold text-foreground">${fmt2(totalCash)}</span></span>
+                  <span className="text-muted-foreground">{t("visitReport.added")}: <span className="font-medium text-foreground">{totalRefilled}</span></span>
+                  <span className="text-muted-foreground">{t("visitReport.unitsRemoved")}: <span className="font-medium text-foreground">{totalRemoved}</span></span>
+                  <span className="text-muted-foreground">{t("visitReport.cash")}: <span className="font-semibold text-foreground">${fmt2(totalCash)}</span></span>
                 </div>
               </CardContent>
             </Card>
@@ -737,7 +738,7 @@ export default function VisitDetail() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4" /> Inventory Adjustments
+                <AlertTriangle className="w-4 h-4" /> {t("visitReport.inventoryAdjustments")}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -748,8 +749,8 @@ export default function VisitDetail() {
                     <Badge variant="outline" className="ml-2 capitalize text-xs">{adj.adjustment_type}</Badge>
                   </div>
                   <div className="flex items-center gap-3 text-xs">
-                    <span className="text-muted-foreground">Expected: {adj.expected_quantity}</span>
-                    <span className="text-muted-foreground">Actual: {adj.actual_quantity}</span>
+                    <span className="text-muted-foreground">{t("visitReport.expectedQuantity")}: {adj.expected_quantity}</span>
+                    <span className="text-muted-foreground">{t("visitReport.actualQuantity")}: {adj.actual_quantity}</span>
                     <span className={`font-semibold ${adj.difference < 0 ? "text-destructive" : adj.difference > 0 ? "text-green-600 dark:text-green-400" : "text-foreground"}`}>
                       {adj.difference > 0 ? "+" : ""}{adj.difference}
                     </span>
@@ -764,7 +765,7 @@ export default function VisitDetail() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Wrench className="w-4 h-4" /> Maintenance Tickets
+              <Wrench className="w-4 h-4" /> {t("visitReport.maintenanceTickets")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -774,9 +775,16 @@ export default function VisitDetail() {
                   <div key={ticket.id} className="flex items-start justify-between p-3 rounded-md border border-border bg-muted/20">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium text-foreground">{ticket.issue_type}</span>
+                        <span className="text-sm font-medium text-foreground">
+                          {ticket.issue_type === "Jam" ? t("visitReport.jamShort") : ticket.issue_type}
+                        </span>
                         {getPriorityBadge(ticket.priority)}
-                        <Badge variant="outline" className="capitalize text-xs">{ticket.status}</Badge>
+                        <Badge variant="outline" className="text-xs">
+                          {ticket.status === 'pending' ? t("maintenance.pendingLabel") : 
+                           ticket.status === 'in_progress' ? t("maintenance.inProgressLabel") : 
+                           ticket.status === 'completed' ? t("maintenance.completedLabel") : 
+                           ticket.status}
+                        </Badge>
                       </div>
                       {ticket.description && (
                         <p className="text-xs text-muted-foreground">{ticket.description}</p>
@@ -788,7 +796,7 @@ export default function VisitDetail() {
             ) : (
               <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                 <CheckCircle2 className="w-4 h-4 text-green-500" />
-                No maintenance issues reported
+                {t("visitReport.noIssuesReported")}
               </div>
             )}
           </CardContent>

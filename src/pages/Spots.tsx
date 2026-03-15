@@ -16,6 +16,7 @@ import { SpotLeaderboard } from "@/components/spots/SpotLeaderboard";
 import { SpotTrends } from "@/components/spots/SpotTrends";
 import { SpotAlerts } from "@/components/spots/SpotAlerts";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTranslation } from "react-i18next";
 
 type ProfitabilityFilter = "all" | "profitable" | "loss";
 type StockFilter = "all" | "low" | "healthy";
@@ -29,6 +30,7 @@ const dateRangeLabels: Record<DateRangeOption, string> = {
 };
 
 export default function Spots() {
+  const { t } = useTranslation();
   const [dateRange, setDateRange] = useState<DateRangeOption>("all");
   const { data: spots, isLoading } = useSpotAnalytics(dateRange);
   const { data: locations } = useLocationsForFilter();
@@ -91,7 +93,7 @@ export default function Spots() {
 
   if (isLoading) {
     return (
-      <AppLayout title="Spots Analytics" subtitle="Loading spot performance data...">
+      <AppLayout title={t('spots.title')} subtitle={t('spots.loading')}>
         <div className="space-y-4">
           <Skeleton className="h-12 w-full" />
           <div className="grid grid-cols-3 gap-4">
@@ -107,12 +109,12 @@ export default function Spots() {
 
   return (
     <AppLayout
-      title="Spots Analytics"
-      subtitle="Monitor spot performance, trends, and alerts"
+      title={t('spots.title')}
+      subtitle={t('spots.subtitle')}
       actions={
         <Button onClick={exportToCSV} variant="outline" className="gap-2">
           <Download className="w-4 h-4" />
-          Export CSV
+          {t('spots.exportCSV')}
         </Button>
       }
     >
@@ -121,21 +123,23 @@ export default function Spots() {
         <div className="flex flex-col sm:flex-row gap-4 flex-wrap">
           <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
             <SelectTrigger className="w-full sm:w-44">
-              <SelectValue placeholder="Date Range" />
+              <SelectValue placeholder={t('spots.dateRange')} />
             </SelectTrigger>
             <SelectContent>
-              {Object.entries(dateRangeLabels).map(([key, label]) => (
-                <SelectItem key={key} value={key}>{label}</SelectItem>
-              ))}
+              <SelectItem value="30d">{t('spots.last30Days')}</SelectItem>
+              <SelectItem value="3m">{t('spots.last3Months')}</SelectItem>
+              <SelectItem value="6m">{t('spots.last6Months')}</SelectItem>
+              <SelectItem value="1y">{t('spots.lastYear')}</SelectItem>
+              <SelectItem value="all">{t('spots.allTime')}</SelectItem>
             </SelectContent>
           </Select>
 
           <Select value={locationFilter} onValueChange={setLocationFilter}>
             <SelectTrigger className="w-full sm:w-48">
-              <SelectValue placeholder="All Locations" />
+              <SelectValue placeholder={t('common.allLocations')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Locations</SelectItem>
+              <SelectItem value="all">{t('common.allLocations')}</SelectItem>
               {locations?.map((loc) => (
                 <SelectItem key={loc.id} value={loc.id}>
                   {loc.name}
@@ -146,23 +150,23 @@ export default function Spots() {
 
           <Select value={profitabilityFilter} onValueChange={(v) => setProfitabilityFilter(v as ProfitabilityFilter)}>
             <SelectTrigger className="w-full sm:w-40">
-              <SelectValue placeholder="Profitability" />
+              <SelectValue placeholder={t('spots.allSpots')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Spots</SelectItem>
-              <SelectItem value="profitable">Profitable</SelectItem>
-              <SelectItem value="loss">Loss</SelectItem>
+              <SelectItem value="all">{t('spots.allSpots')}</SelectItem>
+              <SelectItem value="profitable">{t('spots.profitable')}</SelectItem>
+              <SelectItem value="loss">{t('spots.loss')}</SelectItem>
             </SelectContent>
           </Select>
 
           <Select value={stockFilter} onValueChange={(v) => setStockFilter(v as StockFilter)}>
             <SelectTrigger className="w-full sm:w-40">
-              <SelectValue placeholder="Stock Level" />
+              <SelectValue placeholder={t('spots.allStock')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Stock</SelectItem>
-              <SelectItem value="low">Low Stock</SelectItem>
-              <SelectItem value="healthy">Healthy Stock</SelectItem>
+              <SelectItem value="all">{t('spots.allStock')}</SelectItem>
+              <SelectItem value="low">{t('spots.lowStock')}</SelectItem>
+              <SelectItem value="healthy">{t('spots.healthyStock')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -173,15 +177,15 @@ export default function Spots() {
         <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-grid">
           <TabsTrigger value="leaderboard" className="gap-2">
             <Trophy className="w-4 h-4" />
-            Leaderboard
+            {t('spots.leaderboard')}
           </TabsTrigger>
           <TabsTrigger value="trends" className="gap-2">
             <TrendingUp className="w-4 h-4" />
-            Trends
+            {t('spots.trends')}
           </TabsTrigger>
           <TabsTrigger value="alerts" className="gap-2 relative">
             <AlertTriangle className="w-4 h-4" />
-            Alerts
+            {t('spots.alerts')}
             {alertCount > 0 && (
               <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
                 {alertCount}

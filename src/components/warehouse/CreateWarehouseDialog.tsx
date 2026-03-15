@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Plus } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface CreateWarehouseDialogProps {
   onCreate: (data: { name: string; address?: string; description?: string; is_transitional?: boolean }) => Promise<any>;
@@ -19,6 +20,7 @@ interface CreateWarehouseDialogProps {
 }
 
 export function CreateWarehouseDialog({ onCreate, isCreating }: CreateWarehouseDialogProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -48,39 +50,39 @@ export function CreateWarehouseDialog({ onCreate, isCreating }: CreateWarehouseD
       <DialogTrigger asChild>
         <Button className="gap-2">
           <Plus className="w-4 h-4" />
-          New Warehouse
+          {t('warehouse.newWarehouse')}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Create Warehouse</DialogTitle>
+          <DialogTitle>{t('warehouse.createWarehouse')}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="wh-name">Name *</Label>
+            <Label htmlFor="wh-name">{t('warehouse.warehouseName')} *</Label>
             <Input
               id="wh-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Main Warehouse"
+              placeholder={t('warehouse.egMainWarehouse')}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="wh-address">Address</Label>
+            <Label htmlFor="wh-address">{t('warehouse.warehouseAddress')}</Label>
             <Input
               id="wh-address"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="Optional address"
+              placeholder={t('warehouse.optionalAddress')}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="wh-desc">Description</Label>
+            <Label htmlFor="wh-desc">{t('warehouse.warehouseDesc')}</Label>
             <Textarea
               id="wh-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional notes"
+              placeholder={t('warehouse.optionalNotes')}
               rows={2}
             />
           </div>
@@ -91,15 +93,15 @@ export function CreateWarehouseDialog({ onCreate, isCreating }: CreateWarehouseD
               onCheckedChange={setIsTransitional}
             />
             <Label htmlFor="wh-transitional" className="text-sm">
-              Is Transitional Vehicle?
+              {t('warehouse.isTransitional')}
             </Label>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={!name.trim() || isCreating}>
-              {isCreating ? "Creating..." : "Create"}
+              {isCreating ? t('common.creating') : t('common.create')}
             </Button>
           </div>
         </form>
